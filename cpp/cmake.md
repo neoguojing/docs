@@ -46,4 +46,10 @@
 
   ## if else
   https://blog.csdn.net/maizousidemao/article/details/104099776
+  
+  
+  
+  ## 卸载
+  
+  ```cat install_manifest.txt | sudo xargs rm```
 
