@@ -17,6 +17,7 @@
 - ADD_DEFINITIONS(-DKESTREL_CUDA) 添加宏,可以在代码中使用宏进行条件编译,宏可以作为cmake的参数
 - ENV 访问环境变量 if( NOT DEFINED ENV{JAVA_HOME}) 做判断
 - FILE(GLOB_RECURSE c_sources ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)  遍历制定目录服务glob表达式的文件写入c_sources变量
+- FILE(GLOB libs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/lib_docker ${CMAKE_CURRENT_SOURCE_DIR}/lib_docker/*.so*)  截取相对路径
 - find_package(CURL REQUIRED)   查找目标库,可设置必选
   ```
   FindCURL.cmake 预先由curl定义好
