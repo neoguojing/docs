@@ -55,3 +55,10 @@ void set(T1 && var1, T2 && var2){
 //when var1 is an lvalue, std::forward<T1> equals to static_cast<[const] T1 &>(var1)
 
 ```
+##　ptr
+
+- shared_ptr
+
+只要将 new 运算符返回的指针 p 交给一个 shared_ptr 对象“托管”，就不必担心在哪里写delete p语句——实际上根本不需要编写这条语句，
+托管 p 的 shared_ptr 对象在消亡时会自动执行delete p。而且，该 shared_ptr 对象能像指针 p —样使用，
+即假设托管 p 的 shared_ptr 对象叫作 ptr，那么 *ptr 就是 p 指向的对象。
