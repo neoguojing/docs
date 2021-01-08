@@ -5,13 +5,16 @@ facebook开源：
 - 向量k-NN搜索的计算库，其作用主要在保证高准确度的前提下大幅提升搜索速度
 
 ## 基本概念
+
 kNN：k-Nearest Neighboors k临近算法
 - 解决分类问题
 - 机器学习唯一无模型算法
+
 Product Quantizer，简称PQ
  - 将矢量编码或解码为代码
  - 优化距离计算的速度
  - 把连续的空间离散化
+ 
 Inverted File System，简称IVF，基于kmeans
 
 
