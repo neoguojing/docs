@@ -41,15 +41,25 @@ kNN：k-Nearest Neighboors k临近算法
 - 机器学习唯一无模型算法
 - 将待分类样本，计算与其他样本的距离，排序，选出距离近的K个点，选出K个点中最多的分类，将数据归类
 
-Product Quantizer，简称PQ，乘积量化，计算距离的方法
+Product Quantizer，简称PQ，乘积量化，计算距离的方法和向量压缩
  - 将矢量编码或解码为代码
  - 优化距离计算的速度
- - 把连续的空间离散化
+ - http://www.fabwrite.com/productquantization
+ - 向量压缩：高维向量d切分为m段，每段用k-means算法生成k（一般为256）个中心点id（一般为8bit），d维向量被转换为m*8bit的向量码本
+ - 距离计算： x查询向量压缩得到x1，x与x1比较，得到簇心id表示的压缩向量x2，查询码表
  
 Inverted File System，简称IVF，基于kmeans
 - 减少需要计算距离的目标向量个数
 - 对库里所有向量做kmeans聚簇
 - 向量转换为与簇心的残差
+
+维诺空间：
+
+https://blog.csdn.net/kevin_darkelf/article/details/81455687
+
+PCA降维： principal component analysis ( 主成分分析)
+- 减少内存或者硬盘的使用，加快机器学习的速度
+  
 
 
 ## 依赖
@@ -57,5 +67,26 @@ Inverted File System，简称IVF，基于kmeans
 - MKL ： Intel数学核心函数库（MKL）是一套高度优化、线程安全的数学例程、函数，面向高性能的工程、科学与财务应用
 - OpenBlas ： 基础线性代数子程序库 c++的numpy
 - OpenMP ： 并行描述的高层抽象降低了并行编程的难度和复杂度，解决线程粒度和负载平衡，只适合共享内存，不支持集群
+
+## faiss使用
+
+### 参数说明
+- d ： 指定向量的维度
+- nlist ： IVF划分的子搜索空间
+- m：PQ算法降维参数，d是m的倍数
+- nprobe ： 需要检索的聚类中心数量，控制精度/速度
+
+### 索引类型
+- IndexFlatL2 欧式距离计算，暴力搜索
+- IndexFlatIP 点击计算
+- IndexIVFFLat 加聚类的索引精确检索
+- IndexPQ 量化，特征编码，降低内存使用
+- IndexIVFPQ 向量压缩+聚类
+
+### 使用
+- add_with_ids 为每个向量建立一个64bit id(索引)
+- reconstruct 取出原始特征
+
+
 
 
