@@ -71,3 +71,117 @@ func NewServer(addr string, port int, options ...func(*Server)) (*Server, error)
   return &srv, nil
 }
 ```
+
+## 泛型
+
+https://coolshell.cn/articles/21179.html
+
+## pipline
+
+实现shell 命令类似功能 echo $nums | sq | sum
+
+元型
+```
+func echo(nums []int) <-chan int {
+  out := make(chan int)
+  go func() {
+    for _, n := range nums {
+      out <- n
+    }
+    close(out)
+  }()
+  return out
+}
+
+func sq(in <-chan int) <-chan int {
+  out := make(chan int)
+  go func() {
+    for n := range in {
+      out <- n * n
+    }
+    close(out)
+  }()
+  return out
+}
+
+func prime(in <-chan int) <-chan int {
+  out := make(chan int)
+  go func ()  {
+    for n := range in {
+      if is_prime(n) {
+        out <- n
+      }
+    }
+    close(out)
+  }()
+  return out
+}
+
+//调用
+for n := range sum(sq(echo(nums))) {
+  fmt.Println(n)
+}
+```
+
+进阶
+```
+type EchoFunc func ([]int) (<- chan int) 
+type PipeFunc func (<- chan int) (<- chan int) 
+
+
+func pipeline(nums []int, echo EchoFunc, pipeFns ... PipeFunc) <- chan int {
+  ch  := echo(nums)
+  for i := range pipeFns {
+    ch = pipeFns[i](ch)
+  }
+  return ch
+}
+
+//调用
+var nums = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}    
+for n := range pipeline(nums, sq, sum) {
+    fmt.Println(n)
+}
+```
+
+## fan in/out
+
+串行输出，并发计算，串行输出
+
+质数求和示例
+```
+func merge(cs []<-chan int) <-chan int {
+  var wg sync.WaitGroup
+  out := make(chan int)
+
+  wg.Add(len(cs))
+  for _, c := range cs {
+    go func(c <-chan int) {
+      for n := range c {
+        out <- n
+      }
+      wg.Done()
+    }(c)
+  }
+  go func() {
+    wg.Wait()
+    close(out)
+  }()
+  return out
+}
+
+func main() {
+  nums := makeRange(1, 10000)
+  in := echo(nums)
+
+  const nProcess = 5
+  var chans [nProcess]<-chan int
+  for i := range chans {
+    chans[i] = sum(prime(in))
+  }
+
+  for n := range sum(merge(chans[:])) {
+    fmt.Println(n)
+  }
+}
+```
