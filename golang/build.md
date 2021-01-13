@@ -5,9 +5,17 @@
 -tag
 -ldtags
 
-条件编译
+## 条件编译
+```
+这个将限制此源文件只能在 linux/386或者darwin/386平台下编译
+ // +build linux darwin  
+ // +build 386  
+ 
+ 文件后缀限制
+ mypkg_freebsd_arm.go // only builds on freebsd/arm systems  
+ mypkg_plan9.go       // only builds on plan9  
+```
 
-arch
 
 ## vender
 
