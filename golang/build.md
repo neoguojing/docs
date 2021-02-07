@@ -3,9 +3,25 @@
 ## build选项
 
 -tag
+
+自定义 条件编译选项,只能备build命令识别
+```
+// +build dev
+
+go build -tags dev
+```
+
 -ldtags
 
-## 条件编译
+命令行传递编译参数
+
+```
+var version string
+
+go build -ldflags '-X main.version="dev"'
+```
+
+## 默认条件编译
 ```
 这个将限制此源文件只能在 linux/386或者darwin/386平台下编译
  // +build linux darwin  
