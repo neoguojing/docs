@@ -57,3 +57,39 @@ launch.json
     ]
 }
 ```
+
+## 需要传递编译参数的debug配置(亲测)
+
+```
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "remotePath": "",
+            "port": 2345,
+            "host": "127.0.0.1",
+            "program": "${workspaceFolder}/cmd/${workspaceRootFolderName}", //main函数不在当前目录
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "GOPATH":"",
+                "LD_LIBRARY_PATH" :"",
+                "CGO_LDFLAGS":""
+            },
+            "output": "${workspaceFolder}/${workspaceRootFolderName}",    //bin文件输出到主目录.幷指定名称
+            "args": [
+                "-config",
+                "config.json",
+            ],
+            "showLog": true,
+            "buildFlags": "-tags 'dev'"             //传递编译参数给dlv->go build
+        }
+    ]
+}
+```
