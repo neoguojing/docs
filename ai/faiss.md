@@ -54,7 +54,7 @@ kNN：k-Nearest Neighboors k临近算法
 - 将待分类样本，计算与其他样本的距离，排序，选出距离近的K个点，选出K个点中最多的分类，将数据归类
 
 Product Quantizer，简称PQ，乘积量化，计算距离的方法和向量压缩
- - 将矢量编码或解码为代码
+ - 将矢量编码为代码
  - 优化距离计算的速度
  - http://www.fabwrite.com/productquantization
  - 向量压缩：高维向量d切分为m段，每段用k-means算法生成k（一般为256）个中心点id（一般为8bit），d维向量被转换为m*8bit的向量码本
