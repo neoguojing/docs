@@ -62,7 +62,7 @@ Product Quantizer，简称PQ，乘积量化，计算距离的方法和向量压�
  
  ![训练](https://drive.google.com/file/d/1kjzTR__qW4ldoQKSHSGWk2x2F0pAk3Db/view)
  
- ![检索](https://drive.google.com/file/d/1kjzTR__qW4ldoQKSHSGWk2x2F0pAk3Db/view?usp=sharing)
+ ![检索](https://github.com/neoguojing/docs/blob/main/ai/PQ-search.png)
  
 Inverted File System，简称IVF，基于kmeans
 - 减少需要计算距离的目标向量个数
