@@ -89,11 +89,14 @@ PCA降维： principal component analysis ( 主成分分析)
 - nprobe ： 需要检索的聚类中心数量，控制精度/速度
 
 ### 索引类型
-- IndexFlatL2 欧式距离计算，暴力搜索
-- IndexFlatIP 点击计算
-- IndexIVFFLat 加聚类的索引精确检索
-- IndexPQ 量化，特征编码，降低内存使用
-- IndexIVFPQ 向量压缩+聚类
+
+FLAT 表示不压缩索引
+
+- IndexFlatL2 欧式距离计算，暴力搜索 精确
+- IndexFlatIP 点积计算    精确
+- IndexIVFFLat 加聚类的索引  精确检索
+- IndexPQ 向量压缩，特征编码，降低内存使用
+- IndexIVFPQ 向量压缩+聚类   非精确 nprobe参数 调节精度和速度
 
 ### 使用
 - add_with_ids 为每个向量建立一个64bit id(索引)
