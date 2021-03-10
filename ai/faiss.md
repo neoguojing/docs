@@ -69,6 +69,10 @@ Inverted File System，简称IVF，基于kmeans
 - 对库里所有向量做kmeans聚簇
 - 向量转换为与簇心的残差
 
+![IVF](https://github.com/neoguojing/docs/blob/main/ai/IVF-IVF.png)
+
+![IVF-PQ](https://github.com/neoguojing/docs/blob/main/ai/IVF-IVF-PQ.png)
+
 维诺空间：
 
 https://blog.csdn.net/kevin_darkelf/article/details/81455687
