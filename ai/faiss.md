@@ -82,6 +82,12 @@ PCA降维： principal component analysis ( 主成分分析)
 
 ## faiss使用
 
+### 索引构建
+
+- 全量构建: 原始向量文件 -> train -> add -> faiss索引文件
+- 增量构建: faiss索引文件 -> add ->  faiss索引文件   
+- train 阶段: 在PQ索引中包含 : 1 Clustering 聚类  2.Asign 原始向量 转换为编码的过程
+
 ### 参数说明
 - d ： 指定向量的维度
 - nlist ： IVF划分的子搜索空间
@@ -96,7 +102,7 @@ FLAT 表示不压缩索引
 - IndexFlatIP 点积计算    精确
 - IndexIVFFLat 加聚类的索引  精确检索
 - IndexPQ 向量压缩，特征编码，降低内存使用
-- IndexIVFPQ 向量压缩+聚类   非精确 nprobe参数 调节精度和速度
+- IndexIVFPQ 向量压缩+聚类   非精确 nprobe参数 调节精度和速度 不支持增量构建
 
 ### 使用
 - add_with_ids 为每个向量建立一个64bit id(索引)
