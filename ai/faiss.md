@@ -60,7 +60,7 @@ Product Quantizer，简称PQ，乘积量化，计算距离的方法和向量压�
  - 向量压缩：高维向量d切分为m段，每段用k-means算法生成k（一般为256）个中心点id（一般为8bit），d维向量被转换为m*8bit的向量码本
  - 距离计算： x查询向量压缩得到x1，x与x1比较，得到簇心id表示的压缩向量x2，查询码表
  
- ![训练](https://drive.google.com/file/d/1eY3SX2FwxX2kRntqbjM3nQlsim59Cz3m/view?usp=sharing)
+ ![训练](https://drive.google.com/file/d/1kjzTR__qW4ldoQKSHSGWk2x2F0pAk3Db/view)
  
  ![检索](https://drive.google.com/file/d/1kjzTR__qW4ldoQKSHSGWk2x2F0pAk3Db/view?usp=sharing)
  
