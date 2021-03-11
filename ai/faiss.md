@@ -101,7 +101,7 @@ PCA降维： principal component analysis ( 主成分分析)
 - nlist ： IVF划分的子搜索空间
 - m：PQ算法降维参数，d是m的倍数
 - nprobe ： 需要检索的聚类中心数量，控制精度/速度
-
+- quantizer， 来给 Voronoi 单元格分配向量。 每个单元格由质心（centroid）定义。 找某个向量落在哪个 Voronoi 单元格的任务，就是一个在质心集合中找这个向量最近邻居的任务。 这是另一个索引的任务，通常是 IndexFlatL2
 ### 索引类型
 
 FLAT 表示不压缩索引
