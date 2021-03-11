@@ -115,7 +115,13 @@ FLAT 表示不压缩索引
 ### 使用
 - add_with_ids 为每个向量建立一个64bit id(索引)
 - reconstruct 取出原始特征
+- add 添加索引
+- train 训练索引
+- search 检索
 
+### GPU
 
-
+- index_gpu_to_cpu可以将索引从GPU复制到CPU，
+- index_cpu_to_gpu 和 index_cpu_to_gpu_multiple可以从CPU复制到GPU
+- GpuIndexFlat, GpuIndexIVFFlat 和 GpuIndexIVFPQ
 
