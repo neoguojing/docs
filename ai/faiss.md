@@ -124,4 +124,5 @@ FLAT 表示不压缩索引
 - index_gpu_to_cpu可以将索引从GPU复制到CPU，
 - index_cpu_to_gpu 和 index_cpu_to_gpu_multiple可以从CPU复制到GPU
 - GpuIndexFlat, GpuIndexIVFFlat 和 GpuIndexIVFPQ
+- GpuResources 资源对象,来避免无效的数据交互
 
