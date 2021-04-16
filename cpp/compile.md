@@ -20,4 +20,7 @@ update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-5  100
 //切换版本
 update-alternatives --config gcc
 update-alternatives --config g++
+
+//重载库文件
+ldconfig -v
 ```
