@@ -40,3 +40,14 @@ vendor搜索方式 vendor包的搜索方式为：自包引用处，从其所在�
 当vendor存在嵌套时，若不同的vendor文件夹包含相同的包，且该包在某处被引用，寻找策略仍遵循如上规则。即从包引用处起，逐层向上层文件夹搜索，首先找到的包即为所引，也就是从$GOPATH/src来看，哪个vendor包的路径最长，使用哪个
 
 ## mod
+
+## 交叉编译
+
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build hello.go
+
+GOOS：目标操作系统
+
+GOARCH：目标操作系统的架构
+
+CGO_ENABLED=0 使用C语言编译器
+CGO_ENABLED=1，CGO编译器
