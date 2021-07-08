@@ -1,4 +1,4 @@
-# 源码导读
+# 源码导读 1.16
 
 - AUTHORS：Golang官方作者清单
 - CONTRIBUTING.md：加入贡献者队列的指导文件
@@ -17,3 +17,10 @@
 - robots.txt：主要用来控制各大搜索引擎爬虫的爬取规则
 - src：Golang核心实现都在这里，下面详细讲述
 - test：Golang单元测试程序，通过查看测试程序可以学习到golang的用法和特性
+
+
+## runtime 
+
+- src/runtime/malloc.go   mallocgc等内存分配函数
+- src/runtime/runtime2.go gmp实现函数
+- src/runtime/mheap.go 堆内存实现函数
