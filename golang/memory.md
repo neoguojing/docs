@@ -21,4 +21,8 @@
 - amd64 : 48必填地址位,有符号扩展到64; 支持57bit,当前仅linux 支持
 - arm64 : 48bit地址
 - ppc64, mips64, and s390x 支持64bit寻址
-- 
+
+
+## 参数
+- FixedStack: linux下为2kb
+- 可缓存的空闲栈大小为:2kb\4kb\8kb\16kb,大于16kb的栈则直接分配
