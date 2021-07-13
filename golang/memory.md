@@ -26,3 +26,12 @@
 ## 参数
 - FixedStack: linux下为2kb
 - 可缓存的空闲栈大小为:2kb\4kb\8kb\16kb,大于16kb的栈则直接分配
+
+## 函数
+- mallocinit: 在调度器初始化是调用,初始化堆外内存分配器和锁,以及arenaHint
+- arenaHint: 告诉系统如何扩容mheap
+- mallocgc : 分配可gc的内存,
+- newobject: new关键字的实现,调用mallocgc
+- newarray: 数组分配器,调用mallocgc
+- sysAlloc: 分配大内存,调用mmap
+- persistentalloc: sysAlloc的包装,被mallocgc等调用,实际分配内存
