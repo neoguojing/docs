@@ -32,6 +32,7 @@ go build -ldflags '-X main.version="dev"'
  mypkg_plan9.go       // only builds on plan9  
 ```
 
+- //go:nosplit : 表明函数不能在分裂栈上使用,不需要做栈溢出检查
 
 ## vender
 
