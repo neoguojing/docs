@@ -24,3 +24,5 @@
 - src/runtime/malloc.go   mallocgc等内存分配函数
 - src/runtime/runtime2.go gmp实现函数
 - src/runtime/mheap.go 堆内存实现函数
+- src/runtime/proc.go 运行时入口: schedinit
+- src/runtime/lockrank.go 运行时锁的排序定义
