@@ -30,7 +30,7 @@
 ## 函数
 - mallocinit: 在调度器初始化是调用,初始化堆外内存分配器和锁,以及arenaHint
 - arenaHint: 告诉系统如何扩容mheap
-- mallocgc : 分配可gc的内存,
+- mallocgc : 分配可gc的内存,small内存从per-p mcache分配,大内存从heap分配
 - newobject: new关键字的实现,调用mallocgc
 - newarray: 数组分配器,调用mallocgc
 - sysAlloc: 分配大内存,调用mmap
