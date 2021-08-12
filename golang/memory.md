@@ -40,4 +40,7 @@
 
 ## mallocgc
 - _GCmarktermination阶段不允许分配内存
-- 
+
+### nextFreeFast mspan快速重用空闲对象
+- allocCache 与 count trailing zero 算法解读？？？
+- allocBits的结构？？？
