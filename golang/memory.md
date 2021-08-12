@@ -5,6 +5,7 @@
 - 页可以被分裂为一个固定大小的许多对象的集合
 - GOOS: 操作系统- darwin, freebsd, linux等
 - GOARCH: 架构-386, amd64, arm, s390x 等
+- noscan: 无需gc扫描的对象：nil或者无指针的对象，_type == nil || _type.ptrdata == 0
 
 ## 分配器
 
