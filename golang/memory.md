@@ -35,3 +35,7 @@
 - newarray: 数组分配器,调用mallocgc
 - sysAlloc: 分配大内存,调用mmap
 - persistentalloc: sysAlloc的包装,被mallocgc等调用,实际分配内存
+
+## mallocgc
+- _GCmarktermination阶段不允许分配内存
+- 
