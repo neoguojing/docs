@@ -11,7 +11,26 @@
 ## 系统调用或汇编
 - runtime·osyield：linux系统调用sched_yield，主动放弃cpu，当前进程或者线程进入调度队列等待重新调度
 - runtime·procyield： 执行30次pause指令；pause提醒cpu代码是个循环等待，避免循环代码导致的可能的内存顺序违规导致的性能下降；降低耗电；执行一个预定义的延迟；
-- futex：
+- futex： 
+  数据结构： hashbucket -》 每个bucket维护一个列表，每个列表持有一个自旋锁；减小队列长度；自旋锁保护比较和入队操作的原子性；
+  futex_wait流程：
+  ```
+  加自旋锁
+  检测*uaddr是否等于val，如果不相等则会立即返回
+  将进程状态设置为TASK_INTERRUPTIBLE
+  将当期进程插入到等待队列中
+  释放自旋锁
+  创建定时任务：当超过一定时间还没被唤醒时，将进程唤醒
+  挂起当前进程
+  ```
+  futex_wake流程如下:
+  ```
+  找到uaddr对应的futex_hash_bucket，即代码中的hb
+  对hb加自旋锁
+  遍历fb的链表，找到uaddr对应的节点
+  调用wake_futex唤起等待的进程
+  释放自旋锁
+  ```
 ```
   func futexsleep(addr *uint32, val uint32, ns int64) : if *addr==val then sleep ; sleeptime < ns; if ns < 0 永远睡眠
   func futexwakeup(addr *uint32, cnt uint32) ： 唤醒地址addr上的线程，最多唤醒cnt个
