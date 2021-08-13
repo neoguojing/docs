@@ -1,6 +1,8 @@
 # 锁
+
 ## 锁类型
 - 自旋锁： 自旋+osyield（多进程竞争影响效率） 自旋+sleep（时间不好控制） 自旋+futex；自旋锁不可递归（重入）；自旋锁关闭了中断和抢占
+- 
 ## 原子操作：
 - lock指令： lock前缀的指令，会锁cpu总线
 - xchg指令： 原子操作，将新值存入变量，并返回旧值；锁内存总线
@@ -40,6 +42,31 @@
   
 
 ## 运行时锁
+
+```
+type mutex struct {
+ // GOEXPERIMENT=staticlockranking控制是否开启静态锁排序，默认不开启，为空结构体
+ lockRankStruct
+  // 基于futex的实现将其看作uint32的key
+ key uintptr
+```
+
+### 关闭静态锁排序 lockrank_off.go
+
+#### 加锁流程 
+- 获取m.lock++,禁止抢占
+- xchg指令加锁
+- 加锁失败，自旋4次：用cas指令抢占，抢占失败，执行pause等待；
+- 自旋失败，尝试cas获取锁，失败，系统调用sched_yield，让出cpu，重新调度
+- 调度返回，xchg尝试抢占锁，失败则futexsleep，挂起线程等待唤醒
+
+
+#### 解锁流程
+- xchg设置锁状态为unlock
+- 若之前锁状态为sleep，则使用futexwakeup 唤醒
+- m.locks-- 开启抢占
+
+### 开启静态锁排序 lockrank_on.go
 
 
 ## 用户锁
