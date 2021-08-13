@@ -13,6 +13,7 @@
 - runtime·procyield： 执行30次pause指令；pause提醒cpu代码是个循环等待，避免循环代码导致的可能的内存顺序违规导致的性能下降；降低耗电；执行一个预定义的延迟；
 - futex： 
   数据结构： hashbucket -》 每个bucket维护一个列表，每个列表持有一个自旋锁；减小队列长度；自旋锁保护比较和入队操作的原子性；
+  
   futex_wait流程：
   ```
   加自旋锁
@@ -31,6 +32,7 @@
   调用wake_futex唤起等待的进程
   释放自旋锁
   ```
+  golang封装
 ```
   func futexsleep(addr *uint32, val uint32, ns int64) : if *addr==val then sleep ; sleeptime < ns; if ns < 0 永远睡眠
   func futexwakeup(addr *uint32, cnt uint32) ： 唤醒地址addr上的线程，最多唤醒cnt个
