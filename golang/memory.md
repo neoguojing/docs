@@ -20,7 +20,9 @@
 ## 全局变量
 - physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
 - physPageSize： 物理页大小
-- 
+- mheap_ ： 全局堆空间
+- mcache0 ：全局缓存
+- PtrSize： 8字节，64bit，系统指针大小
 ## 内存回收
 - MADV_FREE：标记过的内存，内核会等到内存紧张时才会释放。在释放之前，这块内存依然可以复用；速度更快，但是RSS内存显示无法立即下降；更积极的回收策略
 - MADV_DONTNEED： 标记过的内存如果再次使用，会触发缺页中断；内存下降较快。1.16默认使用
