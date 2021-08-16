@@ -17,6 +17,11 @@
 - mcache: 有空闲的mspan线程本地缓存
 - mstats: 统计内存分配
 
+## mallocinit 内存初始化
+- mheap_.init() ：
+- mcache0 = allocmcache()
+- mheap_.arenaHint 初始化
+
 ## 全局变量
 - physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
 - physPageSize： 物理页大小
