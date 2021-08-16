@@ -18,7 +18,7 @@
 - mstats: 统计内存分配
 
 ## mallocinit 内存初始化
-- mheap_.init() ：
+- mheap_.init() ：各种分配器初始化，central的spanclass初始化，pageAlloc初始化
 - mcache0 = allocmcache()
 - mheap_.arenaHint 初始化
 
