@@ -17,6 +17,10 @@
 - mcache: 有空闲的mspan线程本地缓存
 - mstats: 统计内存分配
 
+## 全局变量
+- physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
+- physPageSize： 物理页大小
+- 
 ## 内存回收
 - MADV_FREE：标记过的内存，内核会等到内存紧张时才会释放。在释放之前，这块内存依然可以复用；速度更快，但是RSS内存显示无法立即下降；更积极的回收策略
 - MADV_DONTNEED： 标记过的内存如果再次使用，会触发缺页中断；内存下降较快。1.16默认使用
@@ -28,10 +32,12 @@
 - arm64 : 48bit地址
 - ppc64, mips64, and s390x 支持64bit寻址
 
+## 内存状态
+- None ： 未保存的，未map的
+- Reserved： runtime保有，不能访问
+- Prepared： 不会归还的内存，访问结果未定义，可能出错或返回0
+- Ready： 可被安全访问
 
-## 参数
-- FixedStack: linux下为2kb
-- 可缓存的空闲栈大小为:2kb\4kb\8kb\16kb,大于16kb的栈则直接分配
 
 ## 函数
 - mallocinit: 在调度器初始化是调用,初始化堆外内存分配器和锁,以及arenaHint
