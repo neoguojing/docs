@@ -43,3 +43,4 @@
 - sigsave ：保存当前线程的信号到p中
 - goargs/goenvs： 初始化arg和env
 - parsedebugvars： 解析debug参数，如madvdontneed等
+- gcinit： gc初始化
