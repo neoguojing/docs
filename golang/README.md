@@ -27,6 +27,16 @@
 - src/runtime/proc.go 运行时入口: schedinit
 - src/runtime/lockrank.go 运行时锁的排序定义
 
+### runtime 启动流程 src/runtime/asm_amd64.s
+- runtime·args
+- runtime·osinit
+- runtime·schedinit
+- runtime·newproc
+- runtime·mstart
+- schedule 
+- runtime.main
+- main.main
+
 ### 启动流程schedinit
 
 - 初始化锁
