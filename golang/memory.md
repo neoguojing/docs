@@ -39,7 +39,8 @@
 - amd64 : 48必填地址位,有符号扩展到64（4级页表转换）; 支持57bit,当前仅linux 支持（5级页表）
 - arm64 : 48bit地址
 - ppc64, mips64, and s390x 支持64bit寻址
-![64bit架构虚拟地址空间示意]（https://pic1.zhimg.com/v2-dc953d14b0591cc5c8ee5f754dcdf158_r.jpg?source=1940ef5c）
+- 
+![64bit架构虚拟地址空间示意](https://pic1.zhimg.com/v2-dc953d14b0591cc5c8ee5f754dcdf158_r.jpg?source=1940ef5c)
 
 
 ## 内存状态
