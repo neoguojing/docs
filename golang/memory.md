@@ -19,13 +19,13 @@
 
 ## mallocinit 内存初始化
 - mheap_.init() ：各种分配器初始化，central的spanclass初始话
-- > pageAlloc初始化（分配16块内存，每块16kb）
+- > pageAlloc初始化: inuse:分配16块内存，每块16kb）
 - mcache0 = allocmcache()
 - mheap_.arenaHint 初始化
 
 ## 全局变量
 - physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
-- physPageSize： 物理页大小
+- physPageSize： 物理页大小 4k
 - mheap_ ： 全局堆空间
 - mcache0 ：全局缓存
 - PtrSize： 8字节，64bit，系统指针大小
