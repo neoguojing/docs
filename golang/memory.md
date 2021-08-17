@@ -10,7 +10,7 @@
 
 ## 分配器
 
-- fixalloc: 用于分配非堆对象,这些对象是分配器本身要使用的内存
+- fixalloc: 用于分配非堆对象,这些对象是分配器本身要使用的内存，没有足够的空间，调用persistentalloc，分配16kb的空间；会记录当前空闲空间的起始地址，剩余的空闲空间和在使用的空闲空间；优先从空闲列表上获取
 - mheap: golang的堆, 以page(8kb)为单位管理内存 
 - mspan: 堆中一系列在使用的内存
 - mcentral: 固定大小的mspan集合
@@ -18,10 +18,11 @@
 - mstats: 统计内存分配
 
 ## mallocinit 内存初始化
-- mheap_.init() ：各种分配器初始化，central的spanclass初始话
-- > pageAlloc初始化: inuse:分配16块内存，每块16kb）
-- mcache0 = allocmcache()
-- mheap_.arenaHint 初始化
+- mheap_.init() ：各种分配器初始化，central的spanclass初始化，以及pageAlloc初始化
+- > pageAlloc初始化: inuse:分配16块内存，每块16kb
+- > pageAlloc初始化：summary，5层数组，每个level依次分配2^13,2^(13+3),2^(13+6),2^(13+6),2^(13+9),2^(13+12 乘以uint64的空间，使用sysReserve分配
+- mcache0 = allocmcache() ： 使用cachealloc，本质是一种固定分配器fixalloc，分配mcache对象大小的固定内存
+- mheap_.arenaHint 初始化，构建128个arenaHint，用于分配栈；栈的起始地址为0x00c0.
 
 ## 全局变量
 - physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
@@ -57,12 +58,13 @@
 
 ## 函数
 - mallocinit: 在调度器初始化是调用,初始化堆外内存分配器和锁,以及arenaHint
-- arenaHint: 告诉系统如何扩容mheap
+- arenaHint: 告诉系统如何扩容mheap，用fixAlloc分配
 - mallocgc : 分配可gc的内存,small内存从per-p mcache分配,大内存从heap分配
 - newobject: new关键字的实现,调用mallocgc
 - newarray: 数组分配器,调用mallocgc
 - sysAlloc: 分配大内存,调用 mmap(nil, n, _PROT_READ|_PROT_WRITE, _MAP_ANON|_MAP_PRIVATE, -1, 0)
 - persistentalloc: sysAlloc的包装,被mallocgc等调用,实际分配内存；由全局和per-p两种
+- sysReserve：  mmap(v, n, _PROT_NONE, _MAP_ANON|_MAP_PRIVATE, -1, 0)
 ```
 persistentalloc流程：
 1.分配内存大于65535，直接调用sysAlloc
