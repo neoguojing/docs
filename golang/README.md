@@ -36,4 +36,13 @@
 - schedule 
 - runtime.main
 - main.main
+-
+### 常用汇编函数
+
+> mcall, systemstack, asmcgocall是基于asm_arm64.s汇编文件
+> 主要使用两个寄存器： SP ：存放栈顶地址   PC：下一个要执行的指令的地址
+- func mcall(fn func(*g) ： 保存当前的g的上下文，切换到g0的上下文，传入函数参数，跳转到函数代码执行
+- func systemstack(fn func()) ：切换到系统栈，由g0执行fn
+- func asmcgocall(fn, arg unsafe.Pointer) int32 ： cgo代码执行器
+- func syscall(fn, a1, a2, a3 uintptr) (r1, r2 uintptr, err Errno)  Syscall6： 系统调用
 
