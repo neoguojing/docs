@@ -18,7 +18,8 @@
 - mstats: 统计内存分配
 
 ## mallocinit 内存初始化
-- mheap_.init() ：各种分配器初始化，central的spanclass初始化，pageAlloc初始化
+- mheap_.init() ：各种分配器初始化，central的spanclass初始话
+- > pageAlloc初始化（分配16块内存，每块16kb）
 - mcache0 = allocmcache()
 - mheap_.arenaHint 初始化
 
@@ -28,7 +29,11 @@
 - mheap_ ： 全局堆空间
 - mcache0 ：全局缓存
 - PtrSize： 8字节，64bit，系统指针大小
-- 
+- arenaBaseOffset/minOffAddr :  0xffff800000000000  1<<47
+- maxOffAddr/maxSearchAddr : 0x7FFFFFFFFFFF
+- globalAlloc: 全局persistentAlloc，带锁
+- persistentChunkSize: 256k
+- persistentChunks： 全局chuck内存基地址
 ## 内存回收
 - MADV_FREE：标记过的内存，内核会等到内存紧张时才会释放。在释放之前，这块内存依然可以复用；速度更快，但是RSS内存显示无法立即下降；更积极的回收策略
 - MADV_DONTNEED： 标记过的内存如果再次使用，会触发缺页中断；内存下降较快。1.16默认使用
@@ -36,7 +41,7 @@
 ## 各架构内存bit数
 - 符号扩展: 在amd64架构中，只用48bit地址位，且多余的16bit应该和48bit的最高bit相同（第47bit）；导致高地址是负数，低地址是正数
 - zero扩展: 无符号短数扩展为长数
-- amd64 : 48必填地址位,有符号扩展到64（4级页表转换）; 支持57bit,当前仅linux 支持（5级页表）
+- amd64 : 47必填地址位,有符号扩展到64（4级页表转换）; 支持57bit,当前仅linux 支持（5级页表）
 - arm64 : 48bit地址
 - ppc64, mips64, and s390x 支持64bit寻址
 - 
@@ -56,12 +61,20 @@
 - mallocgc : 分配可gc的内存,small内存从per-p mcache分配,大内存从heap分配
 - newobject: new关键字的实现,调用mallocgc
 - newarray: 数组分配器,调用mallocgc
-- sysAlloc: 分配大内存,调用mmap
-- persistentalloc: sysAlloc的包装,被mallocgc等调用,实际分配内存
+- sysAlloc: 分配大内存,调用 mmap(nil, n, _PROT_READ|_PROT_WRITE, _MAP_ANON|_MAP_PRIVATE, -1, 0)
+- persistentalloc: sysAlloc的包装,被mallocgc等调用,实际分配内存；由全局和per-p两种
+```
+persistentalloc流程：
+1.分配内存大于65535，直接调用sysAlloc
+2. acquirem上锁，防止抢占
+3. 优先从per-p获取persistentAlloc，否则使用全局persistentAlloc
+4. 若偏移off+size大于256k，或这base基地址位nil，则sysAlloc分配256k的内存，地址赋给base，更新全局persistentChunks ？？？
+5 否则，base+off，off+size
+6.返回base+off的地址
+```
 
 ## mallocgc
 - _GCmarktermination阶段不允许分配内存
-
 ### nextFreeFast mspan快速重用空闲对象
 - allocCache 与 count trailing zero 算法解读？？？
 - allocBits的结构？？？
