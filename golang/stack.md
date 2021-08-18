@@ -13,13 +13,20 @@
 栈帧调整：
 具体包括保存当前栈帧状态值，已备后面恢复本栈帧时使用（EBP入栈）
 将当前栈帧切换到新栈帧。（将ESP值装入EBP，更新栈帧底部）
-给新栈帧分配空间。（把ESP减去所需空间的大小，抬高栈顶）
+给新栈帧分配空间。（把ESP减去所需空间的大小，抬高栈顶） 被调用函数可以根据sp的值计算参数的地址
 ```
 ![栈示意](https://pic2.zhimg.com/1314ce0c49d0a1e2800e23ca3d5cdd75_r.jpg?source=1940ef5c)
-## 定义：
 
+## 概念：
+- pc： 程序计数器，CPU中用于存放下一条指令地址的寄存器
+- sp: 堆栈的栈顶指针
+- 
+## 定义：
 - _StackCacheSize：32 * 1024
 - stackpool ： 全局空闲栈池；linux下为长度为4的数组，依次缓存大小2k 4k 8k 16k的空闲span
 - stackLarge： 大栈的池子保存48-13个大小的spanlist？
 - FixedStack: linux下为2kb
 - 可缓存的空闲栈大小为:2kb\4kb\8kb\16kb,大于16kb的栈则直接分配
+
+# 引用
+- https://www.zhihu.com/question/22444939
