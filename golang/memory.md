@@ -22,7 +22,7 @@
 - > pageAlloc初始化: inuse:分配16块内存，每块16kb
 - > pageAlloc初始化：summary，5层数组，每个level依次分配2^13,2^(13+3),2^(13+6),2^(13+6),2^(13+9),2^(13+12 乘以uint64的空间，使用sysReserve分配
 - mcache0 = allocmcache() ： 使用cachealloc，本质是一种固定分配器fixalloc，分配mcache对象大小的固定内存
-- mheap_.arenaHint 初始化，构建128个arenaHint，用于分配栈；栈的起始地址为0x00c0.
+- mheap_.arenaHint 初始化，构建128个arenaHint，用于分配栈；栈的起始地址为0x00c0.易于区分、适应gcc编译器，能够不连续
 
 ## 全局变量
 - physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
