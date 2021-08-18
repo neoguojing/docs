@@ -1,4 +1,7 @@
 # 调度
+# trace
+- 调用栈跟踪：level分为0，1，2，all 和crash
+- gotraceback 设置调用栈级别
 
 ## 启动流程schedinit
 
@@ -17,3 +20,6 @@
 - goargs/goenvs： 初始化arg和env
 - parsedebugvars： 解析debug参数，如madvdontneed等
 - gcinit： gc初始化
+
+## mcommoninit m初始化
+- 若当前g不等于g.m.g0,则callers-> gentraceback
