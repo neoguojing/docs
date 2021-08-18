@@ -22,4 +22,8 @@
 - gcinit： gc初始化
 
 ## mcommoninit m初始化
-- 若当前g不等于g.m.g0,则callers-> gentraceback
+- 若当前g不等于g.m.g0,则callers-> gentraceback？？
+- sched.lock 上锁
+- 为m分配id
+- fastrand初始化
+- 
