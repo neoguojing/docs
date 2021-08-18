@@ -28,6 +28,14 @@
 - stackLarge： 大栈的池子保存48-13个大小的spanlist？
 - FixedStack: linux下为2kb
 - 可缓存的空闲栈大小为:2kb\4kb\8kb\16kb,大于16kb的栈则直接分配
+- _StackSystem: 在linux下面为0；windows不适用分裂栈，大小为512*64
+- _StackMin ： 2k
+- _StackGuard: 保护区大小，常量Linux上为928字节
+- stackguard0: stack.lo+StackGuard,用于stack overlow的检测,设置为StackPreempt触发抢占
+- stackguard1：在g0和gsignal 中是stack.lo+StackGuard，否则为~0
+- StackPreempt： 1314触发抢占
 
+## 重要函数
+- stackalloc
 # 引用
 - https://www.zhihu.com/question/22444939
