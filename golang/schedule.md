@@ -3,6 +3,11 @@
 - 调用栈跟踪：level分为0，1，2，all 和crash
 - gotraceback 设置调用栈级别
 
+## 全局变量
+- allm ：m列表的头
+
+## 重要函数
+- malg ：创建新的g，参数为栈大小；新建g对象，调用systemstack分配栈空间
 ## 启动流程schedinit
 
 - 初始化锁
@@ -21,9 +26,11 @@
 - parsedebugvars： 解析debug参数，如madvdontneed等
 - gcinit： gc初始化
 
-## mcommoninit m初始化
+## mcommoninit 启动m初始化
 - 若当前g不等于g.m.g0,则callers-> gentraceback？？
 - sched.lock 上锁
 - 为m分配id
-- fastrand初始化
-- 
+- m.fastrand初始化
+- mpreinit： 创建新的g，更新m.gsignal
+- 将当前m挂到allm列表上
+- 若是cgo调用，则更新mp.cgoCallers
