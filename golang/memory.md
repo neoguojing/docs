@@ -106,6 +106,7 @@ type pageAlloc struct {
 - > inuse:分配16个addrRange，每块16byte
 - > pageAlloc初始化：summary，5层数组，每个level依次分配2^13,2^(13+3),2^(13+6),2^(13+6),2^(13+9),2^(13+12 乘以uint64的空间，使用sysReserve分配
 - allocToCache分配缓冲区pageCache：
+- chunk大小为512kb
   
 ### pageCache 页缓存 位于p
 ```
@@ -115,6 +116,7 @@ type pageCache struct {
 	scav  uint64  // 64-bit bitmap representing scavenged pages (1 means scavenged)
 }
 ```
+- cache：64bit，每个bit管理一页内存（8k），则总共可以管理512k？最后一个bit指向base开始的第一页？
 ## gcbits bitmap
 - newMarkBits
 - newAllocBits
