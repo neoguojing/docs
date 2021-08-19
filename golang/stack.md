@@ -60,7 +60,7 @@
 - stackcacherefill：从stackpool获取空闲内存，调用stackpoolalloc，更新stackcache[order]的列表
 - stackpoolalloc：根据stackpool[order]获取对应span;
 - > 若span.first==nil，调用 mheap_.allocManual分配4页内存大小（32k）的mspan；更新mspan.manualFreeList;插入stackpool[order].item.span列表
-- > 否则直接从span.manualFreeList获取内存，并更新manualFreeList和allocCount
+- > 从span.manualFreeList获取内存，并更新manualFreeList和allocCount
 - > 返回分配的span
 # 引用
 - https://www.zhihu.com/question/22444939
