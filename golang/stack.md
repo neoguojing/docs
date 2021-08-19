@@ -41,13 +41,17 @@
 - stackguard0: stack.lo+StackGuard,用于stack overlow的检测,设置为StackPreempt触发抢占
 - stackguard1：在g0和gsignal 中是stack.lo+StackGuard，否则为~0
 - StackPreempt： 1314触发抢占
+- stackLarge ： 大于32k的栈缓存
+- stackCache：小于32的栈缓冲
 
 ## 重要函数
 - stackalloc: 必须在系统栈上执行;不能栈分裂
 ```
 1. 若debug.efence != 0 || stackFromSystem != 0 ，则从调用sysAlloc，从操作系统分配内存，返回stack结构体
 2. 若分配的栈小于32kb，则
-3. 若大于等于32k，计算页数（除以8192），计算log2页数，从
+3. 若大于等于32k，计算页数（除以8192），计算log2npage=log2页数，
+  若stackLarge[log2npage].free有空闲内存，则获取，并移除该列表;
+  否则从mheap.allocManual分配空间，失败则抛出异常
 ```
 # 引用
 - https://www.zhihu.com/question/22444939
