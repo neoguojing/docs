@@ -47,7 +47,7 @@
 ```
 1. 若debug.efence != 0 || stackFromSystem != 0 ，则从调用sysAlloc，从操作系统分配内存，返回stack结构体
 2. 若分配的栈小于32kb，则
-3. 若大于等于32k
+3. 若大于等于32k，计算页数（除以8192），计算log2页数，从
 ```
 # 引用
 - https://www.zhihu.com/question/22444939
