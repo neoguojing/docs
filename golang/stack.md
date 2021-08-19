@@ -29,11 +29,11 @@
 - _FixedStack0：linux 下为_StackMin 2048
 - _FixedStack1： 2047
 - _FixedStack2：2047
-- _FixedStack3：
-- _FixedStack4
-- _FixedStack5
-- _FixedStack6
-- FixedStack: linux下为2kb
+- _FixedStack3：2047
+- _FixedStack4 2047
+- _FixedStack5 2047
+- _FixedStack6 2047
+- FixedStack: linux下为2kb 2048
 - 可缓存的空闲栈大小为:2kb\4kb\8kb\16kb,大于16kb的栈则直接分配
 - _StackSystem: 在linux下面为0；windows不适用分裂栈，大小为512*64
 - _StackMin ： 2k
@@ -43,15 +43,24 @@
 - StackPreempt： 1314触发抢占
 - stackLarge ： 大于32k的栈缓存
 - stackCache：小于32的栈缓冲
+- _NumStackOrders： 4
 
 ## 重要函数
 - stackalloc: 必须在系统栈上执行;不能栈分裂
 ```
 1. 若debug.efence != 0 || stackFromSystem != 0 ，则从调用sysAlloc，从操作系统分配内存，返回stack结构体
-2. 若分配的栈小于32kb，则
+2. 若分配的栈小于32kb，则计算order=log_2(size/FixedStack),
+    若m不存在p或在gc期间，则直接从stackpool分配，调用stackpoolalloc(order)
+    否则从p的本地mcache分配，分配成功则从stackcache[order].list拿掉该节点；分配失败，则调用stackcacherefill，填充stackcache
 3. 若大于等于32k，计算页数（除以8192），计算log2npage=log2页数，
   若stackLarge[log2npage].free有空闲内存，则获取，并移除该列表;
   否则从mheap.allocManual分配空间，失败则抛出异常
+4.返回分配的栈空间
 ```
+- stackcacherefill：从stackpool获取空闲内存，调用stackpoolalloc，更新stackcache[order]的列表
+- stackpoolalloc：根据stackpool[order]获取对应span;
+- > 若span.first==nil，调用 mheap_.allocManual分配4页内存大小（32k）的mspan；更新mspan.manualFreeList;插入stackpool[order].item.span列表
+- > 否则直接从span.manualFreeList获取内存，并更新manualFreeList和allocCount
+- > 返回分配的span
 # 引用
 - https://www.zhihu.com/question/22444939
