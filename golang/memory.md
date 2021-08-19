@@ -13,6 +13,8 @@
 ## 分配器
 
 - fixalloc: 用于分配非堆对象,这些对象是分配器本身要使用的内存，没有足够的空间，调用persistentalloc，分配16kb的空间；会记录当前空闲空间的起始地址，剩余的空闲空间和在使用的空闲空间；优先从空闲列表上获取
+
+## 主要数据结构
 - mheap: golang的堆, 以page(8kb)为单位管理内存 
 - mspan: 堆中一系列在使用的内存
 - mcentral: 固定大小的mspan集合
@@ -24,7 +26,7 @@
 - mcache0 = allocmcache() ： 使用cachealloc，本质是一种固定分配器fixalloc，分配mcache对象大小的固定内存
 - mheap_.arenaHint 初始化，构建128个arenaHint，用于分配栈；栈的起始地址为0x00c0.易于区分、适应gcc编译器，能够不连续
 
-## 全局变量
+## 全局变量和函数
 - physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
 - physPageSize： 物理页大小 4k
 - mheap_ ： 全局堆空间
@@ -35,6 +37,7 @@
 - globalAlloc: 全局persistentAlloc，带锁
 - persistentChunkSize: 256k
 - persistentChunks： 全局chuck内存基地址
+- 
 ## madvise 内存的分配方式或者说是分配的细节方式
 - MADV_FREE：标记过的内存，内核会等到内存紧张时才会释放。在释放之前，这块内存依然可以复用；速度更快，但是RSS内存显示无法立即下降；更积极的回收策略
 - MADV_DONTNEED： 标记过的内存如果再次使用，会触发缺页中断；内存下降较快。1.16默认使用
@@ -56,7 +59,6 @@
 - Prepared： 不会归还的内存，访问结果未定义，可能出错或返回0
 - Ready： 可被安全访问
 
-
 ## 函数
 - mallocinit: 在调度器初始化是调用,初始化堆外内存分配器和锁,以及arenaHint
 - arenaHint: 告诉系统如何扩容mheap，用fixAlloc分配
@@ -76,12 +78,6 @@ persistentalloc流程：
 5 否则，base+off，off+size
 6.返回base+off的地址
 ```
-- allocManual：必须在系统栈调用，手动分配npage内存，底层调用allocSpan，无需spanclass
-- allocSpan：分配一个mspan，有npage大小，必须在系统栈调用
-```
-1. p不为空，且分配页数小于16的情况下，从p.pageCache分配，若pageCache为空，则调用mheap的pageAlloc分配内存；然后尝试从pageCache分配mspan
-2. 若成功跳转到HaveSpan，初始化span相关参数，
-```
 
 ## mspn
 ### 状态
@@ -89,6 +85,17 @@ persistentalloc流程：
 - mSpanInUse gc heap使用的span
 - mSpanManual ：供栈分配使用
 
+## mheap
+- grow： 添加npage to mheap
+- allocSpan：分配一个mspan，有npage大小，必须在系统栈调用
+```
+1. p不为空，且分配页数小于16的情况下，从p.pageCache分配，若pageCache为空，则调用mheap的pageAlloc分配内存；然后尝试从pageCache分配mspan
+2. 若成功跳转到HaveSpan，初始化span相关参数，
+3. 否则调用pageAlloc.alloc分配，失败调用mheap.grow,成功则重新调用pageAlloc.alloc分配，否则返回nil
+4。调用mheap.allocMSpanLocked,分配span，转到第2步
+```
+- allocMSpanLocked：
+- allocManual：必须在系统栈调用，手动分配npage内存，底层调用allocSpan，无需spanclass
 ## 页管理
 ### pageAlloc 页分配器 位于mheap
 ```
@@ -107,6 +114,7 @@ type pageAlloc struct {
 - > pageAlloc初始化：summary，5层数组，每个level依次分配2^13,2^(13+3),2^(13+6),2^(13+6),2^(13+9),2^(13+12 乘以uint64的空间，使用sysReserve分配
 - allocToCache分配缓冲区pageCache：
 - chunk大小为512kb
+- alloc:分配内存
   
 ### pageCache 页缓存 位于p
 ```
@@ -117,6 +125,7 @@ type pageCache struct {
 }
 ```
 - cache：64bit，每个bit管理一页内存（8k），则总共可以管理512k？最后一个bit指向base开始的第一页？
+
 ## gcbits bitmap
 - newMarkBits
 - newAllocBits
