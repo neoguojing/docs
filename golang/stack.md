@@ -26,6 +26,13 @@
 - _StackCacheSize：32 * 1024
 - stackpool ： 全局空闲栈池；linux下为长度为4的数组，依次缓存大小2k 4k 8k 16k的空闲span
 - stackLarge： 大栈的池子保存48-13个大小的spanlist？
+- _FixedStack0：linux 下为_StackMin 2048
+- _FixedStack1： 2047
+- _FixedStack2：2047
+- _FixedStack3：
+- _FixedStack4
+- _FixedStack5
+- _FixedStack6
 - FixedStack: linux下为2kb
 - 可缓存的空闲栈大小为:2kb\4kb\8kb\16kb,大于16kb的栈则直接分配
 - _StackSystem: 在linux下面为0；windows不适用分裂栈，大小为512*64
@@ -36,6 +43,11 @@
 - StackPreempt： 1314触发抢占
 
 ## 重要函数
-- stackalloc
+- stackalloc: 必须在系统栈上执行;不能栈分裂
+```
+1. 若debug.efence != 0 || stackFromSystem != 0 ，则从调用sysAlloc，从操作系统分配内存，返回stack结构体
+2. 若分配的栈小于32kb，则
+3. 若大于等于32k
+```
 # 引用
 - https://www.zhihu.com/question/22444939
