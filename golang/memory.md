@@ -29,10 +29,13 @@
 ## 全局变量和函数
 - physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
 - physPageSize： 物理页大小 4k
+- pageSize：8192=8k
+- pallocChunkPages：512
+- pallocChunkBytes： 4MB
 - mheap_ ： 全局堆空间
 - mcache0 ：全局缓存
 - PtrSize： 8字节，64bit，系统指针大小
-- arenaBaseOffset/minOffAddr :  0xffff800000000000  1<<47
+- arenaBaseOffset/minOffAddr :  0xffff800000000000  1<<47 对应arena map 的0地址
 - maxOffAddr/maxSearchAddr : 0x7FFFFFFFFFFF
 - globalAlloc: 全局persistentAlloc，带锁
 - persistentChunkSize: 256k
@@ -100,20 +103,21 @@ persistentalloc流程：
 ### pageAlloc 页分配器 位于mheap
 ```
 type pageAlloc struct {
-  summary [summaryLevels][]pallocSum
-  chunks [1 << pallocChunksL1Bits]*[1 << pallocChunksL2Bits]pallocData
+  summary [5][]pallocSum   //[5]{[2^14]pallocSum,[2^17]pallocSum,[2^20]pallocSum,[2^23]pallocSum,[2^26]pallocSum}
+  chunks [8192]*[8192]pallocData
   searchAddr offAddr
   start, end chunkIdx
   inUse addrRanges
   mheapLock *mutex
 }
 
+var levelShift = [5]uint{34,31,28,25,22}
 ```
 - init初始化: 
-- > inuse:分配16个addrRange，每块16byte
-- > pageAlloc初始化：summary，5层数组，每个level依次分配2^13,2^(13+3),2^(13+6),2^(13+6),2^(13+9),2^(13+12 乘以uint64的空间，使用sysReserve分配
+- > inuse:分配16个addrRange（16byte，2个指针）
+- > pageAlloc初始化：summary，5层数组，每个level依次分配2^14,2^(17),2^(20),2^(23),2^(26） 乘以uint64的空间，使用sysReserve分配
 - allocToCache分配缓冲区pageCache：
-- chunk大小为512kb
+- chunk大小为512kb ？？ 4M？？？
 - alloc:分配内存
   
 ### pageCache 页缓存 位于p
@@ -124,7 +128,7 @@ type pageCache struct {
 	scav  uint64  // 64-bit bitmap representing scavenged pages (1 means scavenged)
 }
 ```
-- cache：64bit，每个bit管理一页内存（8k），则总共可以管理512k？最后一个bit指向base开始的第一页？
+- cache：64bit，每个bit管理一页内存（8k），则总共可以管理512k？最后一个bit指向base开始的第一页？，
 
 ## gcbits bitmap
 - newMarkBits
