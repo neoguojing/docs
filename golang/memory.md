@@ -24,7 +24,7 @@
 ## mallocinit 内存初始化
 - mheap_.init() ：各种分配器初始化，central的spanclass初始化，以及pageAlloc初始化
 - mcache0 = allocmcache() ： 使用cachealloc，本质是一种固定分配器fixalloc，分配mcache对象大小的固定内存
-- mheap_.arenaHint 初始化，构建128个arenaHint，用于分配栈；栈的起始地址为0x00c0.易于区分、适应gcc编译器，能够不连续
+- mheap_.arenaHint 初始化，构建128个arenaHint，用于堆分配，告诉堆的增长方向；堆的起始地址为0x00c0.易于区分、适应gcc编译器，能够不连续
 
 ## 全局变量和函数
 - physHugePageSize: 从/sys/kernel/mm/transparent_hugepage/hpage_pmd_size获取，用于匿名内存映射和tmpfs/shmem等，常用大小2m
