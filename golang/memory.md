@@ -79,7 +79,7 @@ persistentalloc流程：
 6.返回base+off的地址
 ```
 
-## mspn
+## mspan
 ### 状态
 - mSpanDead不可用
 - mSpanInUse gc heap使用的span
