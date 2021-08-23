@@ -138,7 +138,7 @@ type pageBits [8]uint64   //每个bit代表一页（8k），则uint64代表：51
 - chunkPageIndex(): searchAddr%4MB/8k，4MB中page的索引 ,又叫searchIndex
 - chunkIdx.l1(): i/8192
 - chunkIdx.l2() ：i & 8191
-- pallocBits.find1: i*64 + uint(sys.TrailingZeros64(^x)) 通过TZ，计算尾部的0的个数，以此判断空闲也的偏移
+- pallocBits.find1: i*64 + uint(sys.TrailingZeros64(^x)) 通过TZ，计算尾部的0的个数，以此判断空闲页的偏移
 - alloc:分配内存
   
 ### pageCache 页缓存 位于p
