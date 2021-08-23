@@ -34,6 +34,7 @@
 - pallocChunkBytes： 4MB
 - pallocChunksL1Shift: 13
 - pallocChunksL2Bits： 13
+- pageCachePages：64
 - mheap_ ： 全局堆空间
 - mcache0 ：全局缓存
 - PtrSize： 8字节，64bit，系统指针大小
@@ -127,11 +128,15 @@ type pageBits [8]uint64   //每个bit代表一页（8k），则uint64代表：51
 - > inuse:分配16个addrRange（16byte，2个指针）
 - > pageAlloc初始化：summary，5层数组，每个level依次分配2^14,2^(17),2^(20),2^(23),2^(26） 乘以uint64的空间，使用sysReserve分配
 - allocToCache分配缓冲区pageCache：
+- > 
+- >
 - chunk： 大小为4MB，管理512个page，每个page 8192字节（8k）
-- chunkIndex(): (searchAddr-0xffff800000000000)/4MB ，4MB分割的地址空间的索引
-- chunkPageIndex(): searchAddr%4MB/8k，4MB中page的索引
-- chunkIdx.l1(): i/8192， 
+- chunkIndex(): (searchAddr-0xffff800000000000)/4MB ，内存地址转换为chunkIdx
+- chunkBase(): chunkIdx*4MB+0xffff800000000000 ,chunkIdx转换为内存地址
+- chunkPageIndex(): searchAddr%4MB/8k，4MB中page的索引 ,又叫searchIndex
+- chunkIdx.l1(): i/8192
 - chunkIdx.l2() ：i & 8191
+- pallocBits.find1: i*64 + uint(sys.TrailingZeros64(^x)) 通过TZ，计算尾部的0的个数，以此判断空闲也的偏移
 - alloc:分配内存
   
 ### pageCache 页缓存 位于p
@@ -142,7 +147,7 @@ type pageCache struct {
 	scav  uint64  // 64-bit bitmap representing scavenged pages (1 means scavenged)
 }
 ```
-- cache：64bit，每个bit管理一页内存（8k），则总共可以管理512k？最后一个bit指向base开始的第一页？，
+- cache：64bit，每个bit管理一页内存（8k），则总共可以管理512k；最后一个bit指向base开始的第一页？，
  
 ## gcbits bitmap
 - newMarkBits
