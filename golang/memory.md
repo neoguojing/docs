@@ -32,6 +32,8 @@
 - pageSize：8192=8k
 - pallocChunkPages：512
 - pallocChunkBytes： 4MB
+- pallocChunksL1Shift: 13
+- pallocChunksL2Bits： 13
 - mheap_ ： 全局堆空间
 - mcache0 ：全局缓存
 - PtrSize： 8字节，64bit，系统指针大小
@@ -117,7 +119,10 @@ var levelShift = [5]uint{34,31,28,25,22}
 - > inuse:分配16个addrRange（16byte，2个指针）
 - > pageAlloc初始化：summary，5层数组，每个level依次分配2^14,2^(17),2^(20),2^(23),2^(26） 乘以uint64的空间，使用sysReserve分配
 - allocToCache分配缓冲区pageCache：
-- chunk大小为512kb ？？ 4M？？？
+- chunk： 大小为4MB，管理512个page，每个page 8192字节（8k）
+- chunkIndex(): (searchAddr-0xffff800000000000)/4MB ，以4MB为单位分割地址空间
+- chunkIdx.l1(): i/8192，
+- chunkIdx.l2() ：i & 8191
 - alloc:分配内存
   
 ### pageCache 页缓存 位于p
@@ -129,8 +134,7 @@ type pageCache struct {
 }
 ```
 - cache：64bit，每个bit管理一页内存（8k），则总共可以管理512k？最后一个bit指向base开始的第一页？，
-- chunkIndex(): (searchAddr-0xffff800000000000)/4MB
-
+ 
 ## gcbits bitmap
 - newMarkBits
 - newAllocBits
