@@ -106,23 +106,31 @@ persistentalloc流程：
 ```
 type pageAlloc struct {
   summary [5][]pallocSum   //[5]{[2^14]pallocSum,[2^17]pallocSum,[2^20]pallocSum,[2^23]pallocSum,[2^26]pallocSum}
-  chunks [8192]*[8192]pallocData
-  searchAddr offAddr maxSearchAddr : 0x7FFFFFFFFFFF
+  chunks [8192]*[8192]pallocData //pallocData 用bitmap代表4MB的内存空空，即2^22, chunks总共可以表示2^22 * 2^13 * 2^13 = 2^48
+  searchAddr offAddr //maxSearchAddr : 0x7FFFFFFFFFFF
   start, end chunkIdx
   inUse addrRanges
   mheapLock *mutex
 }
 
 var levelShift = [5]uint{34,31,28,25,22}
+
+type pallocData struct {
+	pallocBits
+	scavenged pageBits
+}
+
+type pageBits [8]uint64   //每个bit代表一页（8k），则uint64代表：512k，pageBits总共可以代表：512*8=4MB即一个chuck大小
+
 ```
 - init初始化: 
 - > inuse:分配16个addrRange（16byte，2个指针）
 - > pageAlloc初始化：summary，5层数组，每个level依次分配2^14,2^(17),2^(20),2^(23),2^(26） 乘以uint64的空间，使用sysReserve分配
 - allocToCache分配缓冲区pageCache：
 - chunk： 大小为4MB，管理512个page，每个page 8192字节（8k）
-- chunkIndex(): (searchAddr-0xffff800000000000)/4MB ，以4MB为单位分割地址空间
-- chunkPageIndex(): searchAddr%4MB/8k，计算地址所属的page索引
-- chunkIdx.l1(): i/8192，
+- chunkIndex(): (searchAddr-0xffff800000000000)/4MB ，4MB分割的地址空间的索引
+- chunkPageIndex(): searchAddr%4MB/8k，4MB中page的索引
+- chunkIdx.l1(): i/8192， 
 - chunkIdx.l2() ：i & 8191
 - alloc:分配内存
   
