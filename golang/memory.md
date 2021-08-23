@@ -121,6 +121,7 @@ var levelShift = [5]uint{34,31,28,25,22}
 - allocToCache分配缓冲区pageCache：
 - chunk： 大小为4MB，管理512个page，每个page 8192字节（8k）
 - chunkIndex(): (searchAddr-0xffff800000000000)/4MB ，以4MB为单位分割地址空间
+- chunkPageIndex(): searchAddr%4MB/8k，计算地址所属的page索引
 - chunkIdx.l1(): i/8192，
 - chunkIdx.l2() ：i & 8191
 - alloc:分配内存
