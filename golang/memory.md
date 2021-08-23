@@ -128,8 +128,10 @@ type pageBits [8]uint64   //每个bit代表一页（8k），则uint64代表：51
 - > inuse:分配16个addrRange（16byte，2个指针）
 - > pageAlloc初始化：summary，5层数组，每个level依次分配2^14,2^(17),2^(20),2^(23),2^(26） 乘以uint64的空间，使用sysReserve分配
 - allocToCache分配缓冲区pageCache：
-- > 
-- >
+- > 使用searchAddr计算ci
+- > 若p.summary[len(p.summary)-1][ci] != 0，则从searchAddr开始寻找可用的page；
+- > 否则，p.find借助基数树查询可用searchAddr，分配内存
+- > 更新chunks和summary，以及searchAddr
 - chunk： 大小为4MB，管理512个page，每个page 8192字节（8k）
 - chunkIndex(): (searchAddr-0xffff800000000000)/4MB ，内存地址转换为chunkIdx
 - chunkBase(): chunkIdx*4MB+0xffff800000000000 ,chunkIdx转换为内存地址
