@@ -105,7 +105,7 @@ persistentalloc流程：
 type pageAlloc struct {
   summary [5][]pallocSum   //[5]{[2^14]pallocSum,[2^17]pallocSum,[2^20]pallocSum,[2^23]pallocSum,[2^26]pallocSum}
   chunks [8192]*[8192]pallocData
-  searchAddr offAddr
+  searchAddr offAddr maxSearchAddr : 0x7FFFFFFFFFFF
   start, end chunkIdx
   inUse addrRanges
   mheapLock *mutex
@@ -129,6 +129,7 @@ type pageCache struct {
 }
 ```
 - cache：64bit，每个bit管理一页内存（8k），则总共可以管理512k？最后一个bit指向base开始的第一页？，
+- chunkIndex(): (searchAddr-0xffff800000000000)/4MB
 
 ## gcbits bitmap
 - newMarkBits
