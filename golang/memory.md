@@ -43,7 +43,12 @@
 - globalAlloc: 全局persistentAlloc，带锁
 - persistentChunkSize: 256k
 - persistentChunks： 全局chuck内存基地址
-- 
+- heapArenaBytes： 1<<26 = 64MB
+- logHeapArenaBytes： 26
+- pagesPerArena：8192=heapArenaBytes/pageSize  每个heapArena拥有的页数
+- heapArenaBitmapBytes：2^21
+- arenaL1Bits ： 1
+- arenaL2Bits： 48
 ## madvise 内存的分配方式或者说是分配的细节方式
 - MADV_FREE：标记过的内存，内核会等到内存紧张时才会释放。在释放之前，这块内存依然可以复用；速度更快，但是RSS内存显示无法立即下降；更积极的回收策略
 - MADV_DONTNEED： 标记过的内存如果再次使用，会触发缺页中断；内存下降较快。1.16默认使用
@@ -91,6 +96,20 @@ persistentalloc流程：
 - mSpanInUse gc heap使用的span
 - mSpanManual ：供栈分配使用
 
+### 类型
+- spanAllocHeap：span用于堆空间
+- spanAllocStack： span用于栈空间
+- spanAllocPtrScalarBits： gc bitmap
+- spanAllocWorkBuf： work buf空间
+### 初始化
+> 一般由mheap.allocSpan初始化
+- 设置startAddr：起始地址；设置npages：占用的page大小；设置state为dead
+- allocNeedsZero 判断是否需要置零
+- 非堆空间span：更新 limit，设置状态为mSpanManual
+- 堆空间：若spanclass==0，则所有空间为一个elem，nelems=1，elemsize=所有分配的空间；否则，elemsize为spanclass对应的大小，nelems=分配空间/elemsize，更新div相关参数
+- freeindex=0 allocCache全部置1表示空闲 ，构建nelems的gcmarkBits和allocBits（全部为0），状态置mSpanInUse
+- 
+
 ## mheap
 - grow： 添加npage to mheap
 - allocSpan：分配一个mspan，有npage大小，必须在系统栈调用
@@ -102,6 +121,12 @@ persistentalloc流程：
 ```
 - allocMSpanLocked：
 - allocManual：必须在系统栈调用，手动分配npage内存，底层调用allocSpan，无需spanclass
+- allocNeedsZero: 判断是否需要置零
+
+### arena管理
+- arenaIndex：地址空间按64MB分割的索引
+- setSpans：将新分配的span，和构成span的page做映射，为1：n的关系
+
 ## 页管理
 ### pageAlloc 页分配器 位于mheap
 ```
@@ -155,6 +180,8 @@ type pageCache struct {
 
 ### 概念
 - Xadduintptr： 先将两个数交换，然后相加的和付给第一个变量
+- *gcBits :指向8字节对齐的一串字节
+- 每个bit对应span的一个elem，多余的bit不做处理
 ### 全局变量和函数
 - gcBitsChunkBytes： 65536
 - gcBitsHeaderBytes : 16
@@ -176,7 +203,7 @@ type gcBitsArena struct {
 	bits [65520]gcBits
 }
 ```
-- newMarkBits：newArenaMayUnlock重新分配一个arean
+- newMarkBits：新bit全部置零
 - > 调用：gcBitsArena.tryAlloc :xadd指令，使得gcBitsArena.free = gcBitsArena.free+要分配的字节，返回gcBitsArena.bits[free-分配的字节]；字节满足需求则返回
 - > tryAlloc 分配失败，重试依次
 - > 重试失败，newArenaMayUnlock分配一个新gcBitsArena为fresh
