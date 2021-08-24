@@ -165,10 +165,10 @@ type gcBits uint8
 
 var gcBitsArenas struct {
 	lock     mutex
-	free     *gcBitsArena
-	next     *gcBitsArena // Read atomically. Write atomically under lock.
-	current  *gcBitsArena
-	previous *gcBitsArena
+	free     *gcBitsArena //可被重用的
+	next     *gcBitsArena // 下一个gc循环可用的
+	current  *gcBitsArena //当前在用的
+	previous *gcBitsArena //上一个gc使用的
 }
 type gcBitsArena struct {
 	free uintptr // free is the index into bits of the next free byte; read/write atomically
