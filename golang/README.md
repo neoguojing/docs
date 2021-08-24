@@ -45,4 +45,5 @@
 - func systemstack(fn func()) ：切换到系统栈，由g0执行fn
 - func asmcgocall(fn, arg unsafe.Pointer) int32 ： cgo代码执行器
 - func syscall(fn, a1, a2, a3 uintptr) (r1, r2 uintptr, err Errno)  Syscall6： 系统调用
+- func memclrNoHeapPointers(ptr unsafe.Pointer, n uintptr)： 清0 ptr开始的n字节数据，memclr_amd64.s
 
