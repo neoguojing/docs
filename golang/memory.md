@@ -152,10 +152,23 @@ type mspan struct {
 ## mcache per-p
 
 - func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bool):
-- > 
+- > 调用mheap.nextFreeIndex计算下一个freeIndex
+- > 若freeIndex == s.nelems，表明当前mspan没有空闲，调用refill获取新的span，并获取span的freeindex，由于该操作是重分配，需要参与gc帮助标记
+- > 若freeIndex<mspan.nelems,则返回新的对象起始地址和对应的span
 
+- func (c *mcache) refill(spc spanClass) ：填充mcache.alloc[spanClass]:
+- > 归还当前mcache.alloc[spc]到mcentral，调用函数mcentral.uncacheSpan(s)
+- > 调用mcentral.cacheSpan()，获取一个span，若没有空闲内存，则需要mcentral.grow分配新的span
+- > 为mcache.alloc[spc]赋新值
+
+## mcentral
+- uncacheSpan
+- cacheSpan
+- grow
+- 
 ## mheap
 - grow： 添加npage to mheap
+- alloc：
 - allocSpan：分配一个mspan，有npage大小，必须在系统栈调用
 ```
 1. p不为空，且分配页数小于16的情况下，从p.pageCache分配，若pageCache为空，则调用mheap的pageAlloc分配内存；然后尝试从pageCache分配mspan
