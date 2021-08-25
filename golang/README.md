@@ -36,7 +36,10 @@
 - schedule 
 - runtime.main
 - main.main
--
+
+### 常用算法
+- func Ctz64(x uint64) int : 计算小端字节序末尾0的个数
+- func TrailingZeros64(x uint64) int ：同上
 ### 常用汇编函数
 
 > mcall, systemstack, asmcgocall是基于asm_arm64.s汇编文件
@@ -46,4 +49,5 @@
 - func asmcgocall(fn, arg unsafe.Pointer) int32 ： cgo代码执行器
 - func syscall(fn, a1, a2, a3 uintptr) (r1, r2 uintptr, err Errno)  Syscall6： 系统调用
 - func memclrNoHeapPointers(ptr unsafe.Pointer, n uintptr)： 清0 ptr开始的n字节数据，memclr_amd64.s
+
 
