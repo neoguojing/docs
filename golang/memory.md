@@ -124,8 +124,19 @@ persistentalloc流程：
 - allocNeedsZero: 判断是否需要置零
 
 ### arena管理
+```
+type heapArena struct {
+	bitmap [2^26]byte
+	spans [8192]*mspan  //page到span的映射
+	pageInUse [1024]uint8 //mSpanInUse的span，只有span对应的第一页被映射
+	pageMarks [1024]uint8 //由标记object的span
+	pageSpecials [1024]uint8
+	checkmarks *checkmarksMap
+	zeroedBase uintptr //??
+}
+```
 - arenaIndex：地址空间按64MB分割的索引
-- setSpans：将新分配的span，和构成span的page做映射，为1：n的关系
+- setSpans：将新分配的span，和构成span的page做映射放入mheap.arenas，为1：n的关系，
 
 ## 页管理
 ### pageAlloc 页分配器 位于mheap
