@@ -102,8 +102,8 @@ type mspan struct {
 	// If freeindex == nelem, this span has no free objects.
 	freeindex uintptr
 	nelems uintptr // number of object in the span.
-	allocCache uint64 //缓存部分allocBits，最低bit对应freeindex指向的elem或object
-	allocBits  *gcBits //指针，指向bitmap；每个bit对应一个elem，，超出的部分忽略，0表示已分配；
+	allocCache uint64 //缓存部分allocBits，最低bit对应freeindex指向的elem或object，0表示已分配，是allocBits取反
+	allocBits  *gcBits //指针，指向bitmap；每个bit对应一个elem，，超出的部分忽略，1表示已分配；
 	gcmarkBits *gcBits
 
 	// sweep generation:
@@ -142,7 +142,13 @@ type mspan struct {
 - 堆空间：若spanclass==0，则所有空间为一个elem，nelems=1，elemsize=所有分配的空间；否则，elemsize为spanclass对应的大小，nelems=分配空间/elemsize，更新div相关参数
 - freeindex=0 allocCache全部置1表示空闲 ，构建nelems的gcmarkBits和allocBits（全部为0），状态置mSpanInUse
 - 
+### 函数
+- nextFreeIndex：
+- > 若freeindex == snelems 则返回freeindex
+- > 若Ctz64(allocCache)==64:则没有空闲elem，(freeindex + 64) &^ (64 - 1)偏移到下一个allocCache（freeindex保证为64的整数倍），若freeindex>=nelems ,则freeindex=nelems，返回freeindex;否则，freeindex / 8找到字节索引，调用refillAllocCache，设置新的allocCache，计算偏移
+- > 调整freeindex+1，allocCache>>1
 
+- refillAllocCache(whichbyte): 从 allocBits的第whichbyte开始取64bit，取反赋予allocCache
 ## mcache per-p
 
 - func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bool):
@@ -253,6 +259,7 @@ type gcBitsArena struct {
 }
 ```
 - func newMarkBits(nelems uintptr) *gcBits：新bit全部置零
+- > 计算nelems需要的字节数：((nelems + 63) / 64) * 8
 - > 调用：gcBitsArena.tryAlloc :xadd指令，使得gcBitsArena.free = gcBitsArena.free+要分配的字节，返回gcBitsArena.bits[free-分配的字节]；字节满足需求则返回
 - > tryAlloc 分配失败，重试依次
 - > 重试失败，newArenaMayUnlock分配一个新gcBitsArena为fresh
