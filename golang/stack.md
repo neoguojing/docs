@@ -25,7 +25,8 @@
 ## 定义：
 - _StackCacheSize：32 * 1024
 - stackpool ： 全局空闲栈池；linux下为长度为4的数组，依次缓存大小2k 4k 8k 16k的空闲span
-- stackLarge： 大栈的池子保存48-13个大小的spanlist？
+- stackLarge： 大栈的池子保存48-13个大小的spanlist，缓存>=32k的空闲span
+- stackCache：小于32的栈缓冲,0:缓存2k，1：缓存4k，2：缓存8k，3：缓存16k，缓存stack结构体
 - _FixedStack0：linux 下为_StackMin 2048
 - _FixedStack1： 2047
 - _FixedStack2：2047
@@ -41,8 +42,6 @@
 - stackguard0: stack.lo+StackGuard,用于stack overlow的检测,设置为StackPreempt触发抢占
 - stackguard1：在g0和gsignal 中是stack.lo+StackGuard，否则为~0
 - StackPreempt： 1314触发抢占
-- stackLarge ： 大于32k的栈缓存
-- stackCache：小于32的栈缓冲,0:缓存2k，1：缓存4k，2：缓存8k，3：缓存16k
 - _NumStackOrders： 4
 
 ## 重要函数
