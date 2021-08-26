@@ -42,7 +42,7 @@
 - stackguard1：在g0和gsignal 中是stack.lo+StackGuard，否则为~0
 - StackPreempt： 1314触发抢占
 - stackLarge ： 大于32k的栈缓存
-- stackCache：小于32的栈缓冲
+- stackCache：小于32的栈缓冲,0:缓存2k，1：缓存4k，2：缓存8k，3：缓存16k
 - _NumStackOrders： 4
 
 ## 重要函数
