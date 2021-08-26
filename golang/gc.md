@@ -42,5 +42,87 @@
 
 ## 屏障是如何实现的？
 
+## 常量
+- GOGC：环境变量，off：关闭gc，0：不断触发gc，对调试由帮助；默认100，当栈达到4MB是触发gc
+- gcpercent：=GOGC
+- heapminimum：触发gc的最小堆；4mb * uint64(gcpercent) / 100
+- defaultHeapMinimum：4mb
+- mheap->sweepgen：每轮gc结束后+2，和mspan.sweepgen共同决定是span是否清晰
+- > sweepgen == h->sweepgen - 2: 需要被清晰
+- > sweepgen == h->sweepgen - 1: 正在被清洗
+- > sweepgen == h->sweepgen : 已经被清晰，准备使用
+- > sweepgen == h->sweepgen + 1 ： gc开始时被缓存，需要被清洗
+- > sweepgen == h->sweepgen +3 : 已经被清洗和缓存，且仍然被缓存
+
+
+## 结构体
+```
+var work struct {
+	full  lfstack          // lock-free list of full blocks workbuf
+	empty lfstack          // lock-free list of empty blocks workbuf
+	pad0  cpu.CacheLinePad // prevents false-sharing between full/empty and nproc/nwait
+	wbufSpans struct {
+		lock mutex
+		// free is a list of spans dedicated to workbufs
+		free mSpanList
+		// busy is a list of all spans containing workbufs 
+		busy mSpanList
+	}
+
+	// 本轮循环中被标记为黑色的对象，包括直接变黑的对象
+	bytesMarked uint64
+	markrootNext uint32 // next markroot job
+	markrootJobs uint32 // number of markroot jobs
+	nproc  uint32
+	tstart int64
+	nwait  uint32
+
+	// Number of roots of various root types. Set by gcMarkRootPrepare.
+	nFlushCacheRoots                               int
+	nDataRoots, nBSSRoots, nSpanRoots, nStackRoots int
+	// startSema protects the transition from "off" to mark or
+	// mark termination.
+	startSema uint32
+	// markDoneSema protects transitions from mark to mark termination.
+	markDoneSema uint32
+
+	bgMarkReady note   // signal background mark worker has started
+	bgMarkDone  uint32 // cas to 1 when at a background mark completion point
+	// mode is the concurrency mode of the current GC cycle.
+	mode gcMode
+	// userForced indicates the current GC cycle was forced by an
+	// explicit user call.
+	userForced bool
+	// totaltime is the CPU nanoseconds spent in GC since the
+	// program started if debug.gctrace > 0.
+	totaltime int64
+	// assistQueue is a queue of assists that are blocked because
+	// there was neither enough credit to steal or enough work to
+	// do.
+	assistQueue struct {
+		lock mutex
+		q    gQueue
+	}
+	// sweepWaiters is a list of blocked goroutines to wake when
+	// we transition from mark termination to sweep.
+	sweepWaiters struct {
+		lock mutex
+		list gList
+	}
+
+	// cycles is the number of completed GC cycles
+	cycles uint32
+	stwprocs, maxprocs                 int32
+	tSweepTerm, tMark, tMarkTerm, tEnd int64 // nanotime() of phase start
+	pauseNS    int64 // total STW time this cycle
+	pauseStart int64 // nanotime() of last STW
+	// debug.gctrace heap sizes for this cycle.
+	heap0, heap1, heap2, heapGoal uint64
+}
+
+```
   
+## 函数
+
+- gcinit：设置mheap_.sweepdone = 1，初始化gc百分比和work参数：startSema，markDoneSema
 
