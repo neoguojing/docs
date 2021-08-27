@@ -34,14 +34,16 @@
 - _rt0_amd64_linux
 - _rt0_amd64
 - rt0_go 
-- runtime·args
+- 保存函数参数
+- 保存g0到寄存器，并设置栈
+- 发现系统cpu类型，设置相关参数
+- cgo处理
+- 设置tls
+- 设置g0和m0
 - runtime·osinit
 - runtime·schedinit
-- runtime·newproc(main函数指针)
+- runtime·newproc(runtime.main)
 - runtime·mstart
-- schedule 
-- runtime.main
-- main.main
 
 ### 常用算法
 - func Ctz64(x uint64) int : 计算小端字节序末尾0的个数
