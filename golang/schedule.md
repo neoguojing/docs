@@ -5,9 +5,23 @@
 
 ## 全局变量
 - allm ：m列表的头
+- allgs：全局g数组
+- mainStarted：main对应的m是否启动，一般在runtime.main函数中设置为true
+- m0：
+- g0：
+- RegSize：8
+- MinFrameSize： 0；最小栈帧
+- SpAlign： 1
+
+
+## 调度参数：
+- sched.maxmcount = 10000： 最大m个数，默认10000
+- m.spinning：m未找到一个可运行的p，在空转
+- sched.nmspinning：在空转的m个数
 
 ## 重要函数
-- malg ：创建新的g，参数为栈大小；新建g对象，调用systemstack分配栈空间
+- wakep:唤醒一个p去执行g
+- startm：调度一个m去运行p，必要时创建一个新m
 ## 启动流程schedinit
 
 - 初始化锁
@@ -34,3 +48,20 @@
 - mpreinit： 创建新的g，更新m.gsignal
 - 将当前m挂到allm列表上
 - 若是cgo调用，则更新mp.cgoCallers
+
+## g
+
+### 函数：
+- gfget：从p.gFree获取空闲g，否则schedt.gFree获取g
+- malg ：创建新的g，参数为栈大小；新建g对象，调用systemstack分配栈空间
+- func newproc(siz int32, fn *funcval)： 进程启动时执行，再系统栈创建一个正在运行的g；
+- > 获取参数指针：&fn+64；获取g，获取pc
+- > 系统栈：调用newproc1创建新的g，调用runqput将g放入p
+- func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerpc uintptr) *g ：
+- > 调用gfget获取可重用g，失败则调用malg，调整状态为_Gdead，添加到allgs列表
+- > 
+
+## p
+### 函数
+- runqput： 将g放入p末尾，p满了，则放入全局p
+- 
