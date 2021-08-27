@@ -43,7 +43,7 @@
 - runtime·osinit
 - runtime·schedinit
 - runtime·newproc(runtime.main)
-- runtime·mstart
+- runtime·mstart -> runtime.schedule
 
 ### 常用算法
 - func Ctz64(x uint64) int : 计算小端字节序末尾0的个数
