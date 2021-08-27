@@ -43,6 +43,7 @@
 - stackguard1：在g0和gsignal 中是stack.lo+StackGuard，否则为~0
 - StackPreempt： 1314触发抢占
 - _NumStackOrders： 4
+- maxstacksize: 1GB
 
 ## 结构体
 ```
