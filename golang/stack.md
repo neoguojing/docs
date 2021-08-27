@@ -44,6 +44,13 @@
 - StackPreempt： 1314触发抢占
 - _NumStackOrders： 4
 
+## 结构体
+```
+type stack struct {
+	lo uintptr
+	hi uintptr //栈顶指针，最开始分配：函数参数大小+4*RegSiz，将参数填入 
+}
+```
 ## 重要函数
 - stackalloc: 必须在系统栈上执行;不能栈分裂
 ```
