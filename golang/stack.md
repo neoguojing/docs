@@ -68,5 +68,6 @@ type stack struct {
 - > 若span.first==nil，调用 mheap_.allocManual分配4页内存大小（32k）的mspan；更新mspan.manualFreeList;插入stackpool[order].item.span列表
 - > 从span.manualFreeList获取内存，并更新manualFreeList和allocCount
 - > 返回分配的span
+- morestack_noctx ：
 # 引用
 - https://www.zhihu.com/question/22444939
