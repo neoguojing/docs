@@ -18,7 +18,10 @@
 - src：Golang核心实现都在这里，下面详细讲述
 - test：Golang单元测试程序，通过查看测试程序可以学习到golang的用法和特性
 
+## 汇编
 
+- SB(static base)：内存的地址，foo(SB)是一个由foo这个名字代表的内存地址
+- FP(frame pointer)：0(FP)就是第一个参数，8(FP)就是第二个(64位机器)
 ## runtime 
 
 - src/runtime/malloc.go   mallocgc等内存分配函数
