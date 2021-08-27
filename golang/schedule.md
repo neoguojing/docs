@@ -29,7 +29,7 @@
 - sysmon()
 - main: 必须在m0上执行
 - > 设置栈全局变量,
-- 调用newm，执行sysmon()函数
+- > 调用newm，执行sysmon()函数
 - > lockOSThread，设置m0参数和全局参数
 - > doInit: 调用init函数
 - > 调用gcenable: 启动bgsweep 和bgscavenge
