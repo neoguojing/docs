@@ -53,6 +53,7 @@
 ## g
 
 ### 函数：
+- getg： 从TLS（线程本地缓存）获取当前运行的指向g结构体的指针
 - gfget：从p.gFree获取空闲g，否则schedt.gFree获取g
 - malg ：创建新的g，参数为栈大小；新建g对象，调用systemstack分配栈空间
 - func newproc(siz int32, fn *funcval)： 进程启动时执行，再系统栈创建一个正在运行的g；
