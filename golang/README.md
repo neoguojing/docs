@@ -31,10 +31,13 @@
 - src/runtime/lockrank.go 运行时锁的排序定义
 
 ### runtime 启动流程 src/runtime/asm_amd64.s
+- _rt0_amd64_linux
+- _rt0_amd64
+- rt0_go 
 - runtime·args
 - runtime·osinit
 - runtime·schedinit
-- runtime·newproc
+- runtime·newproc(main函数指针)
 - runtime·mstart
 - schedule 
 - runtime.main
