@@ -12,6 +12,7 @@
 - RegSize：8
 - MinFrameSize： 0；最小栈帧
 - SpAlign： 1
+- PCQuantum ：1
 
 
 ## 调度参数：
@@ -59,7 +60,9 @@
 - > 系统栈：调用newproc1创建新的g，调用runqput将g放入p
 - func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerpc uintptr) *g ：
 - > 调用gfget获取可重用g，失败则调用malg，调整状态为_Gdead，添加到allgs列表
-- > 
+- > 将参数放入栈帧，构建stkmap，计算sp，栈顶指针
+- > 初始化g：newg.sched.sp=newg.stktopsp，newg.sched.pc调整为指向goexit的pc，newg.sched.g为newg，newg.gopc为上一级函数pc，newg.ancestors：祖先信息，newg.startpc为当前函数pc
+- > 切换状态为_Grunnable，设置goid，返回newg
 
 ## p
 ### 函数
