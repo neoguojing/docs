@@ -92,6 +92,7 @@
 
 ### 结构体
 - newmHandoff： m的列表，列表里的m都没有绑定os thread，通过 m.schedlink构建列表
+- m.freeWait:0则表示可以安全停止g0和释放m
 
 ### 重要函数
 - startm：调度一个m去运行p，必要时创建一个新m
@@ -123,5 +124,9 @@
 - > schedule()
 - minitSignals:minitSignalStack 设置信号量栈；minitSignalMask：调用系统调用sigprocmask，设置信号掩码
 - mexit： 退出当前m
+- > 若是m0，handoffp，解除p与m的绑定，mPark休眠 线程
+- > 否则，释放信号栈，将m从allm列表删除，m挂到freem，handoffp解除p绑定，退出线程，然后设置freeWait=0
 - acquirep: 绑定p到m
 - releasep: 解绑p和m
+- mPark
+- handoffp
