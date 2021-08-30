@@ -90,13 +90,21 @@
 
 ## m
 
+### 结构体
+- newmHandoff： m的列表，列表里的m都没有绑定os thread，通过 m.schedlink构建列表
+
 ### 重要函数
 - startm：调度一个m去运行p，必要时创建一个新m
 - > 加锁，防止抢占
 - > 传入的p==nil.尝试从sched.pidle获取一个p，依旧为nil，则返回
 - > 尝试从sched.midle获取一个空闲m，若m==nil，则调用newm，创建一个m
 - > 设置新m的spinning，nextp，并调用notewakeup（futexwakeup），唤醒m
-- newm: (fn func(), _p_ *p, id int64) 
+- newm: (fn func(), _p_ *p, id int64) ：
+- >allocm
+- allocm: 分配一个m，不绑定任何thread
+- > 当前g.m.p == 0 ,则acquirep，临时借用一个p
+- > sched.freem != nil,则释放m，回收系统栈stackfree
+- > 
 - mstart: 进程启动时调用，启动m，开始执行调度;
 - > 获取g，设置stack信息,当前g为g0
 - > 调用mstart1
