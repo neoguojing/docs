@@ -99,5 +99,5 @@
 - > 调用minit，minitSignals初始化信号量，为启动m设置tid（线程id）
 - > 若是m0，则调用mstartm0，初始化信号量initsig
 - > schedule()
-- minitSignals:
+- minitSignals:minitSignalStack 设置信号量栈；minitSignalMask：调用系统调用sigprocmask，设置信号掩码
 - mexit： 退出当前m
