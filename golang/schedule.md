@@ -100,11 +100,18 @@
 - > 尝试从sched.midle获取一个空闲m，若m==nil，则调用newm，创建一个m
 - > 设置新m的spinning，nextp，并调用notewakeup（futexwakeup），唤醒m
 - newm: (fn func(), _p_ *p, id int64) ：
-- >allocm
+- > allocm分配一个m
+- > 设置doesPark=true,nextp绑定p，sigmask设置
+- > newosproc为m创建线程
+- func newosproc(mp *m)：创建操作系统线程
+- > mp.g0.stack.hi 获取栈顶指针
+- > 调用系统调用clone创建线程
 - allocm: 分配一个m，不绑定任何thread
 - > 当前g.m.p == 0 ,则acquirep，临时借用一个p
 - > sched.freem != nil,则释放m，回收系统栈stackfree
-- > 
+- > new(m) 和mcommoninit
+- > mp.g0 初始化
+- > releasep,释放m.p指向的p
 - mstart: 进程启动时调用，启动m，开始执行调度;
 - > 获取g，设置stack信息,当前g为g0
 - > 调用mstart1
@@ -116,3 +123,5 @@
 - > schedule()
 - minitSignals:minitSignalStack 设置信号量栈；minitSignalMask：调用系统调用sigprocmask，设置信号掩码
 - mexit： 退出当前m
+- acquirep: 绑定p到m
+- releasep: 解绑p和m
