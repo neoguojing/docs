@@ -20,7 +20,7 @@
 
 ## 调度参数：
 - sched.maxmcount = 10000： 最大m个数，默认10000
-- m.spinning：m未找到一个可运行的p，在空转
+- m.spinning：m未找到一个可运行的p，在积极寻找一个work
 - sched.nmspinning：在空转的m个数
 
 ## 重要函数
