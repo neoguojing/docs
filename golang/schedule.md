@@ -22,6 +22,9 @@
 - sched.maxmcount = 10000： 最大m个数，默认10000
 - m.spinning：m未找到一个可运行的p，在积极寻找一个work
 - sched.nmspinning：在空转的m个数
+- sched.pidle: 空闲的p，npidle统计个数
+- sched.midle：空闲的m，nmidle控制个数
+- 
 
 ## 重要函数
 - wakep:唤醒一个p去执行g
@@ -89,7 +92,11 @@
 
 ### 重要函数
 - startm：调度一个m去运行p，必要时创建一个新m
-- newm: 
+- > 加锁，防止抢占
+- > 传入的p==nil.尝试从sched.pidle获取一个p，依旧为nil，则返回
+- > 尝试从sched.midle获取一个空闲m，若m==nil，则调用newm，创建一个m
+- > 设置新m的spinning，nextp，并调用notewakeup（futexwakeup），唤醒m
+- newm: (fn func(), _p_ *p, id int64) 
 - mstart: 进程启动时调用，启动m，开始执行调度;
 - > 获取g，设置stack信息,当前g为g0
 - > 调用mstart1
