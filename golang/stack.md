@@ -53,6 +53,7 @@ type stack struct {
 }
 ```
 ## 重要函数
+- stackfree: 释放栈
 - stackalloc: 必须在系统栈上执行;不能栈分裂
 ```
 1. 若debug.efence != 0 || stackFromSystem != 0 ，则从调用sysAlloc，从操作系统分配内存，返回stack结构体
