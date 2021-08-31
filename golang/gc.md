@@ -127,5 +127,5 @@ var work struct {
 - gcinit：设置mheap_.sweepdone = 1，初始化gc百分比和work参数：startSema，markDoneSemabgscavenge：：:
 - bgsweep
 - bgscavenge:
-- 
+- mcache清理：在acquirep调用时，调用prepareForSweep
 
