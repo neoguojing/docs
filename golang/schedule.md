@@ -5,15 +5,15 @@
 
 ## 流程：
 
-mstart：主要是设置g0.stackguard0，g0.stackguard1。
-mstart1：调用save保存callerpc和callerpc到g0.sched。然后调用schedule开始调度循环。
-schedule：获得一个可执行的g。下面用gp代指。
-execute(gp *g, inheritTime bool)：绑定gp与当前m，状态改为_Grunning。
-gogo(buf *gobuf)：加载gp的上下文，跳转到buf.pc指向的函数。
-执行buf.pc指向函数。
-goexit->goexit1：调用mcall(goexit0)。
-mcall(fn func(*g))：保存当前g（也就是gp）的上下文；切换到g0及其栈，调用fn，参数为gp。
-goexit0(gp *g)：清零gp的属性，状态_Grunning改为_Gdead；dropg解绑m和gp；gfput放入队列；schedule重新调度
+- mstart：主要是设置g0.stackguard0，g0.stackguard1。
+- mstart1：调用save保存callerpc和callerpc到g0.sched。然后调用schedule开始调度循环。
+- schedule：获得一个可执行的g。下面用gp代指。
+- execute(gp *g, inheritTime bool)：绑定gp与当前m，状态改为_Grunning。
+- gogo(buf *gobuf)：加载gp的上下文，跳转到buf.pc指向的函数。
+- 执行buf.pc指向函数。
+- goexit->goexit1：调用mcall(goexit0)。
+- mcall(fn func(*g))：保存当前g（也就是gp）的上下文；切换到g0及其栈，调用fn，参数为gp。
+- goexit0(gp *g)：清零gp的属性，状态_Grunning改为_Gdead；dropg解绑m和gp；gfput放入队列；schedule重新调度
 
 ## 全局变量
 - allm ：m列表的头
@@ -80,6 +80,9 @@ goexit0(gp *g)：清零gp的属性，状态_Grunning改为_Gdead；dropg解绑m�
 - > 处理runningPanicDefers：Gosched
 - > 处理panicking:  gopark
 - dolockOSThread：锁死m和g，相当于对_g_.m.lockedg 和_g_.lockedm同时设置值
+- goexit：汇编函数，rerurn是写入调用栈，调用goexit1
+- goexit1：切换到g0，执行goexit0
+- goexit0：设置g的参数，调用dropg解绑g和m，调用gfput放置g到空闲列表，调用schedule()
 ## 启动流程schedinit
 
 - 初始化锁
