@@ -53,7 +53,8 @@
 - > sweepgen == h->sweepgen : 已经被清晰，准备使用
 - > sweepgen == h->sweepgen + 1 ： gc开始时被缓存，需要被清洗
 - > sweepgen == h->sweepgen +3 : 已经被清洗和缓存，且仍然被缓存
-
+- gcBlackenEnabled: 当gcphase == _GCmark时，允许后台标记worker可以标黑对象
+- 
 
 ## 结构体
 ```
@@ -218,5 +219,6 @@ type gcControllerState struct {
 - bgsweep
 - bgscavenge:
 - mcache清理：在acquirep调用时，调用prepareForSweep
--  gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
+- gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
+- gcenable()：被main函数调用，执行bgsweep和bgscavenge
 
