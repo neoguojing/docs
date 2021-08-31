@@ -27,8 +27,11 @@
 - 
 
 ## 重要函数
+- notesleep
+- notewakeup
 - wakep:唤醒一个p去执行g
 - schedule()
+- execute(): 调度g在当前m执行
 - sysmon()
 - main: 必须在m0上执行
 - > 设置栈全局变量,
@@ -82,17 +85,30 @@
 - > 将参数放入栈帧，构建stkmap，计算sp，栈顶指针
 - > 初始化g：newg.sched.sp=newg.stktopsp，newg.sched.pc调整为指向goexit的pc，newg.sched.g为newg，newg.gopc为上一级函数pc，newg.ancestors：祖先信息，newg.startpc为当前函数pc
 - > 切换状态为_Grunnable，设置goid，返回newg
-- gopark
+- gopark： 暂停go
+- > 禁止抢占，获取g状态，设置mp.waitlock 和mp.waitunlockf等
+- > 恢复抢占，调用mcall(park_m)，切换到g0执行
+- park_m：g0执行体
+- > casgstatus切换g的状态由_Grunning到_Gwaiting
+- > dropg：设置g_.m.curg.m=nil，g_.m.curg=nil，解除g和m的绑定关系
+- > waitunlockf不为空，则执行waitunlockf，返回false，则切换状态为_Grunnable，执行execute，
+- > 否则，调用schedule()
 ## p
 ### 函数
+- pidleput： 将p放入空闲列表
 - runqput： 将g放入p末尾，p满了，则放入全局p
-- 
+- handoffp： 将p从执行系统调用或者加锁的m种解除 
+- > runqempty不为空或者sched.runqsize不为0，调用startm调度一个m执行q
+- > gcBlackenEnabled != 0 && gcMarkWorkAvailable(_p_) 调用startm调度一个m执行q
+- > 没有空闲的m， 调用startm调度一个m执行q
+- > ？？
 
 ## m
 
 ### 结构体
 - newmHandoff： m的列表，列表里的m都没有绑定os thread，通过 m.schedlink构建列表
 - m.freeWait:0则表示可以安全停止g0和释放m
+- m.park: 暂停等待的指针
 
 ### 重要函数
 - startm：调度一个m去运行p，必要时创建一个新m
@@ -128,5 +144,5 @@
 - > 否则，释放信号栈，将m从allm列表删除，m挂到freem，handoffp解除p绑定，退出线程，然后设置freeWait=0
 - acquirep: 绑定p到m
 - releasep: 解绑p和m
-- mPark
-- handoffp
+- mPark: 线程park自身的唯一途径；
+- > 死循环： 调用notesleep休眠线程，调用mDoFixup
