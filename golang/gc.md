@@ -120,6 +120,96 @@ var work struct {
 	heap0, heap1, heap2, heapGoal uint64
 }
 
+var gcController gcControllerState
+
+type gcControllerState struct {
+	// scanWork is the total scan work performed this cycle. This
+	// is updated atomically during the cycle. Updates occur in
+	// bounded batches, since it is both written and read
+	// throughout the cycle. At the end of the cycle, this is how
+	// much of the retained heap is scannable.
+	//
+	// Currently this is the bytes of heap scanned. For most uses,
+	// this is an opaque unit of work, but for estimation the
+	// definition is important.
+	scanWork int64
+
+	// bgScanCredit is the scan work credit accumulated by the
+	// concurrent background scan. This credit is accumulated by
+	// the background scan and stolen by mutator assists. This is
+	// updated atomically. Updates occur in bounded batches, since
+	// it is both written and read throughout the cycle.
+	bgScanCredit int64
+
+	// assistTime is the nanoseconds spent in mutator assists
+	// during this cycle. This is updated atomically. Updates
+	// occur in bounded batches, since it is both written and read
+	// throughout the cycle.
+	assistTime int64
+
+	// dedicatedMarkTime is the nanoseconds spent in dedicated
+	// mark workers during this cycle. This is updated atomically
+	// at the end of the concurrent mark phase.
+	dedicatedMarkTime int64
+
+	// fractionalMarkTime is the nanoseconds spent in the
+	// fractional mark worker during this cycle. This is updated
+	// atomically throughout the cycle and will be up-to-date if
+	// the fractional mark worker is not currently running.
+	fractionalMarkTime int64
+
+	// idleMarkTime is the nanoseconds spent in idle marking
+	// during this cycle. This is updated atomically throughout
+	// the cycle.
+	idleMarkTime int64
+
+	// markStartTime is the absolute start time in nanoseconds
+	// that assists and background mark workers started.
+	markStartTime int64
+
+	// dedicatedMarkWorkersNeeded is the number of dedicated mark
+	// workers that need to be started. This is computed at the
+	// beginning of each cycle and decremented atomically as
+	// dedicated mark workers get started.
+	dedicatedMarkWorkersNeeded int64
+
+	// assistWorkPerByte is the ratio of scan work to allocated
+	// bytes that should be performed by mutator assists. This is
+	// computed at the beginning of each cycle and updated every
+	// time heap_scan is updated.
+	//
+	// Stored as a uint64, but it's actually a float64. Use
+	// float64frombits to get the value.
+	//
+	// Read and written atomically.
+	assistWorkPerByte uint64
+
+	// assistBytesPerWork is 1/assistWorkPerByte.
+	//
+	// Stored as a uint64, but it's actually a float64. Use
+	// float64frombits to get the value.
+	//
+	// Read and written atomically.
+	//
+	// Note that because this is read and written independently
+	// from assistWorkPerByte users may notice a skew between
+	// the two values, and such a state should be safe.
+	assistBytesPerWork uint64
+
+	// fractionalUtilizationGoal is the fraction of wall clock
+	// time that should be spent in the fractional mark worker on
+	// each P that isn't running a dedicated worker.
+	//
+	// For example, if the utilization goal is 25% and there are
+	// no dedicated workers, this will be 0.25. If the goal is
+	// 25%, there is one dedicated worker, and GOMAXPROCS is 5,
+	// this will be 0.05 to make up the missing 5%.
+	//
+	// If this is zero, no fractional workers are needed.
+	fractionalUtilizationGoal float64
+
+	_ cpu.CacheLinePad
+}
 ```
   
 ## 函数
@@ -128,4 +218,5 @@ var work struct {
 - bgsweep
 - bgscavenge:
 - mcache清理：在acquirep调用时，调用prepareForSweep
+-  gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
 
