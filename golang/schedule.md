@@ -24,14 +24,38 @@
 - sched.nmspinning：在空转的m个数
 - sched.pidle: 空闲的p，npidle统计个数
 - sched.midle：空闲的m，nmidle控制个数
+- nmidlelocked： 等待运行的m
 - 
 
 ## 重要函数
+- globrunqget：从全局runq获取g
+- checkTimers: 定时器检查
+- checkdead()：检查死锁
 - notesleep
 - notewakeup
-- wakep:唤醒一个p去执行g
-- schedule()
-- execute(): 调度g在当前m执行
+- wakep(p):唤醒一个p去执行g，修改m和p的绑定关系：_g_.m.p = p，  _p_.m.set(_g_.m)，_p_.status = _Prunning
+- acquirep(*p): 绑定p到m,调用wakep，调用mcache.prepareForSweep尝试清理
+- releasep(*p): 解绑p和m: _g_.m.p = 0， _p_.m = 0 ，_p_.status = _Pidle
+- schedule(): 一轮调度，找到一个g并执行，永远不返回
+- > 获取当前g
+- > 若当前g与m绑定，则执行stoplockedm停止m，调用execute调度当前g去执行，永不返回
+- > sched.gcwaiting != 0，则停止当前m，重新调度
+- > 检查定时器checkTimers，定义待调度gp
+- > 在标记阶段，则获取一个对于当前p的标记线程gp
+- > 若gp==nil，则每_g_.m.p.ptr().schedtick%61 == 0 从全局runq获取一个g
+- > 若gp==nil,从本地runq获取一个g
+- > 若gp==nil，findrunnable获取g
+- > _g_.m.spinning,resetspinning
+- > 判断gp是否可被调度，sched.disable.user，否则放入待调度队列，重新调度
+- > gp和某个m锁定，startlockedm调度m去执行锁定的g，重新调度
+- > 调用execute
+- execute(): 调度g在当前m执行，设置g的参数，调用gogo
+- func gogo(buf *gobuf):汇编函数
+- findrunnable： 从其他p获取g，从本地和全局runq获取g，从poll获取g
+- startlockedm：调度m去执行锁定的g
+-> 
+- stoplockedm： 停止当前锁定一个g的m，直到g可运行
+- > 解除m绑定的p，mPark休眠自身，唤醒后调用acquirep
 - sysmon()
 - main: 必须在m0上执行
 - > 设置栈全局变量,
@@ -73,6 +97,9 @@
 
 ## g
 
+### 变量
+- lockedm： 锁定的m，dolockOSThread有调用
+
 ### 函数：
 - getg： 从TLS（线程本地缓存）获取当前运行的指向g结构体的指针
 - gfget：从p.gFree获取空闲g，否则schedt.gFree获取g
@@ -94,6 +121,9 @@
 - > waitunlockf不为空，则执行waitunlockf，返回false，则切换状态为_Grunnable，执行execute，
 - > 否则，调用schedule()
 ## p
+
+### 变量：
+- preempt：false表示不参与调度
 ### 函数
 - pidleput： 将p放入空闲列表
 - runqput： 将g放入p末尾，p满了，则放入全局p
@@ -109,6 +139,7 @@
 - newmHandoff： m的列表，列表里的m都没有绑定os thread，通过 m.schedlink构建列表
 - m.freeWait:0则表示可以安全停止g0和释放m
 - m.park: 暂停等待的指针
+- lockedg: 保存g的指针，在dolockOSThread有使用，明确m加锁的g
 
 ### 重要函数
 - startm：调度一个m去运行p，必要时创建一个新m
@@ -142,7 +173,6 @@
 - mexit： 退出当前m
 - > 若是m0，handoffp，解除p与m的绑定，mPark休眠 线程
 - > 否则，释放信号栈，将m从allm列表删除，m挂到freem，handoffp解除p绑定，退出线程，然后设置freeWait=0
-- acquirep: 绑定p到m
-- releasep: 解绑p和m
 - mPark: 线程park自身的唯一途径；
 - > 死循环： 调用notesleep休眠线程，调用mDoFixup
+- stopm： 停止当前m直到一个新的work就绪
