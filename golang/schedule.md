@@ -3,6 +3,18 @@
 - 调用栈跟踪：level分为0，1，2，all 和crash
 - gotraceback 设置调用栈级别
 
+## 流程：
+
+mstart：主要是设置g0.stackguard0，g0.stackguard1。
+mstart1：调用save保存callerpc和callerpc到g0.sched。然后调用schedule开始调度循环。
+schedule：获得一个可执行的g。下面用gp代指。
+execute(gp *g, inheritTime bool)：绑定gp与当前m，状态改为_Grunning。
+gogo(buf *gobuf)：加载gp的上下文，跳转到buf.pc指向的函数。
+执行buf.pc指向函数。
+goexit->goexit1：调用mcall(goexit0)。
+mcall(fn func(*g))：保存当前g（也就是gp）的上下文；切换到g0及其栈，调用fn，参数为gp。
+goexit0(gp *g)：清零gp的属性，状态_Grunning改为_Gdead；dropg解绑m和gp；gfput放入队列；schedule重新调度
+
 ## 全局变量
 - allm ：m列表的头
 - allgs：全局g数组
@@ -50,7 +62,7 @@
 - > gp和某个m锁定，startlockedm调度m去执行锁定的g，重新调度
 - > 调用execute
 - execute(): 调度g在当前m执行，设置g的参数，调用gogo
-- func gogo(buf *gobuf):汇编函数
+- func gogo(buf *gobuf):汇编：加载newg的上下文，跳转到gobuf.pc指向的函数
 - findrunnable： 从其他p获取g，从本地和全局runq获取g，从poll获取g
 - startlockedm：调度m去执行锁定的g
 -> 
@@ -176,3 +188,6 @@
 - mPark: 线程park自身的唯一途径；
 - > 死循环： 调用notesleep休眠线程，调用mDoFixup
 - stopm： 停止当前m直到一个新的work就绪
+
+## 引用
+- https://blog.csdn.net/zdy0_2004/article/details/106392885
