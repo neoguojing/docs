@@ -54,10 +54,25 @@
 - > sweepgen == h->sweepgen + 1 ： gc开始时被缓存，需要被清洗
 - > sweepgen == h->sweepgen +3 : 已经被清洗和缓存，且仍然被缓存
 - gcBlackenEnabled: 当gcphase == _GCmark时，允许后台标记worker可以标黑对象
-- 
+- _GCoff  ：gc没有运行，后台在清扫，写屏障未开启
+- _GCmark ：标记根信息和工作缓冲：分配的对象未黑色，启用写屏障
+- _GCmarktermination ：标记结束阶段:分配黑色对象, p辅助gc, 写屏障开启
+- forcegcperiod ：int64 = 2 * 60 * 1e9  //强制gc时间
+## 概念
 
+### 何时触发gc
+- 进程启动后启动forcegchelper协程，由sysmon定时触发gc
+- 主动调用GC函数
+- mallocgc调用时触发：堆内存达到阈值
 ## 结构体
 ```
+type gcTriggerKind int  //触发gc的类型
+const (
+	gcTriggerHeap gcTriggerKind = iota //堆大小达到了阈值
+	gcTriggerTime //定时触发
+	gcTriggerCycle
+)
+
 var work struct {
 	full  lfstack          // lock-free list of full blocks workbuf
 	empty lfstack          // lock-free list of empty blocks workbuf
@@ -121,95 +136,22 @@ var work struct {
 	heap0, heap1, heap2, heapGoal uint64
 }
 
+<!-- 决定何时触发并发gc，需要启用多少个work进行辅助和后台标记 -->
 var gcController gcControllerState
 
 type gcControllerState struct {
-	// scanWork is the total scan work performed this cycle. This
-	// is updated atomically during the cycle. Updates occur in
-	// bounded batches, since it is both written and read
-	// throughout the cycle. At the end of the cycle, this is how
-	// much of the retained heap is scannable.
-	//
-	// Currently this is the bytes of heap scanned. For most uses,
-	// this is an opaque unit of work, but for estimation the
-	// definition is important.
-	scanWork int64
-
-	// bgScanCredit is the scan work credit accumulated by the
-	// concurrent background scan. This credit is accumulated by
-	// the background scan and stolen by mutator assists. This is
-	// updated atomically. Updates occur in bounded batches, since
-	// it is both written and read throughout the cycle.
-	bgScanCredit int64
-
-	// assistTime is the nanoseconds spent in mutator assists
-	// during this cycle. This is updated atomically. Updates
-	// occur in bounded batches, since it is both written and read
-	// throughout the cycle.
-	assistTime int64
-
-	// dedicatedMarkTime is the nanoseconds spent in dedicated
-	// mark workers during this cycle. This is updated atomically
-	// at the end of the concurrent mark phase.
-	dedicatedMarkTime int64
-
-	// fractionalMarkTime is the nanoseconds spent in the
-	// fractional mark worker during this cycle. This is updated
-	// atomically throughout the cycle and will be up-to-date if
-	// the fractional mark worker is not currently running.
-	fractionalMarkTime int64
-
-	// idleMarkTime is the nanoseconds spent in idle marking
-	// during this cycle. This is updated atomically throughout
-	// the cycle.
-	idleMarkTime int64
-
-	// markStartTime is the absolute start time in nanoseconds
-	// that assists and background mark workers started.
+	
+	scanWork int64 //本轮scan work个数
+	bgScanCredit int64 //扫描负债计数器，后台扫描增加负债，辅助扫描减少负债
+	assistTime int64 //辅助扫描时间
+	dedicatedMarkTime int64 //专门扫描worker花费的时间
+	fractionalMarkTime int64 //分型扫描花费时间
+	idleMarkTime int64 //空闲mark时间
 	markStartTime int64
-
-	// dedicatedMarkWorkersNeeded is the number of dedicated mark
-	// workers that need to be started. This is computed at the
-	// beginning of each cycle and decremented atomically as
-	// dedicated mark workers get started.
-	dedicatedMarkWorkersNeeded int64
-
-	// assistWorkPerByte is the ratio of scan work to allocated
-	// bytes that should be performed by mutator assists. This is
-	// computed at the beginning of each cycle and updated every
-	// time heap_scan is updated.
-	//
-	// Stored as a uint64, but it's actually a float64. Use
-	// float64frombits to get the value.
-	//
-	// Read and written atomically.
-	assistWorkPerByte uint64
-
-	// assistBytesPerWork is 1/assistWorkPerByte.
-	//
-	// Stored as a uint64, but it's actually a float64. Use
-	// float64frombits to get the value.
-	//
-	// Read and written atomically.
-	//
-	// Note that because this is read and written independently
-	// from assistWorkPerByte users may notice a skew between
-	// the two values, and such a state should be safe.
-	assistBytesPerWork uint64
-
-	// fractionalUtilizationGoal is the fraction of wall clock
-	// time that should be spent in the fractional mark worker on
-	// each P that isn't running a dedicated worker.
-	//
-	// For example, if the utilization goal is 25% and there are
-	// no dedicated workers, this will be 0.25. If the goal is
-	// 25%, there is one dedicated worker, and GOMAXPROCS is 5,
-	// this will be 0.05 to make up the missing 5%.
-	//
-	// If this is zero, no fractional workers are needed.
+	dedicatedMarkWorkersNeeded int64 //专注扫描worker个数
+	assistWorkPerByte uint64 //辅助worker百分比
+	assistBytesPerWork uint64 // 1/assistWorkPerByte.
 	fractionalUtilizationGoal float64
-
-	_ cpu.CacheLinePad
 }
 ```
   
@@ -221,4 +163,8 @@ type gcControllerState struct {
 - mcache清理：在acquirep调用时，调用prepareForSweep
 - gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
 - gcenable()：被main函数调用，执行bgsweep和bgscavenge
+- gcTrigger.test:测试是否需要gc：gcphase必须等于_GCoff
+- > gcTriggerHeap： 存活的堆内存大于阈值
+## 引用
 
+- https://blog.csdn.net/qq_33339479/article/details/108491796
