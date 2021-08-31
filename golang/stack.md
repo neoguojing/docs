@@ -53,7 +53,11 @@ type stack struct {
 }
 ```
 ## 重要函数
-- stackfree: 释放栈
+- stackfree: 释放栈，系统栈运行
+- > stk.hi - stk.lo 计算栈大小n
+- > if debug.efence != 0 || stackFromSystem != 0,则直接调用sysFree释放（munmap）
+- > n < 32k,则计算orker，若系统没有stackCache，则调用stackpoolfree(stk.lo,order);否则，从p.mcache释放内存，当c.stackcache[order].size >= 32k时调用stackcacherelease
+- > n >32k,spanOfUnchecked计算stk.lo对应的mspan，若_GCoff，则调用mheap_.freeManual释放span，否则，将span归还到stackLarge.free
 - stackalloc: 必须在系统栈上执行;不能栈分裂
 ```
 1. 若debug.efence != 0 || stackFromSystem != 0 ，则从调用sysAlloc，从操作系统分配内存，返回stack结构体
