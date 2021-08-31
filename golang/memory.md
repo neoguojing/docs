@@ -174,6 +174,7 @@ type mspan struct {
 - grow
 - 
 ## mheap
+- freeManual
 - grow： 添加npage to mheap
 - alloc：
 - allocSpan：分配一个mspan，有npage大小，必须在系统栈调用
