@@ -110,6 +110,14 @@
 - 将当前m挂到allm列表上
 - 若是cgo调用，则更新mp.cgoCallers
 
+## sudog 
+
+### 函数
+- acquireSudog ： 申请sudog
+- > acquirem
+- > pp.sudogcache 为空则尝试从schedt.sudogcache获取cap/2的sudog，否则new(sudog)挂到p的sudogcache
+- > 从 pp.sudogcache末尾取一个sudog返回
+- releaseSudog ： 释放sudog
 ## g
 
 ### 变量
