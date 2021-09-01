@@ -206,8 +206,13 @@ type gcControllerState struct {
 - bgsweep
 - bgscavenge:
 - gcBgMarkStartWorkers: 启动mark worker协程，暂时不运行，直到mark阶段
-- > 启动gomaxprocs个gcBgMarkWorker，调用notetsleepg休眠当前g
-- gcBgMarkWorker：
+- > 启动gomaxprocs个gcBgMarkWorker，调用notetsleepg休眠当前g在bgMarkReady
+- gcBgMarkWorker：执行mark
+- > 获取当期g，设置gp.m.preemptoff = "GC worker init"
+- > 创建gcBgMarkWorkerNode，并设置初始值，notewakeup唤醒worker在bgMarkReady,此时worker可以在调度时被findRunnableGCWorker使用
+- > 进入循环：
+- > gopark停止该worker，并将worker放入gcBgMarkWorkerPool
+- 
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
 - stopTheWorldWithSema：
 - gcBgMarkPrepare
