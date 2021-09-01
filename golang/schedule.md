@@ -156,6 +156,7 @@
 - m.freeWait:0则表示可以安全停止g0和释放m
 - m.park: 暂停等待的指针
 - lockedg: 保存g的指针，在dolockOSThread有使用，明确m加锁的g
+- preemptoff: !="" 则不允许抢占
 
 ### 重要函数
 - startm：调度一个m去运行p，必要时创建一个新m
