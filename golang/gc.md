@@ -107,7 +107,7 @@ var work struct {
 	// markDoneSema protects transitions from mark to mark termination.
 	markDoneSema uint32
 
-	bgMarkReady note   // signal background mark worker has started
+	bgMarkReady note   // 后台标记go已经启动
 	bgMarkDone  uint32 // cas to 1 when at a background mark completion point
 	// mode is the concurrency mode of the current GC cycle.
 	mode gcMode
@@ -163,8 +163,14 @@ type gcControllerState struct {
 ## 函数
 - semacquire(addr): 获取信号量
 - > cansemacquire原子的设置addr的值为0.若不为0，则返回false
-- > 原子操作失败，
+- > 原子操作失败，获取sudog和semaRoot，初始化sudog
+- > 进入循环：
+- > semaRoot加锁，nwait加1，重新尝试cansemacquire，成功则nwait-1
+- > 失败，调用semaRoot.queue,将当前地址加入等待队列，goparkunlock挂起g
 - cansemacquire： 自旋的将addr的值减一，使用CAS
+- semaRoot.queue 将sudog加入semaroot等待队列；semaRoot时一个treap树，随机平衡二叉搜索树
+- > 初始化sudog，elem保存sema地址
+- > 遍历semaRoot.treap,若sema地址已经存在，将sudog加入treap列表末尾，否则插入treap树的末尾
 - gcinit：设置mheap_.sweepdone = 1，初始化gc百分比和work参数：startSema，markDoneSemabgscavenge：：:
 - forcegchelper： 后台定时gc
 - > 无限循环，forcegc加锁，设置idle标志，goparkunlock暂停当前g，gcStart开始gc
@@ -194,6 +200,8 @@ type gcControllerState struct {
 - bgsweep
 - bgscavenge:
 - gcBgMarkStartWorkers: 启动mark worker协程，暂时不运行，直到mark阶段
+- > 启动gomaxprocs个gcBgMarkWorker，调用notetsleepg休眠当前g
+- gcBgMarkWorker：
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
 - stopTheWorldWithSema：
 - gcBgMarkPrepare
@@ -206,6 +214,7 @@ type gcControllerState struct {
 - gcTrigger.test:测试是否需要gc：gcphase必须等于_GCoff
 - > gcTriggerHeap： 存活的堆内存大于阈值
 - sweepone：清扫未处理的span
+- notetsleepg:休眠g
 ## 引用
 
 - https://blog.csdn.net/qq_33339479/article/details/108491796
