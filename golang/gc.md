@@ -161,7 +161,10 @@ type gcControllerState struct {
 ```
   
 ## 函数
-- semacquire: 获取
+- semacquire(addr): 获取信号量
+- > cansemacquire原子的设置addr的值为0.若不为0，则返回false
+- > 原子操作失败，
+- cansemacquire： 自旋的将addr的值减一，使用CAS
 - gcinit：设置mheap_.sweepdone = 1，初始化gc百分比和work参数：startSema，markDoneSemabgscavenge：：:
 - forcegchelper： 后台定时gc
 - > 无限循环，forcegc加锁，设置idle标志，goparkunlock暂停当前g，gcStart开始gc
