@@ -135,6 +135,7 @@
 - > dropg：设置g_.m.curg.m=nil，g_.m.curg=nil，解除g和m的绑定关系
 - > waitunlockf不为空，则执行waitunlockf，返回false，则切换状态为_Grunnable，执行execute，
 - > 否则，调用schedule()
+-  goready(gp)：
 ## p
 
 ### 变量：
