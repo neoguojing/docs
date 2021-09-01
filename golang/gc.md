@@ -58,6 +58,11 @@
 - _GCmark ：标记根信息和工作缓冲：分配的对象未黑色，启用写屏障
 - _GCmarktermination ：标记结束阶段:分配黑色对象, p辅助gc, 写屏障开启
 - forcegcperiod ：int64 = 2 * 60 * 1e9  //强制gc时间
+- gcBackgroundMode gcMode = iota ：并发gc和清理
+- gcForceMode                    // stw和并发清理
+- gcForceBlockMode               // stwgc和清理 ，用户强制模式
+- worldsema： 授权m尝试stw
+- gcsema：授权m阻塞gc，直到并发gc完成
 ## 概念
 
 ### 何时触发gc
@@ -70,7 +75,7 @@ type gcTriggerKind int  //触发gc的类型
 const (
 	gcTriggerHeap gcTriggerKind = iota //堆大小达到了阈值
 	gcTriggerTime //定时触发
-	gcTriggerCycle
+	gcTriggerCycle //用户强制触发
 )
 
 var work struct {
@@ -156,15 +161,33 @@ type gcControllerState struct {
 ```
   
 ## 函数
-
+- semacquire: 获取
 - gcinit：设置mheap_.sweepdone = 1，初始化gc百分比和work参数：startSema，markDoneSemabgscavenge：：:
+- forcegchelper： 后台定时gc
+- > 无限循环，forcegc加锁，设置idle标志，goparkunlock暂停当前g，gcStart开始gc
+- gcStart：开始gc
+- > 禁止抢占
+- > 当前g为g0或者禁止抢占的情况下，直接返回
+- > 开启抢占
+- > 调用sweepone，清扫未处理的span
+- > 获取work.startSema 状态,并重新trigger.test()，非true，则返回
+- > 设置work.userForced = trigger.kind == gcTriggerCycle
+- > 抢占gcsema和worldsema 标志
+- > 遍历allp，检查p.mcache.flushGen 是否等于 mheap_.sweepgen，否则抛出异常
+- > gcBgMarkStartWorkers 启动mark协程
+- > 系统栈调用：gcResetMarkState
+- > 设置work参数，系统栈调用stopTheWorldWithSema
 - bgsweep
 - bgscavenge:
+- gcBgMarkStartWorkers: 启动mark worker协程，暂时不运行，直到mark阶段
+- gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
+- stopTheWorldWithSema：
 - mcache清理：在acquirep调用时，调用prepareForSweep
 - gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
 - gcenable()：被main函数调用，执行bgsweep和bgscavenge
 - gcTrigger.test:测试是否需要gc：gcphase必须等于_GCoff
 - > gcTriggerHeap： 存活的堆内存大于阈值
+- sweepone：清扫未处理的span
 ## 引用
 
 - https://blog.csdn.net/qq_33339479/article/details/108491796
