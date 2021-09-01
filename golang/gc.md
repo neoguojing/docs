@@ -177,11 +177,26 @@ type gcControllerState struct {
 - > gcBgMarkStartWorkers 启动mark协程
 - > 系统栈调用：gcResetMarkState
 - > 设置work参数，系统栈调用stopTheWorldWithSema
+- > 系统栈调用：finishsweep_m，完成清扫工作
+- > clearpools： 清理缓存:subdog等
+- > gcController.startCycle()：计算本轮gc的参数
+- > work.heapGoal：设置
+- > 若不是并发标记，schedEnableUser停止所有用户go的调度
+- > 设置gcphase，gcBgMarkPrepare，gcMarkRootPrepare，gcMarkTinyAllocs，设置gcBlackenEnabled
+- > 禁止抢占
+- > startTheWorldWithSema:
+- > 释放worldsema，开启抢占
+- > 非并发模式下，调用Gosched
+- > 释放startSema
 - bgsweep
 - bgscavenge:
 - gcBgMarkStartWorkers: 启动mark worker协程，暂时不运行，直到mark阶段
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
 - stopTheWorldWithSema：
+- gcBgMarkPrepare
+- gcMarkRootPrepare
+- gcMarkTinyAllocs
+- startTheWorldWithSema
 - mcache清理：在acquirep调用时，调用prepareForSweep
 - gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
 - gcenable()：被main函数调用，执行bgsweep和bgscavenge
