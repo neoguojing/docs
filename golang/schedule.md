@@ -135,13 +135,13 @@
 - > 将参数放入栈帧，构建stkmap，计算sp，栈顶指针
 - > 初始化g：newg.sched.sp=newg.stktopsp，newg.sched.pc调整为指向goexit的pc，newg.sched.g为newg，newg.gopc为上一级函数pc，newg.ancestors：祖先信息，newg.startpc为当前函数pc
 - > 切换状态为_Grunnable，设置goid，返回newg
-- gopark： 暂停go
+- gopark： 暂停go ，并释放g获得的锁，同goparkunlock
 - > 禁止抢占，获取g状态，设置mp.waitlock 和mp.waitunlockf等
 - > 恢复抢占，调用mcall(park_m)，切换到g0执行
 - park_m：g0执行体
 - > casgstatus切换g的状态由_Grunning到_Gwaiting
 - > dropg：设置g_.m.curg.m=nil，g_.m.curg=nil，解除g和m的绑定关系
-- > waitunlockf不为空，则执行waitunlockf，返回false，则切换状态为_Grunnable，执行execute，
+- > waitunlockf不为空，则执行waitunlockf，释放g获取的锁，返回false，则切换状态为_Grunnable，执行execute，
 - > 否则，调用schedule()
 -  goready(gp)：
 ## p
