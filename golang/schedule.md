@@ -140,6 +140,12 @@
 
 ### 变量：
 - preempt：false表示不参与调度
+- _Pidle = iota
+- _Prunning
+-	_Psyscall
+- _Pgcstop
+-	_Pdead
+-	
 ### 函数
 - pidleput： 将p放入空闲列表
 - runqput： 将g放入p末尾，p满了，则放入全局p
