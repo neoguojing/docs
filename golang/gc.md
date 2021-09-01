@@ -69,6 +69,12 @@
 - 进程启动后启动forcegchelper协程，由sysmon定时触发gc
 - 主动调用GC函数
 - mallocgc调用时触发：堆内存达到阈值
+
+### gc的root有哪些
+- data
+- bss
+- mheap.markArenas：代表mspan喜喜
+- allg:代表栈信息
 ## 结构体
 ```
 type gcTriggerKind int  //触发gc的类型
@@ -205,7 +211,7 @@ type gcControllerState struct {
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
 - stopTheWorldWithSema：
 - gcBgMarkPrepare
-- gcMarkRootPrepare
+- gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs
 - startTheWorldWithSema
 - mcache清理：在acquirep调用时，调用prepareForSweep
