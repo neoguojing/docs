@@ -54,15 +54,30 @@
 - > sweepgen == h->sweepgen + 1 ： gc开始时被缓存，需要被清洗
 - > sweepgen == h->sweepgen +3 : 已经被清洗和缓存，且仍然被缓存
 - gcBlackenEnabled: 当gcphase == _GCmark时，允许后台标记worker可以标黑对象
+- forcegcperiod ：int64 = 2 * 60 * 1e9  //强制gc时间
+- worldsema： 授权m尝试stw
+- gcsema：授权m阻塞gc，直到并发gc完成
+## gcphase
 - _GCoff  ：gc没有运行，后台在清扫，写屏障未开启
 - _GCmark ：标记根信息和工作缓冲：分配的对象未黑色，启用写屏障
 - _GCmarktermination ：标记结束阶段:分配黑色对象, p辅助gc, 写屏障开启
-- forcegcperiod ：int64 = 2 * 60 * 1e9  //强制gc时间
+
+### gcmode
 - gcBackgroundMode gcMode = iota ：并发gc和清理
 - gcForceMode                    // stw和并发清理
 - gcForceBlockMode               // stwgc和清理 ，用户强制模式
-- worldsema： 授权m尝试stw
-- gcsema：授权m阻塞gc，直到并发gc完成
+
+### gcMarkWorkerMode
+- gcMarkWorkerNotWorker //下一次调度不启动worker
+- gcMarkWorkerDedicatedMode //worker应该不被抢占的运行
+- gcMarkWorkerFractionalMode //参与标记任务但可被抢占和调度
+- gcMarkWorkerIdleMode //仅在空闲时参与标记任务
+
+### gcDrainFlags
+- gcDrainUntilPreempt： 执行直到 g.preempt
+- gcDrainIdle ：空闲时执行标记
+- gcDrainFractional： 自我抢占直到pollFractionalWorkerExit返回true
+- gcDrainFlushBgCredit：添加worker的负债到gcController.bgScanCredit
 ## 概念
 
 ### 何时触发gc
@@ -164,6 +179,15 @@ type gcControllerState struct {
 	assistBytesPerWork uint64 // 1/assistWorkPerByte.
 	fractionalUtilizationGoal float64
 }
+
+<!-- 生产者消费者模式 -->
+type gcWork struct {
+	wbuf1, wbuf2 *workbuf //1 指向push和pop的buf，2指向待丢弃的
+	bytesMarked uint64
+	scanWork int64
+	flushedWork bool
+}
+
 ```
   
 ## 函数
@@ -212,12 +236,23 @@ type gcControllerState struct {
 - > 创建gcBgMarkWorkerNode，并设置初始值，notewakeup唤醒worker在bgMarkReady,此时worker可以在调度时被findRunnableGCWorker使用
 - > 进入循环：
 - > gopark停止该worker，并将worker放入gcBgMarkWorkerPool
-- 
+- > node.m.set(acquirem()) 禁止抢占
+- > 进入系统栈执行：
+- > 若pp.gcMarkWorkerMode=gcMarkWorkerDedicatedMode，执行gcDrain，flag为gcDrainUntilPreempt|gcDrainFlushBgCredit，若gp.preempt为true，则将当前p内的所有g放入全局p，重新执行gcDrain
+- > 若pp.gcMarkWorkerMode=gcMarkWorkerFractionalMode，执行gcDrain加一个gcDrainFractional标记
+- > 若pp.gcMarkWorkerMode=gcMarkWorkerIdleMode,执行gcDrain加入gcDrainIdle
+- > 切换g状态为_Grunning，退出系统栈
+- > 切换pp.gcMarkWorkerMode = gcMarkWorkerNotWorker
+- > incnwait == work.nproc && !gcMarkWorkAvailable(nil) 判断mark结束，则开启抢占，执行gcMarkDone
+- gcDrain：执行根和对象扫描
+- gcMarkDone：
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
 - stopTheWorldWithSema：
 - gcBgMarkPrepare
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs
+- gcMarkWorkAvailable：判断mark是否结束
+- 
 - startTheWorldWithSema
 - mcache清理：在acquirep调用时，调用prepareForSweep
 - gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
