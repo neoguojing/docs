@@ -275,10 +275,13 @@ type gcWork struct {
 - > 找到对应span，检查指针合法性
 - > 找到span起始地址和对象在span中的索引
 - greyobject：依据objindex获取 s.gcmarkBits，判断是否标记，未标记则标记，同时标记 arena.pageMarks，noscan对象直接返回，否则gcw.put将对象放入工作队列wbuf1.obj
-- scanobject：扫描b指向的对象为起点的对象
+- scanobject：扫描b指向的对象为起点的对象，
+- > 获取heapBits，span和elem大小
+- > 对象大于128k，拆分为oblet？？
+- > 以b为起始地址，遍历步长为8byte，遍历obj，通过heapArean.bit的判断是都为指针，找到指针？？，调用findObject和greyobject标记
 - gcMarkDone：
 - gcFlushBgCredit
-- gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
+- gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态heapBits判断是否包含指针
 - stopTheWorldWithSema：
 - gcBgMarkPrepare
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
