@@ -245,6 +245,7 @@ type gcWork struct {
 - > 切换pp.gcMarkWorkerMode = gcMarkWorkerNotWorker
 - > incnwait == work.nproc && !gcMarkWorkAvailable(nil) 判断mark结束，则开启抢占，执行gcMarkDone
 - gcDrain：执行根和对象扫描
+- > 
 - gcMarkDone：
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
 - stopTheWorldWithSema：
@@ -252,7 +253,7 @@ type gcWork struct {
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs
 - gcMarkWorkAvailable：判断mark是否结束
-- 
+- pollFractionalWorkerExit：  判断frac标注是否可以自我抢占
 - startTheWorldWithSema
 - mcache清理：在acquirep调用时，调用prepareForSweep
 - gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
