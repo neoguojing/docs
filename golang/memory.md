@@ -171,7 +171,7 @@ type mspan struct {
 - > 遍历alloc：
 - > span不为空，统计分配的obj：s.nelems-s.allocCount，则调用mcentral.uncacheSpan回收
 - > gcController.revise()更新统计值
-
+- stackcache_clear 回收stackcache：遍历 c.stackcache[order].list，调用stackpoolfree
 ## mcentral
 - uncacheSpan
 - cacheSpan
