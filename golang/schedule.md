@@ -144,6 +144,8 @@
 - > waitunlockf不为空，则执行waitunlockf，释放g获取的锁，返回false，则切换状态为_Grunnable，执行execute，
 - > 否则，调用schedule()
 -  goready(gp)：
+- suspendG
+- resumeG
 ## p
 
 ### 变量：
