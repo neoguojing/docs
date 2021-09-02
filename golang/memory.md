@@ -167,6 +167,10 @@ type mspan struct {
 - > 归还当前mcache.alloc[spc]到mcentral，调用函数mcentral.uncacheSpan(s)
 - > 调用mcentral.cacheSpan()，获取一个span，若没有空闲内存，则需要mcentral.grow分配新的span
 - > 为mcache.alloc[spc]赋新值
+- releaseAll:释放缓存的mspan
+- > 遍历alloc：
+- > span不为空，统计分配的obj：s.nelems-s.allocCount，则调用mcentral.uncacheSpan回收
+- > gcController.revise()更新统计值
 
 ## mcentral
 - uncacheSpan
