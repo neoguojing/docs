@@ -93,6 +93,7 @@
 - bss
 - mheap.markArenas：代表mspan喜喜
 - allg:代表栈信息
+- finblock：由销毁机制的对象
 ## 结构体
 ```
 type gcTriggerKind int  //触发gc的类型
@@ -254,8 +255,17 @@ type gcWork struct {
 - > 计算债务，若gcw.scanWork>gcCreditSlack,gcFlushBgCredit将债务转移到全局账户
 - markroot： 标记root对象，对象编号按照mcache，data，bss，mspan，stack的顺序连续编号
 - 索引落在cache区域，调用flushmcache清理缓存
-- 落在data bss调用markrootBlock标记
-- 
+- 落在data bss，调用markrootBlock标记
+- 索引=0，则scanblock，遍历allfin
+- 索引=1，markrootFreeGStacks销毁死亡的g栈空间
+- 索引落在span区间：markrootSpans
+- 否则执行g栈空间销毁，系统栈运行：自我扫描，则需要设置g状态为_Gwaiting；suspendG阻塞g，返回状态，状态为dead，则退出；否则调用scanstack，完成之后resumeG，自我扫描需要切换g为_Grunning
+- flushmcache:清理allp[i]的内容,调用mcache.releaseAll和stackcache_clear清理mcache
+- markrootBlock
+- scanblock
+- markrootFreeGStacks
+- markrootSpans
+- scanstack
 - scanobject
 - gcMarkDone：
 - gcFlushBgCredit
@@ -275,6 +285,7 @@ type gcWork struct {
 - > gcTriggerHeap： 存活的堆内存大于阈值
 - sweepone：清扫未处理的span
 - notetsleepg:休眠g
+
 
 ### gcw
 - balance： 迁移部分work到全局队列
