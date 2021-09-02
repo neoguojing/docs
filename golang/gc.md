@@ -57,6 +57,7 @@
 - forcegcperiod ：int64 = 2 * 60 * 1e9  //强制gc时间
 - worldsema： 授权m尝试stw
 - gcsema：授权m阻塞gc，直到并发gc完成
+- gcCreditSlack:2000
 ## gcphase
 - _GCoff  ：gc没有运行，后台在清扫，写屏障未开启
 - _GCmark ：标记根信息和工作缓冲：分配的对象未黑色，启用写屏障
@@ -86,7 +87,9 @@
 - mallocgc调用时触发：堆内存达到阈值
 
 ### gc的root有哪些
-- data
+> data和bss由linker生成，由moduledata结构体记录
+- mcache
+- data 
 - bss
 - mheap.markArenas：代表mspan喜喜
 - allg:代表栈信息
@@ -245,14 +248,24 @@ type gcWork struct {
 - > 切换pp.gcMarkWorkerMode = gcMarkWorkerNotWorker
 - > incnwait == work.nproc && !gcMarkWorkAvailable(nil) 判断mark结束，则开启抢占，执行gcMarkDone
 - gcDrain：执行根和对象扫描
-- > 
+- > 计算抢占和flushBgCredit等标记
+- > 循环执行markroot,标记根对象，直到被抢占或stw
+- > 循环执行scanobject，若全局工作队列为空，则迁移gcwork部分工作到全局gcw.balance()，tryGetFast获取work，否则tryGet获取，做不到wbBufFlush将写屏障缓存移到工作队列，gcw.tryGet()
+- > 计算债务，若gcw.scanWork>gcCreditSlack,gcFlushBgCredit将债务转移到全局账户
+- markroot： 标记root对象，对象编号按照mcache，data，bss，mspan，stack的顺序连续编号
+- 索引落在cache区域，调用flushmcache清理缓存
+- 落在data bss调用markrootBlock标记
+- 
+- scanobject
 - gcMarkDone：
+- gcFlushBgCredit
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态
 - stopTheWorldWithSema：
 - gcBgMarkPrepare
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs
 - gcMarkWorkAvailable：判断mark是否结束
+- pollWork：判断idle worker是否需要处理网络事件
 - pollFractionalWorkerExit：  判断frac标注是否可以自我抢占
 - startTheWorldWithSema
 - mcache清理：在acquirep调用时，调用prepareForSweep
@@ -262,6 +275,9 @@ type gcWork struct {
 - > gcTriggerHeap： 存活的堆内存大于阈值
 - sweepone：清扫未处理的span
 - notetsleepg:休眠g
+
+### gcw
+- balance： 迁移部分work到全局队列
 ## 引用
 
 - https://blog.csdn.net/qq_33339479/article/details/108491796
