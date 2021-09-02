@@ -75,5 +75,7 @@ type stack struct {
 - > 从span.manualFreeList获取内存，并更新manualFreeList和allocCount
 - > 返回分配的span
 - morestack_noctx ：
+- isShrinkStackSafe(gp)：是否适合收缩栈：系统调用，异步安全点（栈没有精确指针），在chan上等待时不可收缩栈
+- shrinkstack：栈收缩
 # 引用
 - https://www.zhihu.com/question/22444939
