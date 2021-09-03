@@ -81,7 +81,12 @@
 - gcDrainFractional： 自我抢占直到pollFractionalWorkerExit返回true
 - gcDrainFlushBgCredit：添加worker的负债到gcController.bgScanCredit
 ## 概念
-
+### 辅助gc
+> 辅助gc：主要由g.gcAssistBytes决定，若为正数，则g有帮助gc过，有富于，不需要辅助gc，负数：则需要辅助gc进行扫描工作
+- gcFlushBgCredit：
+- > work.assistQueue.q.empty 阻塞assist g列表为空，则设置gcController.bgScanCredit返回
+- > 否则：若gp.gcAssistBytes >= 0，则清零gp.gcAssistBytes = 0，调用ready让g继续运行；否则，增加gp.gcAssistBytes ，放g回到work.assistQueue.q
+- > gcController.bgScanCredit += gp.gcAssistBytes
 ### 何时触发gc
 - 进程启动后启动forcegchelper协程，由sysmon定时触发gc
 - 主动调用GC函数
@@ -345,7 +350,7 @@ type sweepdata struct {
 - > freeStackSpans清理空闲栈
 - > 系统栈forEachP清理mcache
 - > 释放worldsema ，gcsema开启抢占
-- gcFlushBgCredit
+
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态heapBits判断是否包含指针
 - stopTheWorldWithSema：
 - startTheWorldWithSema
