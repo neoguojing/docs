@@ -424,9 +424,15 @@ type sweepdata struct {
 - > 执行sweepone，若未完全清扫，执行Gosched，在新的循环中持续清扫
 - > freeSomeWbufs 释放一些 work.wbufSpans到heap,返回true，则调用Gosched，在新的循环中持续释放
 - > sweep.parked = true goparkunlock
-- >
 - bgscavenge:
-- sweepone：清扫未清理的span和返回page到heap
+- sweepone：清扫一个未清理的span和返回page到heap
+- > 进入循环
+- >  mheap_.nextSpanForSweep() 找到一个待清扫的span，找不到则mheap_.sweepdone=1,退出
+- > mspan.state!=mSpanInUse continue，找到则s.sweepgen-=1 退出循环
+- > 调用mspan.sweep 执行清理
+- > mheap_.reclaimCredit=mspan.npages
+- > 系统栈调用：mheap_.pages.scavengeStartGen()
+- > readyForScavenger
 - freeSomeWbufs
 ### gcw
 - balance： 迁移部分work到全局队列
