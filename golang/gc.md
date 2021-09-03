@@ -94,6 +94,31 @@
 - mheap.markArenas：代表mspan喜喜
 - allg:代表栈信息
 - finblock：由销毁机制的对象
+
+### 内存屏障相关
+
+- wbBufEntries：256
+- wbBufEntryPointers： 每个写屏障写入buf的指针数量
+- shade：查找对象findObject，将对象greyobject
+
+#### 结构体
+```
+type wbBuf struct {
+	next uintptr
+	end uintptr
+	buf [512]uintptr
+}
+```
+
+#### 函数
+- wbBufFlush1: 将写屏障buf同步到gc work 队列
+- 
+
+### 标记
+- markBits
+- heapBits
+- pageMarks
+
 ## 结构体
 ```
 type gcTriggerKind int  //触发gc的类型
@@ -279,12 +304,20 @@ type gcWork struct {
 - > 获取heapBits，span和elem大小
 - > 对象大于128k，拆分为oblet？？
 - > 以b为起始地址，遍历步长为8byte，遍历obj，通过heapArean.bit的判断是都为指针，找到指针？？，调用findObject和greyobject标记
-- gcMarkDone：mart to  mark termination
+- gcMarkDone：mart to  mark termination 满足work.nwait == work.nproc && !gcMarkWorkAvailable(p)，才可以转换
 - > 获取markDoneSema互斥量
-- > 
+- > 获取worldsema，用于stw
+- > 系统栈调用forEachP，wbBufFlush1刷每个p的写屏障缓存到gcw，将gcw的wbuf返给work的buf
+- > 调用stopTheWorldWithSema，
+- > 进入系统栈：遍历所有p调用wbBufFlush1，若gcw不为空，则调用startTheWorldWithSema重启workd，跳到top重新执行
+- > gcWakeAllAssists
+- > 释放：markDoneSema
+- >  gcController.endCycle()
+- > gcMarkTermination:
 - gcFlushBgCredit
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态heapBits判断是否包含指针
 - stopTheWorldWithSema：
+- startTheWorldWithSema
 - gcBgMarkPrepare
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs
@@ -299,7 +332,7 @@ type gcWork struct {
 - > gcTriggerHeap： 存活的堆内存大于阈值
 - sweepone：清扫未处理的span
 - notetsleepg:休眠g
-
+- forEachP:
 
 ### gcw
 - balance： 迁移部分work到全局队列
