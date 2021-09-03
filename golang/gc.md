@@ -279,7 +279,9 @@ type gcWork struct {
 - > 获取heapBits，span和elem大小
 - > 对象大于128k，拆分为oblet？？
 - > 以b为起始地址，遍历步长为8byte，遍历obj，通过heapArean.bit的判断是都为指针，找到指针？？，调用findObject和greyobject标记
-- gcMarkDone：
+- gcMarkDone：mart to  mark termination
+- > 获取markDoneSema互斥量
+- > 
 - gcFlushBgCredit
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态heapBits判断是否包含指针
 - stopTheWorldWithSema：
