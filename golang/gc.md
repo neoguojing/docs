@@ -58,7 +58,6 @@
 - worldsema： 授权m尝试stw
 - gcsema：授权m阻塞gc，直到并发gc完成
 - gcCreditSlack:2000
-- sweep sweepdata：清扫状态
 ## gcphase
 - _GCoff  ：gc没有运行，后台在清扫，写屏障未开启
 - _GCmark ：标记根信息和工作缓冲：分配的对象未黑色，启用写屏障
@@ -261,16 +260,7 @@ type gcWork struct {
 	scanWork int64
 	flushedWork bool
 }
-// State of background sweep.
-type sweepdata struct {
-	lock    mutex
-	g       *g
-	parked  bool
-	started bool
-	nbgsweep    uint32
-	npausesweep uint32
-	centralIndex sweepClass
-}
+
 
 
 ```
@@ -411,9 +401,33 @@ type sweepdata struct {
 - gcMarkTinyAllocs: 遍历allp，p.mcache.tiny,调用findObject greyobject标记对象
 - gcMarkWorkAvailable：mark是否可用：p.gcw不为空或者work.full不为空或者work.markrootNext < work.markrootJobs，则返回true
 ### sweep
-- bgsweep：
+
+#### 结构体
+- sweep sweepdata：清扫全局遍历
+```
+// State of background sweep.
+type sweepdata struct {
+	lock    mutex
+	g       *g
+	parked  bool
+	started bool
+	nbgsweep    uint32
+	npausesweep uint32
+	centralIndex sweepClass
+}
+```
+#### 函数
+- bgsweep：执行清理任务，main函数中启动
+- > sweep.g = getg() sweep.parked = true
+- > 调用goparkunlock暂停当前g
+- > 进入循环
+- > 执行sweepone，若未完全清扫，执行Gosched，在新的循环中持续清扫
+- > freeSomeWbufs 释放一些 work.wbufSpans到heap,返回true，则调用Gosched，在新的循环中持续释放
+- > sweep.parked = true goparkunlock
+- >
 - bgscavenge:
 - sweepone：清扫未清理的span和返回page到heap
+- freeSomeWbufs
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
