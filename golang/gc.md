@@ -367,12 +367,12 @@ type sweepdata struct {
 - > 循环执行scanobject，若全局工作队列为空，则迁移gcwork部分工作到全局gcw.balance()，tryGetFast获取work，否则tryGet获取，做不到wbBufFlush将写屏障缓存移到工作队列，gcw.tryGet()
 - > 计算债务，若gcw.scanWork>gcCreditSlack,gcFlushBgCredit将债务转移到全局账户
 - markroot： 标记root对象，对象编号按照mcache，data，bss，mspan，stack的顺序连续编号
-- 索引落在cache区域，调用flushmcache清理缓存
-- 落在data bss，调用markrootBlock标记
-- 索引=0，则scanblock，遍历allfin
-- 索引=1，markrootFreeGStacks销毁死亡的g栈空间
-- 索引落在span区间：markrootSpans
-- 否则执行g栈空间销毁，系统栈运行：根据索引从allgs找到g，若是自我扫描，则需要设置g状态为_Gwaiting；suspendG阻塞g，返回状态，状态为dead，则退出；否则调用scanstack，完成之后resumeG，自我扫描需要切换g为_Grunning
+- > 索引落在cache区域，调用flushmcache清理缓存
+- > 落在data bss，调用markrootBlock标记
+- > 索引=0，则scanblock，遍历allfin
+- > 索引=1，markrootFreeGStacks销毁死亡的g栈空间
+- > 索引落在span区间：markrootSpans
+- > 否则执行g栈空间销毁，系统栈运行：根据索引从allgs找到g，若是自我扫描，则需要设置g状态为_Gwaiting；suspendG阻塞g，返回状态，状态为dead，则退出；否则调用scanstack，完成之后resumeG，自我扫描需要切换g为_Grunning
 - flushmcache:清理allp[i]的内容,调用mcache.releaseAll和stackcache_clear清理mcache的堆和栈
 - markrootBlock：计算shard，调用scanblock
 - scanblock：用于扫描非堆roots：遍历bitmap，bit==0继续，否则调用findObject找到对象的起始地址，mspan和span的索引，调用greyobject置灰对象；若时栈对象，则放入栈扫描buf
