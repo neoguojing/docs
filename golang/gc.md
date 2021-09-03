@@ -87,6 +87,22 @@
 - > work.assistQueue.q.empty 阻塞assist g列表为空，则设置gcController.bgScanCredit返回
 - > 否则：若gp.gcAssistBytes >= 0，则清零gp.gcAssistBytes = 0，调用ready让g继续运行；否则，增加gp.gcAssistBytes ，放g回到work.assistQueue.q
 - > gcController.bgScanCredit += gp.gcAssistBytes
+
+### stw
+```
+//stw 前置条件
+semacquire(&worldsema, 0)
+m.preemptoff = "reason"
+systemstack(stopTheWorldWithSema)
+
+m.preemptoff = ""
+systemstack(startTheWorldWithSema)
+semrelease(&worldsema)
+```
+
+- stopTheWorldWithSema：需要获取worldsema，同时静止抢占，系统栈调用
+- > 
+- startTheWorldWithSema
 ### 何时触发gc
 - 进程启动后启动forcegchelper协程，由sysmon定时触发gc
 - 主动调用GC函数
@@ -352,8 +368,6 @@ type sweepdata struct {
 - > 释放worldsema ，gcsema开启抢占
 
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态heapBits判断是否包含指针
-- stopTheWorldWithSema：
-- startTheWorldWithSema
 - gcBgMarkPrepare
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs
