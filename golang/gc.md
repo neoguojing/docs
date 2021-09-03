@@ -401,7 +401,8 @@ type gcWork struct {
 - gcMarkTinyAllocs: 遍历allp，p.mcache.tiny,调用findObject greyobject标记对象
 - gcMarkWorkAvailable：mark是否可用：p.gcw不为空或者work.full不为空或者work.markrootNext < work.markrootJobs，则返回true
 ### sweep
-
+- numSweepClasses：272
+- 
 #### 结构体
 - sweep sweepdata：清扫全局遍历
 ```
@@ -434,6 +435,12 @@ type sweepdata struct {
 - > 系统栈调用：mheap_.pages.scavengeStartGen()
 - > readyForScavenger
 - freeSomeWbufs
+- mspan.sweep:执行清理 ???
+- > mheap_.pagesSwept+=mspan.npages
+- > 
+- mheap.nextSpanForSweep:下一个需要被清扫的span
+- > 遍历mheap.central[spc].mcentral的full和partial的unswept集合，找到一个span
+- > 更新sweep.centralIndex,作为下一个查找的起点
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
