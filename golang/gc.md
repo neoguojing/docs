@@ -101,8 +101,16 @@ semrelease(&worldsema)
 ```
 
 - stopTheWorldWithSema：需要获取worldsema，同时静止抢占，系统栈调用
-- > 
-- startTheWorldWithSema
+- > 设置sched.stopwait = gomaxprocs sched.gcwaiting =1
+- > preemptall尝试抢占所有g
+- > 设置当前p为_Pgcstop，sched.stopwait--
+- > 遍历allp，尝试设置所有_Psyscall的p为_Pgcstop
+- > pidleget从sched.pide获取p，切换状态为_Pgcstop
+- > sched.stopwait > 0 则循环，notetsleep休眠100um，重新尝试preemptall
+- startTheWorldWithSema：启动world
+- > 若netpollinited，调用netpoll获取glist，injectglist注入到调度系统
+- > sched.gcwaiting = 0,唤醒sysmon
+- > wakep():为p分配m
 ### 何时触发gc
 - 进程启动后启动forcegchelper协程，由sysmon定时触发gc
 - 主动调用GC函数
@@ -297,8 +305,6 @@ type sweepdata struct {
 - > 释放worldsema，开启抢占
 - > 非并发模式下，调用Gosched
 - > 释放startSema
-- bgsweep
-- bgscavenge:
 - gcBgMarkStartWorkers: 启动mark worker协程，暂时不运行，直到mark阶段
 - > 启动gomaxprocs个gcBgMarkWorker，调用notetsleepg休眠当前g在bgMarkReady
 - gcBgMarkWorker：执行mark
@@ -366,7 +372,6 @@ type sweepdata struct {
 - > freeStackSpans清理空闲栈
 - > 系统栈forEachP清理mcache
 - > 释放worldsema ，gcsema开启抢占
-
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态heapBits判断是否包含指针
 - gcBgMarkPrepare
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
@@ -387,7 +392,10 @@ type sweepdata struct {
 - > 切换所有g状态为_Grunnable
 - > 若当前p为nil，globrunqputbatch则将g放入sched.runq,调用startm调度g，返回
 - > 否则，globrunqputbatch则将g放入sched.runq,调用startm调度g，多余的g调用runqputbatch放入当前p
-- > 
+
+### sweep
+- bgsweep
+- bgscavenge:
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
