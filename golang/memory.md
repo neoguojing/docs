@@ -156,6 +156,7 @@ type mspan struct {
 - > 调整freeindex+1，allocCache>>1
 
 - refillAllocCache(whichbyte): 从 allocBits的第whichbyte开始取64bit，取反赋予allocCache
+- sweep
 ## mcache per-p
 
 - func (c *mcache) nextFree(spc spanClass) (v gclinkptr, s *mspan, shouldhelpgc bool):
@@ -191,7 +192,7 @@ type mspan struct {
 - allocMSpanLocked：
 - allocManual：必须在系统栈调用，手动分配npage内存，底层调用allocSpan，无需spanclass
 - allocNeedsZero: 判断是否需要置零
-
+- > 
 ### arena管理
 ```
 type heapArena struct {
