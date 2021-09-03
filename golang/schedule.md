@@ -40,6 +40,13 @@
 - 
 
 ## 重要函数
+- Gosched：不会挂起当前g，只是放入全局queue：切换到g0，执行gosched_m；
+- gosched_m：调用goschedImpl
+- goschedImpl： 
+- > g的状态切换到_Grunnable
+- >dropg 解绑g和m
+- > 将g放入全局queue
+- > 调用schedule
 - globrunqget：从全局runq获取g
 - checkTimers: 定时器检查
 - checkdead()：检查死锁
