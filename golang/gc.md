@@ -125,6 +125,13 @@ semrelease(&worldsema)
 - allg:代表栈信息
 - finblock：由销毁机制的对象
 
+### 安全点
+
+#### 参数
+- sched.safePointWait:等待到达安全点的p的数量
+- sched.safePointFn 
+- p.runSafePointFn:执行sched.safePointFn 在下一个安全点
+- 
 ### 内存屏障相关
 
 - wbBufEntries：256
@@ -305,6 +312,37 @@ type sweepdata struct {
 - > 释放worldsema，开启抢占
 - > 非并发模式下，调用Gosched
 - > 释放startSema
+- findObject：找到p指针对应的堆对象：
+- > 找到对应span，检查指针合法性
+- > 找到span起始地址和对象在span中的索引
+- greyobject：依据objindex获取 s.gcmarkBits，判断是否标记，未标记则标记，同时标记 arena.pageMarks，noscan对象直接返回，否则gcw.put将对象放入工作队列wbuf1.obj
+- scanobject：扫描b指向的对象为起点的对象，
+- > 获取heapBits，span和elem大小
+- > 对象大于128k，拆分为oblet？？
+- > 以b为起始地址，遍历步长为8byte，遍历obj，通过heapArean.bit的判断是都为指针，找到指针？？，调用findObject和greyobject标记
+- pollWork：判断idle worker是否需要处理网络事件
+- pollFractionalWorkerExit：  判断frac标注是否可以自我抢占a
+- mcache清理：在acquirep调用时，调用prepareForSweep
+- gcenable()：被main函数调用，执行bgsweep和bgscavenge
+- gcTrigger.test:测试是否需要gc：gcphase必须等于_GCoff
+- > gcTriggerHeap： 存活的堆内存大于阈值
+- notetsleepg:休眠g
+- forEachP:作为一个混合屏障,强制所有的p都执行同一个函数
+- > 设置sched.safePointWait和sched.safePointFn
+- > 设置所有p的p.runSafePointF，使其在下一个安全点执行sched.safePointFn
+- > preemptall() 挂起所有p
+- > 遍历所有处于pidle列表的p，执行sched.safePointFn
+- > 在当前p执行sched.safePointFn
+- > 遍历allp，将_Psyscall的p切换到_Pidle，调用handoffp，将系统调用和lock的p从m解绑
+- > sched.safePointWait > 0:notetsleep休眠100um，preemptall尝试抢占
+- > sched.safePointFn = nil
+- injectglist：将glist注入到调度系统
+- > 切换所有g状态为_Grunnable
+- > 若当前p为nil，globrunqputbatch则将g放入sched.runq,调用startm调度g，返回
+- > 否则，globrunqputbatch则将g放入sched.runq,调用startm调度g，多余的g调用runqputbatch放入当前p
+### gcController
+- gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
+### mark
 - gcBgMarkStartWorkers: 启动mark worker协程，暂时不运行，直到mark阶段
 - > 启动gomaxprocs个gcBgMarkWorker，调用notetsleepg休眠当前g在bgMarkReady
 - gcBgMarkWorker：执行mark
@@ -343,15 +381,7 @@ type sweepdata struct {
 - > scanframeworker:扫描栈帧
 - > 扫描defer，panic
 - scanframeworker：扫描栈帧：包括本地变量，函数参数和返回：？？？
-- findObject：找到p指针对应的堆对象：
-- > 找到对应span，检查指针合法性
-- > 找到span起始地址和对象在span中的索引
-- greyobject：依据objindex获取 s.gcmarkBits，判断是否标记，未标记则标记，同时标记 arena.pageMarks，noscan对象直接返回，否则gcw.put将对象放入工作队列wbuf1.obj
-- scanobject：扫描b指向的对象为起点的对象，
-- > 获取heapBits，span和elem大小
-- > 对象大于128k，拆分为oblet？？
-- > 以b为起始地址，遍历步长为8byte，遍历obj，通过heapArean.bit的判断是都为指针，找到指针？？，调用findObject和greyobject标记
-- gcMarkDone：mart to  mark termination 满足work.nwait == work.nproc && !gcMarkWorkAvailable(p)，才可以转换
+- - gcMarkDone：mart to  mark termination 满足work.nwait == work.nproc && !gcMarkWorkAvailable(p)，才可以转换
 - > 获取markDoneSema互斥量
 - > 获取worldsema，用于stw
 - > 系统栈调用forEachP，wbBufFlush1刷每个p的写屏障缓存到gcw，将gcw的wbuf返给work的buf
@@ -377,25 +407,10 @@ type sweepdata struct {
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs: 遍历allp，p.mcache.tiny,调用findObject greyobject标记对象
 - gcMarkWorkAvailable：判断mark是否结束
-- pollWork：判断idle worker是否需要处理网络事件
-- pollFractionalWorkerExit：  判断frac标注是否可以自我抢占
-- startTheWorldWithSema
-- mcache清理：在acquirep调用时，调用prepareForSweep
-- gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
-- gcenable()：被main函数调用，执行bgsweep和bgscavenge
-- gcTrigger.test:测试是否需要gc：gcphase必须等于_GCoff
-- > gcTriggerHeap： 存活的堆内存大于阈值
-- sweepone：清扫未处理的span
-- notetsleepg:休眠g
-- forEachP:
-- injectglist：将glist注入到调度系统
-- > 切换所有g状态为_Grunnable
-- > 若当前p为nil，globrunqputbatch则将g放入sched.runq,调用startm调度g，返回
-- > 否则，globrunqputbatch则将g放入sched.runq,调用startm调度g，多余的g调用runqputbatch放入当前p
-
 ### sweep
 - bgsweep
 - bgscavenge:
+- sweepone：清扫未处理的span
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
