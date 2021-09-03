@@ -341,7 +341,10 @@ type sweepdata struct {
 - > 若当前p为nil，globrunqputbatch则将g放入sched.runq,调用startm调度g，返回
 - > 否则，globrunqputbatch则将g放入sched.runq,调用startm调度g，多余的g调用runqputbatch放入当前p
 ### gcController
-- gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g
+- gcController.findRunnableGCWorker: 返回一个针对p的标记worker/g ，前置条件gcBlackenEnabled != 0.
+- > 从全局gcBgMarkWorkerPool获取一个node
+- > 设置p的gcMarkWorkerMode
+- > 设置node.gp的状态为_Grunnable，返回
 ### mark
 - gcBgMarkStartWorkers: 启动mark worker协程，暂时不运行，直到mark阶段
 - > 启动gomaxprocs个gcBgMarkWorker，调用notetsleepg休眠当前g在bgMarkReady
@@ -406,11 +409,11 @@ type sweepdata struct {
 - gcBgMarkPrepare： 设置work参数
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs: 遍历allp，p.mcache.tiny,调用findObject greyobject标记对象
-- gcMarkWorkAvailable：判断mark是否结束
+- gcMarkWorkAvailable：mark是否可用：p.gcw不为空或者work.full不为空或者work.markrootNext < work.markrootJobs，则返回true
 ### sweep
-- bgsweep
+- bgsweep：
 - bgscavenge:
-- sweepone：清扫未处理的span
+- sweepone：清扫未清理的span和返回page到heap
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
