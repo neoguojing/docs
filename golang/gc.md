@@ -373,9 +373,9 @@ type sweepdata struct {
 - > 系统栈forEachP清理mcache
 - > 释放worldsema ，gcsema开启抢占
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态heapBits判断是否包含指针
-- gcBgMarkPrepare
+- gcBgMarkPrepare： 设置work参数
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
-- gcMarkTinyAllocs
+- gcMarkTinyAllocs: 遍历allp，p.mcache.tiny,调用findObject greyobject标记对象
 - gcMarkWorkAvailable：判断mark是否结束
 - pollWork：判断idle worker是否需要处理网络事件
 - pollFractionalWorkerExit：  判断frac标注是否可以自我抢占
