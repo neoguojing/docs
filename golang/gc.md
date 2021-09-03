@@ -58,6 +58,7 @@
 - worldsema： 授权m尝试stw
 - gcsema：授权m阻塞gc，直到并发gc完成
 - gcCreditSlack:2000
+- sweep sweepdata：清扫状态
 ## gcphase
 - _GCoff  ：gc没有运行，后台在清扫，写屏障未开启
 - _GCmark ：标记根信息和工作缓冲：分配的对象未黑色，启用写屏障
@@ -108,11 +109,19 @@ type wbBuf struct {
 	end uintptr
 	buf [512]uintptr
 }
+var writeBarrier struct {
+	enabled bool    // compiler emits a check of this before calling write barrier
+	pad     [3]byte // compiler uses 32-bit load for "enabled" field
+	needed  bool    // whether we need a write barrier for current GC phase
+	cgo     bool    // whether we need a write barrier for a cgo check
+	alignme uint64  // guarantee alignment so that compiler can use a 32 or 64-bit load
+}
+
 ```
 
 #### 函数
 - wbBufFlush1: 将写屏障buf同步到gc work 队列
-- 
+- setGCPhase：设置gcphase，设置写屏障的状态
 
 ### 标记
 - markBits
@@ -216,6 +225,17 @@ type gcWork struct {
 	scanWork int64
 	flushedWork bool
 }
+// State of background sweep.
+type sweepdata struct {
+	lock    mutex
+	g       *g
+	parked  bool
+	started bool
+	nbgsweep    uint32
+	npausesweep uint32
+	centralIndex sweepClass
+}
+
 
 ```
   
@@ -310,10 +330,21 @@ type gcWork struct {
 - > 系统栈调用forEachP，wbBufFlush1刷每个p的写屏障缓存到gcw，将gcw的wbuf返给work的buf
 - > 调用stopTheWorldWithSema，
 - > 进入系统栈：遍历所有p调用wbBufFlush1，若gcw不为空，则调用startTheWorldWithSema重启workd，跳到top重新执行
-- > gcWakeAllAssists
+- > gcWakeAllAssists ：唤醒所有阻塞的assist g，
 - > 释放：markDoneSema
-- >  gcController.endCycle()
-- > gcMarkTermination:
+- >  gcController.endCycle()：计算下一轮gc的ratio
+- > gcMarkTermination
+- gcMarkTermination：
+- > 设置gcphase为_GCmarktermination，暂停当前g
+- > 系统栈g0执行gcMark，遍历p，清空p.wbBuf和gcw.wbuf1
+- > 系统栈执行：设置gcphase为_GCoff，关闭写屏障，调用gcSweep
+- > 设置当前g为_Grunning，开启抢占，计算统计值
+- > injectglist将work.sweepWaiters.list清扫g注入调度系统
+- > 系统栈startTheWorldWithSema
+- > prepareFreeWorkbufs:將work.wbufSpans.busy转移到free
+- > freeStackSpans清理空闲栈
+- > 系统栈forEachP清理mcache
+- > 释放worldsema ，gcsema开启抢占
 - gcFlushBgCredit
 - gcResetMarkState: 系统栈调用，设置标记的优先级：并发或者stw，重置所有g的栈扫描状态heapBits判断是否包含指针
 - stopTheWorldWithSema：
@@ -333,7 +364,11 @@ type gcWork struct {
 - sweepone：清扫未处理的span
 - notetsleepg:休眠g
 - forEachP:
-
+- injectglist：将glist注入到调度系统
+- > 切换所有g状态为_Grunnable
+- > 若当前p为nil，globrunqputbatch则将g放入sched.runq,调用startm调度g，返回
+- > 否则，globrunqputbatch则将g放入sched.runq,调用startm调度g，多余的g调用runqputbatch放入当前p
+- > 
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
