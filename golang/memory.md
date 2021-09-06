@@ -179,7 +179,16 @@ type mspan struct {
 - grow
 - 
 ## mheap
-- freeManual
+- freeManual：mspan.needzero = 1 调用freeSpanLocked
+- freeSpanLocked:
+- > 若状态为mSpanInUse，则mheap.pagesInUse -= mspan.npages，计算arean和page所应等
+- > 更新统计值
+- > 调用pageAlloc.free,释放page
+- > 设置span为dead
+- > 调用freeMSpanLocked
+- freeMSpanLocked：
+- > 尝试将span放入pp.mspancache.buf，做缓存
+- > 调用fixalloc.free,将inuse减去span的大小，将空闲地插入list头部
 - grow： 添加npage to mheap
 - alloc：
 - allocSpan：分配一个mspan，有npage大小，必须在系统栈调用
@@ -246,6 +255,7 @@ type pageBits [8]uint64   //每个bit代表一页（8k），则uint64代表：51
 - chunkIdx.l2() ：i & 8191
 - pallocBits.find1: i*64 + uint(sys.TrailingZeros64(^x)) 通过TZ，计算尾部的0的个数，以此判断空闲页的偏移
 - alloc:分配内存
+- free：释放npage内存？？？
   
 ### pageCache 页缓存 位于p
 ```
