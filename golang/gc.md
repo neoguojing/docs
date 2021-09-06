@@ -86,7 +86,15 @@
 - > work.assistQueue.q.empty 阻塞assist g列表为空，则设置gcController.bgScanCredit返回
 - > 否则：若gp.gcAssistBytes >= 0，则清零gp.gcAssistBytes = 0，调用ready让g继续运行；否则，增加gp.gcAssistBytes ，放g回到work.assistQueue.q
 - > gcController.bgScanCredit += gp.gcAssistBytes
-
+- gcAssistAlloc: 在mallocgc调用，当g.gcAssistBytes<0时
+- > 计算扫描工作量让gcAssistBytes变为正数,若工作量不够，可以从gccontroller偷一部分工作量
+- > 系统栈调用：gcAssistAlloc1
+- > 若 gp.param != nil，则调用gcMarkDone
+- > 若g.gcAssistBytes<0依旧成立，g可抢占，调用Gosched()，恢复之后goto retry
+- > gcParkAssist:将g放入assist 队列，并park，恢复之后 goto retry
+- gcAssistAlloc1： 切换当前g状态为_Gwaiting，调用gcDrainN，完成之后切换状态为_Grunning
+- gcDrainN：
+- gcParkAssist: 将g放入work.assistQueue.q，调用goparkunlock暂停
 ### stw
 ```
 //stw 前置条件
