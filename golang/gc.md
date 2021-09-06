@@ -405,6 +405,10 @@ type gcWork struct {
 - > p.wbBuf清空
 - > p.gcw.dispose将多余工作迁移到全局
 - > 统计heap_scan
+- gcmarknewobject：标记一个新分配的对象为黑色，由mallocgc设置
+- > 标记对象：gcmarkBits
+- > 标记页面：heapArena.pageMarks
+- > 更新gcw的统计值
 ### sweep
 - numSweepClasses：272
 - 
