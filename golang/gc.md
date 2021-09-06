@@ -169,7 +169,8 @@ var writeBarrier struct {
 ### 标记
 - markBits
 - heapBits
-- pageMarks
+- heapArena.pageMarks: 哪些span上有已标记的对象
+- heapArena.bitmap：存储arena里word的指针或者标量
 
 ## 结构体
 ```
