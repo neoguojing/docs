@@ -439,7 +439,11 @@ type sweepdata struct {
 - > mheap_.reclaimCredit=mspan.npages
 - > 系统栈调用：mheap_.pages.scavengeStartGen()
 - > readyForScavenger
-- freeSomeWbufs
+- freeSomeWbufs：释放work.wbufSpans.free相关spab
+- > 系统栈 遍历work.wbufSpans.free.first64次，
+- > work.wbufSpans.free.remove 从列表移除mpan
+- > mheap_.freeManual 释放span
+- > 若work.wbufSpans.free不为空，则返回true
 - mspan.sweep:执行清理 ???
 - > mheap_.pagesSwept+=mspan.npages
 - > 
