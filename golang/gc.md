@@ -374,7 +374,7 @@ type gcWork struct {
 - > scanframeworker:扫描栈帧
 - > 扫描defer，panic
 - scanframeworker：扫描栈帧：包括本地变量，函数参数和返回：？？？
-- - gcMarkDone：mart to  mark termination 满足work.nwait == work.nproc && !gcMarkWorkAvailable(p)，才可以转换
+- gcMarkDone：mart to  mark termination 满足work.nwait == work.nproc && !gcMarkWorkAvailable(p)，才可以转换
 - > 获取markDoneSema互斥量
 - > 获取worldsema，用于stw
 - > 系统栈调用forEachP，wbBufFlush1刷每个p的写屏障缓存到gcw，将gcw的wbuf返给work的buf
@@ -400,6 +400,11 @@ type gcWork struct {
 - gcMarkRootPrepare： 统计data，bss，mspan和栈的信息作为根对象的个数
 - gcMarkTinyAllocs: 遍历allp，p.mcache.tiny,调用findObject greyobject标记对象
 - gcMarkWorkAvailable：mark是否可用：p.gcw不为空或者work.full不为空或者work.markrootNext < work.markrootJobs，则返回true
+- gcMark:
+- > 遍历allp: 
+- > p.wbBuf清空
+- > p.gcw.dispose将多余工作迁移到全局
+- > 统计heap_scan
 ### sweep
 - numSweepClasses：272
 - 
@@ -441,6 +446,9 @@ type sweepdata struct {
 - mheap.nextSpanForSweep:下一个需要被清扫的span
 - > 遍历mheap.central[spc].mcentral的full和partial的unswept集合，找到一个span
 - > 更新sweep.centralIndex,作为下一个查找的起点
+- gcSweep
+- > mheap_.sweepgen += 2,重置mheap的sweep参数
+- > 设置sweep.parked=false，调用ready(sweep.g, 0, true)，设置后台清扫g未可运行
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
