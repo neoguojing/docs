@@ -171,6 +171,10 @@
 -  goready(gp)：
 - suspendG
 - resumeG
+- func ready(gp *g, traceskip int, next bool) ：
+- > 设置当前g为_Grunnable
+- > runqput放入本地p
+- > wakep尝试调度
 ## p
 
 ### 变量：
@@ -189,7 +193,9 @@
 - > gcBlackenEnabled != 0 && gcMarkWorkAvailable(_p_) 调用startm调度一个m执行q
 - > 没有空闲的m， 调用startm调度一个m执行q
 - > ？？
-
+- wakep()
+- > sched.npidle没有空闲p则返回
+- > 调用startm，调度一个m运行p
 ## m
 
 ### 结构体
