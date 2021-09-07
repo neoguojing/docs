@@ -93,7 +93,12 @@
 - > 若g.gcAssistBytes<0依旧成立，g可抢占，调用Gosched()，恢复之后goto retry
 - > gcParkAssist:将g放入assist 队列，并park，恢复之后 goto retry
 - gcAssistAlloc1： 切换当前g状态为_Gwaiting，调用gcDrainN，完成之后切换状态为_Grunning
-- gcDrainN：
+- gcDrainN：将灰色对象变黑，直到处理scanWork个单元的扫描工作，或者G被抢占
+- > 循环直到gp被抢占，或者工作量达标：
+- > 调用gcw.balance() tryGetFast tryGet wbBufFlush等确保获取到一个工作
+- > 若工作依旧未空，则尝试markroot
+- > scanobject扫描对象
+- > 
 - gcParkAssist: 将g放入work.assistQueue.q，调用goparkunlock暂停
 - gcWakeAllAssists: 从work.assistQueue.q获取多个g，调用injectglist从runq中获取p，交给m执行
 ### stw
@@ -472,6 +477,10 @@ type sweepdata struct {
 - > 遍历 mheap_.central ，清空mheap_.central[i].mcentral，未清理部分
 - > wakeScavenger
 - > nextMarkBitArenaEpoch:调整gcBitsArenas
+- clearpools：
+- > 清空sync.Pools
+- > 清空sched.sudogcache
+- > 清空sched.deferpool
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
