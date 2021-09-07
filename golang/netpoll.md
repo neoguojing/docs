@@ -3,7 +3,7 @@
 ## netpoll
 > runtime/netpoll.go
 > runtime/netpoll_epoll.go
-
+> internal/poll/fd_poll_runtime.go
 ### epoll
 
 #### 原理
@@ -48,11 +48,34 @@ struct epoll_event {
 ### 常量
 - pdReady：1，io就绪通知挂起；
 - pdWait：2，一个g准备在该信号量上挂起等待
+- pollBlockSize：大小为4k
+- netpollWaiters： 等待pdWait的g的数量
 ### 结构
-- pollDesc
-- pollCache
+- pollDesc ：大小为232字节，不在gc内存上分配，使用persistentalloc分配
+- pollCache：pollDesc的缓存，
 ### 函数
 
+#### 通用接口
+- poll_runtime_pollServerInit: 调用netpollinit，并设置netpollInited=1
+- poll_runtime_isPollServerDescriptor：判断fd是否被netpoll使用
+- poll_runtime_pollOpen：
+- > pollcache.alloc()分配一个pd
+- > 初始化pd，调用netpollopen
+- poll_runtime_pollClose：调用netpollclose，释放pd
+- poll_runtime_pollReset：设置rg和wg为0
+- poll_runtime_pollWait：循环调用netpollblock，若状态为pdReady，则返回，否则重复调用
+- poll_runtime_pollWaitCanceled//只在window使用
+- poll_runtime_pollSetDeadline
+- poll_runtime_pollUnblock
+- netpollinited：netpoll是否初始化
+- func netpollgoready(gp *g, traceskip int)：netpollWaiters-1 调用goready是g变为runable
+- netpollblock：
+- > rg/wg == pdReady，返回true，
+- >  rg/wg == 0,则设置值为pdWait
+- > gopark当前g，并调用netpollblockcommit设置rg/wg为当前g，增加netpollWaiters，让后将当前g设置为runnable，调用excute调度
+- netpollunblock：
+- pollWork：判断是否有网络事件供当前p处理
+#### linux 接口
 - netpollinit：
 - > epollcreate1(_EPOLL_CLOEXEC) 创建close on exec的fd
 - > nonblockingPipe()：创建非阻塞的管道，返回读netpollBreakRd和写netpollBreakWr fd
@@ -65,7 +88,6 @@ struct epoll_event {
 - > 抢占netpollWakeSig
 - > 向netpollBreakWr写入一个字节，循环写，直到写成功
 - netpollIsPollDescriptor
-- netpollinited：netpoll是否初始化
 - netpoll：检查就绪的网络连接,delay<0 永久阻塞，==0不阻塞，大于0等待ns，返回一个就绪g列表runnable
 - > 调用epollwait
 - > 若返回值< 0，若delay > 0 ,返回空glist，否则重新调用epollwait
@@ -74,9 +96,7 @@ struct epoll_event {
 - > 根据事件类型确定时读模式还是写模式
 - > 从ev.data获取pollDesc，设置pd.everr
 - > 调用netpollready(&toRun, pd, mode)
-- netpollread：调用netpollunblock 生成g，然后放入toRun列表
-- netpollunblock：
-- pollWork：判断是否有网络事件供当前p处理
+
 - 
 
 ## 引用
