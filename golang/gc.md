@@ -95,6 +95,7 @@
 - gcAssistAlloc1： 切换当前g状态为_Gwaiting，调用gcDrainN，完成之后切换状态为_Grunning
 - gcDrainN：
 - gcParkAssist: 将g放入work.assistQueue.q，调用goparkunlock暂停
+- gcWakeAllAssists: 从work.assistQueue.q获取多个g，调用injectglist从runq中获取p，交给m执行
 ### stw
 ```
 //stw 前置条件
@@ -144,7 +145,7 @@ semrelease(&worldsema)
 - wbBufEntries：256
 - wbBufEntryPointers： 每个写屏障写入buf的指针数量
 - shade：查找对象findObject，将对象greyobject
-
+- gcphase == _GCmark || gcphase == _GCmarktermination 时开启写屏障
 #### 结构体
 ```
 type wbBuf struct {
