@@ -467,6 +467,11 @@ type sweepdata struct {
 - gcSweep
 - > mheap_.sweepgen += 2,重置mheap的sweep参数
 - > 设置sweep.parked=false，调用ready(sweep.g, 0, true)，设置后台清扫g未可运行
+- finishsweep_m：确保所有span被清除
+- > 循环调用sweepone，直到清除完成
+- > 遍历 mheap_.central ，清空mheap_.central[i].mcentral，未清理部分
+- > wakeScavenger
+- > nextMarkBitArenaEpoch:调整gcBitsArenas
 ### gcw
 - balance： 迁移部分work到全局队列
 ## 引用
