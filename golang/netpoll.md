@@ -46,7 +46,8 @@ struct epoll_event {
 - > 该函数检查就绪列表，有事件则返回，并把事件copy到用户态，清空就绪列表；无事件则超时后返回；
 - int epoll_pwait(int epfd, struct epoll_event *events, int maxevents, int timeout,  const sigset_t *sigmask)： 允许捕获一个信号量
 ### 常量
-
+- pdReady：1，io就绪通知挂起；
+- pdWait：2，一个g准备在该信号量上挂起等待
 ### 结构
 - pollDesc
 - pollCache
@@ -66,8 +67,15 @@ struct epoll_event {
 - netpollIsPollDescriptor
 - netpollinited：netpoll是否初始化
 - netpoll：检查就绪的网络连接,delay<0 永久阻塞，==0不阻塞，大于0等待ns，返回一个就绪g列表runnable
-- > 
-- > 
+- > 调用epollwait
+- > 若返回值< 0，若delay > 0 ,返回空glist，否则重新调用epollwait
+- > 否则，遍历所有返回的事件：
+- > 若ev.data 等于&netpollBreakRd，若deley！=0，调用read读取netpollBreakRd管道，修改netpollWakeSig=0，继续遍历
+- > 根据事件类型确定时读模式还是写模式
+- > 从ev.data获取pollDesc，设置pd.everr
+- > 调用netpollready(&toRun, pd, mode)
+- netpollread：调用netpollunblock 生成g，然后放入toRun列表
+- netpollunblock：
 - pollWork：判断是否有网络事件供当前p处理
 - 
 
