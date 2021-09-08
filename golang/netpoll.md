@@ -1,5 +1,13 @@
 # 网络
 
+## tips
+```
+ var old uintptr = 0
+ a:=unsafe.Pointer(old)
+ 
+ a 为nil
+```
+
 ## netpoll
 > runtime/netpoll.go
 > runtime/netpoll_epoll.go
@@ -65,16 +73,27 @@ struct epoll_event {
 - poll_runtime_pollReset：设置rg和wg为0
 - poll_runtime_pollWait：循环调用netpollblock，若状态为pdReady，则返回，否则重复调用
 - poll_runtime_pollWaitCanceled//只在window使用
-- poll_runtime_pollSetDeadline
+- poll_runtime_pollSetDeadline：
+- > 设置rd/wd
+- > 设置rt/wt，调用resettimer，设置计时器
+- > rd/wd < 0 表示设置时间超时，调用netpollunblock，返回rg/wg
+- > 若rg/wg不为nil，调用netpollgoready
 - poll_runtime_pollUnblock
 - netpollinited：netpoll是否初始化
 - func netpollgoready(gp *g, traceskip int)：netpollWaiters-1 调用goready是g变为runable
-- netpollblock：
+- netpollready：调用netpollunblock(pd, xx, true)，返回rg/wg，非nil，则放入glist
+- netpollblock：g会被阻塞，返回true表示IO ready，false表示超时或者关闭，参数waitio=true等待完成的IO，忽略错误
 - > rg/wg == pdReady，返回true，
 - >  rg/wg == 0,则设置值为pdWait
 - > gopark当前g，并调用netpollblockcommit设置rg/wg为当前g，增加netpollWaiters，让后将当前g设置为runnable，调用excute调度
-- netpollunblock：
+- netpollunblock：g不会阻塞，入参ioready，用于设置该函数是否需要循环直到状态变为pdReady
+- > rg/wg状态为pdReady，返回nil
+- > ioready为false && rg/wg未就绪，则返回nil
+- > cas不断循环尝试设置rg/wg为pdReady，成功则返回rg/wg的原始值：若原始值为pdWait，则返nil，若原始值为g，则返回g的指针
 - pollWork：判断是否有网络事件供当前p处理
+- netpollReadDeadline: 为timer使用的回调函数，调用netpolldeadlineimpl
+- netpollWriteDeadline：为timer使用的回调函数，调用netpolldeadlineimpl
+- netpolldeadlineimpl：调用netpollunblock，返回rg/wg，rg/wg！= nil，调用netpollgoready，恢复g调用
 #### linux 接口
 - netpollinit：
 - > epollcreate1(_EPOLL_CLOEXEC) 创建close on exec的fd
