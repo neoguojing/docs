@@ -14,6 +14,7 @@
 > internal/poll/fd_poll_runtime.go
 ### epoll
 
+- EAGAIN：read操作时触发，提示现在暂时没有数据，请稍后再试
 #### 原理
 - 内核高速cache区：内核启动时开辟，已经建立于物理内存映射，建立了slab层
 - socket以红黑树的形式保存
