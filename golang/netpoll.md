@@ -83,12 +83,13 @@ struct epoll_event {
 - poll_runtime_pollUnblock
 - netpollinited：netpoll是否初始化
 - func netpollgoready(gp *g, traceskip int)：netpollWaiters-1 调用goready是g变为runable
-- netpollready：调用netpollunblock(pd, xx, true)，返回rg/wg，非nil，则放入glist
+- netpollready：当epoll事件就绪时，尝试设置rg/wg为pdReady，可能的情况下返回pd绑定的g
+- > 调用netpollunblock(pd, xx, true)，返回rg/wg，非nil，则放入glist
 - netpollblock：返回true表示IO ready，false表示超时或者关闭，参数waitio在epoll下永远为false；只对windows的完成io有用
 - > rg/wg == pdReady，设置rg/wg返回true，
 - >  循环直到rg/wg == 0,则设置值为pdWait
-- > 返回false
-- netpollunblock：g不会阻塞，入参ioready，用于设置该函数是否需要循环直到状态变为pdReady
+- > 若pd的错误为0 ，则调用gopark暂停g的同时调用netpollblockcommit，尝试设置rg/wg的值由pdwait变为g，成功则马上恢复g的执行，否则等待调度
+- netpollunblock：轮询，rg/wg为pdready返回nil，否则尝试切换状态为pdready，并返回rg/wg的值，可能为pdwait或者g
 - > rg/wg状态为pdReady，返回nil
 - > ioready为false && rg/wg未就绪，则返回nil
 - > cas不断循环尝试设置rg/wg为pdReady，成功则返回rg/wg的原始值：若原始值为pdWait，则返nil，若原始值为g，则返回g的指针
