@@ -85,7 +85,7 @@ struct epoll_event {
 - netpollblock：g会被阻塞，返回true表示IO ready，false表示超时或者关闭，参数waitio=true等待完成的IO，忽略错误
 - > rg/wg == pdReady，返回true，
 - >  rg/wg == 0,则设置值为pdWait
-- > gopark当前g，并调用netpollblockcommit设置rg/wg为当前g，增加netpollWaiters，让后将当前g设置为runnable，调用excute调度
+- > 若waitio==true，则gopark当前g，并调用netpollblockcommit设置rg/wg为当前g，增加netpollWaiters，让后将当前g设置为runnable，调用excute调度
 - netpollunblock：g不会阻塞，入参ioready，用于设置该函数是否需要循环直到状态变为pdReady
 - > rg/wg状态为pdReady，返回nil
 - > ioready为false && rg/wg未就绪，则返回nil
