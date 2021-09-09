@@ -1,7 +1,7 @@
 # 网络
 ## 概述
 - 调度/GC/sysmon等流程，会调用netpoll函数，遍历就绪的事件，并把事件中存储的pd的rg/wg的状态设置为pdReady
-- FD的Read和Write函数会调用pd.wait函数，尝试扭转pd状态为pdWait，并调用gopark挂起当前go程，同时尝试赋值pd状态为当前go程，成功则直接恢复g的调度，否则，等待下一次调度
+- FD的Read和Write函数会调用pd.wait函数，尝试扭转pd状态为pdWait，并调用gopark挂起当前go程，同时尝试赋值pd状态为当前go程，成功则直接恢复g的运行，否则，等待下一次调度
 - FD的Read/Write函数首先调用系统调用读或者写fd，若fd暂时没有数据，会调用pd.wait异步等待新的事件的到来；
 - gopark是实现异步的关键
 ## tips
