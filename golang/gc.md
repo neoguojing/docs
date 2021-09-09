@@ -102,6 +102,10 @@
 - gcParkAssist: 将g放入work.assistQueue.q，调用goparkunlock暂停
 - gcWakeAllAssists: 从work.assistQueue.q获取多个g，调用injectglist从runq中获取p，交给m执行
 ### stw
+#### 相关参数
+- sched.stopwait： stw时会设置为gomaxprocs，每停止一个p（_Pgcstop），则减1
+- sched.gcwaiting : stw或者freezetheworld时，会设置为1
+- sched.stopnote : stw时会在此信号量上sleep
 ```
 //stw 前置条件
 semacquire(&worldsema, 0)
