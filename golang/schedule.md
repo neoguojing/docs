@@ -251,6 +251,7 @@
 - > 死循环： 调用notesleep休眠线程，调用mDoFixup
 - stopm： 停止当前m直到一个新的work就绪
 - mput ： m放入sched.midle
+- startlockedm: 调度锁定的m去执行锁定的g，解绑p，赋值mp.nextp=p，唤醒m.park,stopm停止m
 
 ## 引用
 - https://blog.csdn.net/zdy0_2004/article/details/106392885
