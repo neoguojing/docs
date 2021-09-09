@@ -37,7 +37,7 @@
 - pidle: 空闲的p，npidle统计个数
 - midle：空闲的m，nmidle控制个数
 - nmidlelocked： 被g锁定的等待运行的m的个数
-- 
+- lastpoll: 0 表示正在调用netpoll
 
 ## 重要函数
 - Gosched：不会挂起当前g，只是放入全局queue：切换到g0，执行gosched_m；
@@ -188,11 +188,16 @@
 ### 函数
 - pidleput： 将p放入空闲列表
 - runqput： 将g放入p末尾，p满了，则放入全局p
-- handoffp： 将p从执行系统调用或者加锁的m种解除 
+- handoffp： 将p从执行系统调用或者加锁的m种解除 ，会尝试调用startm用一个新的m去运行p
 - > p的runqempty不为空或者sched.runqsize不为0，调用startm调度一个m执行q
 - > gcBlackenEnabled != 0 && gcMarkWorkAvailable(_p_) 调用startm调度一个m执行q
 - > 没有空闲的m和p， 调用startm调度一个m执行q
-- > 
+- > gc需要stw，则停止p（_Pgcstop）
+- > p在等待sched.safePointFn函数的执行，则执行sched.safePointFn，尝试唤醒sched.safePointNote
+- > 全局q队列不为空，调用startm运行p
+- > 当前p为最后一个在运行的p，且当前没有g在调用netpoll，则需要唤醒一个m运行当前p，进行netpoll调用
+- > pidleput，将p放入空闲列表
+- > wakeNetPoller:调用netpollBreak唤醒运行netpoll的线程
 - wakep()
 - > sched.npidle没有空闲p则返回
 - > 调用startm，调度一个m运行p
