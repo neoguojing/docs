@@ -249,6 +249,7 @@
 - mPark: 线程park自身的唯一途径；
 - > 死循环： 调用notesleep休眠线程，调用mDoFixup
 - stopm： 停止当前m直到一个新的work就绪
+- mput ： m放入sched.midle
 
 ## 引用
 - https://blog.csdn.net/zdy0_2004/article/details/106392885
