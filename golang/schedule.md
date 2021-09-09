@@ -31,12 +31,12 @@
 
 
 ## 调度参数：
-- sched.maxmcount = 10000： 最大m个数，默认10000
+- maxmcount = 10000： 最大m个数，默认10000
 - m.spinning：m未找到一个可运行的p，在积极寻找一个work
-- sched.nmspinning：在空转的m个数
-- sched.pidle: 空闲的p，npidle统计个数
-- sched.midle：空闲的m，nmidle控制个数
-- nmidlelocked： 等待运行的m
+- nmspinning：在空转的m个数
+- pidle: 空闲的p，npidle统计个数
+- midle：空闲的m，nmidle控制个数
+- nmidlelocked： 被g锁定的等待运行的m的个数
 - 
 
 ## 重要函数
@@ -189,18 +189,22 @@
 - pidleput： 将p放入空闲列表
 - runqput： 将g放入p末尾，p满了，则放入全局p
 - handoffp： 将p从执行系统调用或者加锁的m种解除 
-- > runqempty不为空或者sched.runqsize不为0，调用startm调度一个m执行q
+- > p的runqempty不为空或者sched.runqsize不为0，调用startm调度一个m执行q
 - > gcBlackenEnabled != 0 && gcMarkWorkAvailable(_p_) 调用startm调度一个m执行q
-- > 没有空闲的m， 调用startm调度一个m执行q
-- > ？？
+- > 没有空闲的m和p， 调用startm调度一个m执行q
+- > 
 - wakep()
 - > sched.npidle没有空闲p则返回
 - > 调用startm，调度一个m运行p
+- acquirep:将p和当前m绑定，调用wirep
+- releasep：解绑p和当前的m
+- wirep：设置m.p为穿入p，设置p.m为当前m，设置p为_Prunning
+- 
 ## m
 
 ### 结构体
 - newmHandoff： m的列表，列表里的m都没有绑定os thread，通过 m.schedlink构建列表
-- m.freeWait:0则表示可以安全停止g0和释放m
+- freeWait:0则表示可以安全停止g0和释放m
 - m.park: 暂停等待的指针
 - lockedg: 保存g的指针，在dolockOSThread有使用，明确m加锁的g
 - preemptoff: !="" 则不允许抢占
@@ -217,14 +221,14 @@
 - > newosproc为m创建线程
 - func newosproc(mp *m)：创建操作系统线程
 - > mp.g0.stack.hi 获取栈顶指针
-- > 调用系统调用clone创建线程
+- > 调用系统调用clone创建线程，运行mstart
 - allocm: 分配一个m，不绑定任何thread
 - > 当前g.m.p == 0 ,则acquirep，临时借用一个p
 - > sched.freem != nil,则释放m，回收系统栈stackfree
 - > new(m) 和mcommoninit
 - > mp.g0 初始化
 - > releasep,释放m.p指向的p
-- mstart: 进程启动时调用，启动m，开始执行调度;
+- mstart: m启动时调用，启动m，开始执行调度;
 - > 获取g，设置stack信息,当前g为g0
 - > 调用mstart1
 - > mexit
