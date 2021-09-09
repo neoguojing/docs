@@ -147,6 +147,7 @@
 
 ### 变量
 - lockedm： 锁定的m，dolockOSThread有调用
+- startpc： g 函数执行地址
 
 ### 函数：
 - getg： 从TLS（线程本地缓存）获取当前运行的指向g结构体的指针
