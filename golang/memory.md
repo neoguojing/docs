@@ -307,7 +307,7 @@ type gcBitsArena struct {
 ## mallocgc
 - _GCmarktermination阶段不允许分配内存
 ### nextFreeFast mspan快速重用空闲对象
-- Ctz64计算allocCache末尾为0的bit数量theBit，表示空闲内存的偏移；0表示已分配；每个bit表示一个elem
+- Ctz64计算allocCache开通为0的bit数量（从左到右）theBit，表示空闲内存的偏移；0表示已分配；每个bit表示一个elem
 - 若theBit<64,从freeindex开始加上偏移量，即找到空闲对象的位置索引，s.freeindex + uintptr(theBit)=result
 - result<nelems: 更新freeindex=result+1 allocCache>>theBit + 1 allocCount++ ,返回result*s.elemsize + s.base()，一个虚拟地址
 
