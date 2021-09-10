@@ -174,10 +174,17 @@ type mspan struct {
 - > gcController.revise()更新统计值
 - stackcache_clear 回收stackcache：遍历 c.stackcache[order].list，调用stackpoolfree
 ## mcentral
+- grow：
+- > mheap_.alloc 分配新的span
+- > heapBit.initSpant初始化span对应的bitmap
 - uncacheSpan
-- cacheSpan
-- grow
-- 
+- cacheSpan ：给mcache分配一个mspan
+- > deductSweepCredit执行清扫
+- > 从partial 已清扫列表获取一个span，存在，则跳转到havespan
+- > 从partial 未清扫列表获取span，调用mspan.sweep清扫该span，跳转到havespan
+- > 从full，未清扫列表获取span，调用mspan.sweep清扫该span，调用s.nextFreeIndex()获取freeindex，若freeIndex != s.nelems，跳转到havespan；否认将清扫完成的span挂到full，已清扫
+- > 调用mcentral.grow，分配一个新的span
+- > 根据新的span，计算freeindex和allocCache
 ## mheap
 - freeManual：mspan.needzero = 1 调用freeSpanLocked
 - freeSpanLocked:
