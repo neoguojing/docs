@@ -150,7 +150,7 @@ semrelease(&worldsema)
 - p.runSafePointFn:执行sched.safePointFn 在下一个安全点
 - 
 ### 内存屏障相关
-
+- mbarrier.go
 - wbBufEntries：256
 - wbBufEntryPointers： 每个写屏障写入buf的指针数量
 - shade：查找对象findObject，将对象greyobject
@@ -173,9 +173,22 @@ var writeBarrier struct {
 ```
 
 #### 函数
+- wbBufFlush：
 - wbBufFlush1: 将写屏障buf同步到gc work 队列
 - setGCPhase：设置gcphase，设置写屏障的状态
-
+- gcWriteBarrier: 汇编函数
+- > 增加wbBuf.next的位置
+- > 保存 val的值到wbBuf
+- > 保存 ptr的值到wbbuf
+- > 若队列满了，跳转到flush，保存寄存器值，调用runtime·wbBufFlush
+```
+<!-- 为代码 -->
+if runtime.writeBarrier.enabled {
+    runtime.gcWriteBarrier(ptr, val)
+} else {
+    *ptr = val
+}
+```
 ### 标记
 - markBits
 - heapBits
@@ -490,3 +503,4 @@ type sweepdata struct {
 ## 引用
 
 - https://blog.csdn.net/qq_33339479/article/details/108491796
+- https://blog.csdn.net/qiya2007/article/details/107291497
