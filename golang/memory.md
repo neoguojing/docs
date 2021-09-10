@@ -212,7 +212,7 @@ type mspan struct {
 ### arena管理
 ```
 type heapArena struct {
-	bitmap [2^21]byte  //2bit设置代表一个word，
+	bitmap [2^21]byte  //2bit设置代表一个word，本arean区域的word的指针或标量的bitmap
 	spans [8192]*mspan  //page到span的映射
 	pageInUse [1024]uint8 //mSpanInUse的span，只有span对应的第一页被映射
 	pageMarks [1024]uint8 //由标记object的span
