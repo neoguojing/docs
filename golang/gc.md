@@ -215,7 +215,8 @@ type heapBits struct {
 - heapBits.initSpan:
 - > 计算span可以保存指针的个数nw
 - > 循环：nw>0：
-- > 
+- > 计算需要的字节数，若是指针则设置bitp指向的数组的所有bit为1
+- > 不是指针调用memclrNoHeapPointers，清理bit
 ## 结构体
 ```
 type gcTriggerKind int  //触发gc的类型
