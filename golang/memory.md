@@ -221,7 +221,9 @@ type heapArena struct {
 	zeroedBase uintptr //??
 }
 ```
-- arenaIndex：地址空间按64MB分割的索引
+- arenaIndex：地址空间按64MB分割的索引 （地址-0xffff800000000000）/64
+- arenaIdx.l1 = 0
+- arenaIdx.l2 = arenaIndex & (2^48-1) 即arenaIndex本身
 - setSpans：将新分配的span，和构成span的page做映射放入mheap.arenas，为1：n的关系，
 
 ## 页管理
