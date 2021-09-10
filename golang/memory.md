@@ -222,7 +222,7 @@ type heapArena struct {
 ```
 type pageAlloc struct {
   summary [5][]pallocSum   //[5]{[2^14]pallocSum,[2^17]pallocSum,[2^20]pallocSum,[2^23]pallocSum,[2^26]pallocSum}，从0-4依次代表基数树的每一层
-  chunks [8192]*[8192]pallocData //pallocData 用bitmap代表4MB的内存空空，即2^22, chunks总共可以表示2^22 * 2^13 * 2^13 = 2^48
+  chunks [8192]*[8192]pallocData //pallocData 用pageBits代表4MB的内存空间，即2^22, chunks总共可以表示2^22 * 2^13 * 2^13 = 2^48
   searchAddr offAddr //maxSearchAddr : 0x7FFFFFFFFFFF
   start, end chunkIdx
   inUse addrRanges
