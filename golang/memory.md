@@ -216,8 +216,8 @@ type mspan struct {
 type heapArena struct {
 	bitmap [2^21]byte  //2bit设置代表一个word，本arean区域的word的指针或标量的bitmap
 	spans [8192]*mspan  //page到span的映射
-	pageInUse [1024]uint8 //mSpanInUse的span，只有span对应的第一页被映射
-	pageMarks [1024]uint8 //由标记object的span
+	pageInUse [1024]uint8 //mSpanInUse的span，只有span对应的第一页被映射；allocSpan中设置标识，freeSpanLocked中清空标识
+	pageMarks [1024]uint8 //有被标记object的span，用首页page的标记代表mspan，greyobject/gcmarknewobject/wbBufFlush1中使用
 	pageSpecials [1024]uint8
 	checkmarks *checkmarksMap
 	zeroedBase uintptr //??
