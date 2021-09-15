@@ -192,7 +192,7 @@ if runtime.writeBarrier.enabled {
 ### 标记 s.elemsize == sys.PtrSize 表示span存的是指针
 - markBits
 
-#### heapBits
+#### heapBits 用于快速判定span中是否有指针
 - bitPointer = 1
 - bitScan = 16
 - heapBitsShift = 1
