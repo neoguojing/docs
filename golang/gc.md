@@ -208,6 +208,15 @@ type heapBits struct {
 	arena uint32 // Index of heap arena containing bitp
 	last  *uint8 // Last byte arena's bitmap &ha.bitmap[len(ha.bitmap)-1]
 }
+
+hbits := heapBitsForAddr(base)//根据基地址计算heapBits
+n := s.elemsize  //对象的大小
+for i := uintptr(0); i < n; i += sys.PtrSize { //以指针大小为步长遍历
+	if hbits.isPointer() {}
+	hbits = hbits.next()
+}
+使用方法：
+
 ```
 - heapArena.pageMarks: 哪些span上有已标记的对象
 - heapArena.bitmap：存储arena里word的指针或者标量
@@ -224,8 +233,14 @@ type heapBits struct {
 - > 根据指针数计算需要的bitmap的个数 n/4=nbyte
 - > 若是指针则设置bitp指向的数组的所有bit为1
 - > 不是指针调用memclrNoHeapPointers，清理bit
-- >  heapBit.forwardOrBoundary:调用forward，返回heapBits的位置和当前可以保存的指针个数
-- > heapBit.forward: 根据span存储的指针数，计算需要的字节数，并把heapBits的bitp向后移动n个字节
+- heapBit.forwardOrBoundary:调用forward，返回heapBits的位置和当前可以保存的指针个数
+- heapBit.forward: 根据span存储的指针数，计算需要的字节数，并把heapBits的bitp向后移动n个字节
+- heapBi..next:若heapBit当前描述地址p，则next描述p+8byte
+- > 若shift<3,则shift+1
+- > 否则若h.bitp != h.last，则bitp向后移动1个byte
+- > 否则调用nextArena
+- heapBit.nextArena:arena+1，计算下一个arenaidx找到对应的heaparean
+
 ## 结构体
 ```
 type gcTriggerKind int  //触发gc的类型
