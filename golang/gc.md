@@ -201,8 +201,10 @@ if runtime.writeBarrier.enabled {
 - bitPointerAll： 0000 1111
 ```
 type heapBits struct {
-	bitp  *uint8 //ha.bitmap[(addr/(8*4))%(2^21)]  存储heapArean的bitmap的值，其中8 表示一个指针8字节，4表示每个bitmap可以表示4个指针的状态；
-	shift uint32  // (addr / 8) & 3
+	//存储heapArean的bitmap的值，其中8 表示一个指针8字节，4表示每个bitmap可以表示4个指针的状态；
+	//
+	bitp  *uint8 //ha.bitmap[(addr/(8*4))%(2^21)]  
+	shift uint32  // (addr / 8) & 3 :取值为0-7
 	arena uint32 // Index of heap arena containing bitp
 	last  *uint8 // Last byte arena's bitmap &ha.bitmap[len(ha.bitmap)-1]
 }
@@ -211,12 +213,19 @@ type heapBits struct {
 - heapArena.bitmap：存储arena里word的指针或者标量
 - heapBitsForAddr：计算地址对应的heapBits
 - > 从mheap_.arenas找到对应的heapArena
-- >  heapBits各个参数
+- >  heapBits.bitp = ha.bitmap[(addr/(sys.PtrSize*4))%heapArenaBitmapBytes]
+- > h.shift = uint32((addr / sys.PtrSize) & 3)
+- > h.arena = uint32(arena)
+-> h.last = &ha.bitmap[len(ha.bitmap)-1]
 - heapBits.initSpan:
 - > 计算span可以保存指针的个数nw
 - > 循环：nw>0：
-- > 计算需要的字节数，若是指针则设置bitp指向的数组的所有bit为1
+- > 调用heapBits.forwardOrBoundary,下一个heapBits的位置和当前可以保存的指针个数
+- > 根据指针数计算需要的bitmap的个数 n/4=nbyte
+- > 若是指针则设置bitp指向的数组的所有bit为1
 - > 不是指针调用memclrNoHeapPointers，清理bit
+- >  heapBit.forwardOrBoundary:调用forward，返回heapBits的位置和当前可以保存的指针个数
+- > heapBit.forward: 根据span存储的指针数，计算需要的字节数，并把heapBits的bitp向后移动n个字节
 ## 结构体
 ```
 type gcTriggerKind int  //触发gc的类型
