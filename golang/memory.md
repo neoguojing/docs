@@ -98,6 +98,8 @@ persistentalloc流程：
 ```
 
 ## mspan
+s.elemsize == sys.PtrSize
+则该span分配的都是指针
 ```
 type mspan struct {
 	next *mspan     // next span in list, or nil if none
