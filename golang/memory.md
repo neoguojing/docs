@@ -230,7 +230,11 @@ type heapArena struct {
 
 ## 页管理
 ### pageAlloc 页分配器 位于mheap
+- minOffAddr ： 0xffff800000000000
+- maxOffAddr ： 2^48-1 + 0xffff800000000000 = 0x7FFFFFFFFFFF
 ```
+type pallocSum uint64
+
 type pageAlloc struct {
   summary [5][]pallocSum   //[5]{[2^14]pallocSum,[2^17]pallocSum,[2^20]pallocSum,[2^23]pallocSum,[2^26]pallocSum}，从0-4依次代表基数树的每一层
   chunks [8192]*[8192]pallocData //pallocData 用pageBits代表4MB的内存空间，即2^22, chunks总共可以表示2^22 * 2^13 * 2^13 = 2^48
@@ -264,10 +268,19 @@ type pageBits [8]uint64   //每个bit代表一页（8k），则uint64代表：51
 - chunkPageIndex(): searchAddr%4MB/8k，4MB中page的索引 ,又叫searchIndex
 - chunkIdx.l1(): i/8192
 - chunkIdx.l2() ：i & 8191
+- chunkOf:返回chunkIdx对应的pageBits
 - pallocBits.find1: i*64 + uint(sys.TrailingZeros64(^x)) 通过TZ，计算尾部的0的个数，以此判断空闲页的偏移
 - alloc:分配内存
-- free：释放npage内存？？？
-  
+- free：释放npage内存内存到page堆
+- > 若释放的地址小于searchAddr，则p.searchAddr = b
+- > 若npages ==1，则找到对应的chuckIndex，调用pageBits.free1,设置page对应的bit为0
+- > 若为多页，计算chuck起始和结束索引和page的起始和结束索引，若在一个chuck内（4MB）则调用pageBits.free，clearRange清空所有bit，否则需要清理多个chuck
+- > 调用update,更新元数据
+- update
+- summarize: 
+- find: 在基数树上从searchAddr开始查找一个连续的npage内存块
+- > 遍历level=5次：
+- > 
 ### pageCache 页缓存 位于p
 ```
 type pageCache struct {
