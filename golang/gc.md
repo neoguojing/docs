@@ -173,6 +173,7 @@ var writeBarrier struct {
 ```
 
 #### 函数
+- wbBuf.putFast:将新旧指针放入p.wbbuf
 - wbBufFlush：
 - wbBufFlush1: 将写屏障buf同步到gc work 队列
 - setGCPhase：设置gcphase，设置写屏障的状态
