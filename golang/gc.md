@@ -241,6 +241,43 @@ for i := uintptr(0); i < n; i += sys.PtrSize { //以指针大小为步长遍历
 - > 否则调用nextArena
 - heapBit.nextArena:arena+1，计算下一个arenaidx找到对应的heaparean
 
+#### gcbits bitmap
+
+##### 概念
+- Xadduintptr： 先将两个数交换，然后相加的和付给第一个变量
+- *gcBits :指向8字节对齐的一串字节
+- 每个bit对应span的一个elem，多余的bit不做处理
+##### 全局变量和函数
+- gcBitsChunkBytes： 65536
+- gcBitsHeaderBytes : 16
+- gcBitsArenas: 全局bitmap入口
+- newArenaMayUnlock： 初始化或分配新的gcBitsArena：gcBitsArenas.free==nil,使用sysAlloc分配一个新的；否则，gcBitsArenas.free.next调用memclrNoHeapPointers将65536字节清零；
+```
+type gcBits uint8
+
+var gcBitsArenas struct {
+	lock     mutex
+	free     *gcBitsArena //可被重用的
+	next     *gcBitsArena // 下一个gc循环可用的
+	current  *gcBitsArena //当前在用的
+	previous *gcBitsArena //上一个gc使用的
+}
+type gcBitsArena struct {
+	free uintptr // free is the index into bits of the next free byte; read/write atomically
+	next *gcBitsArena
+	bits [65520]gcBits
+}
+```
+- func newMarkBits(nelems uintptr) *gcBits：新bit全部置零
+- > 计算nelems需要的字节数：((nelems + 63) / 64) * 8
+- > 调用：gcBitsArena.tryAlloc :xadd指令，使得gcBitsArena.free = gcBitsArena.free+要分配的字节，返回gcBitsArena.bits[free-分配的字节]；字节满足需求则返回
+- > tryAlloc 分配失败，重试依次
+- > 重试失败，newArenaMayUnlock分配一个新gcBitsArena为fresh
+- > 由于上一步无锁，另外一个线程可能更新了列表，tryAlloc重新试一次，成功则将fresh挂到全局列表
+- > 上一步失败，则fresh.tryAlloc,失败则抛出异常
+- > fresh挂到列表上
+- newAllocBits：调用newMarkBits
+
 ## 结构体
 ```
 type gcTriggerKind int  //触发gc的类型
