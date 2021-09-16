@@ -437,7 +437,7 @@ type gcWork struct {
 - > 释放worldsema，开启抢占
 - > 非并发模式下，调用Gosched
 - > 释放startSema
-- findObject：找到p指针对应的堆对象：
+- findObject：找到p指针对应的mspan，span的起始地址和p指针所代表的对象在mspan中的objIndex：
 - > 找到对应span，检查指针合法性
 - > 找到span起始地址和对象在span中的索引
 - greyobject：依据objindex获取 s.gcmarkBits，判断是否标记，未标记则标记，同时标记 arena.pageMarks，noscan对象直接返回，否则gcw.put将对象放入工作队列wbuf1.obj
@@ -583,9 +583,20 @@ type sweepdata struct {
 - > work.wbufSpans.free.remove 从列表移除mpan
 - > mheap_.freeManual 释放span
 - > 若work.wbufSpans.free不为空，则返回true
-- mspan.sweep:执行清理 ???
+- mspan.sweep:执行清理 
 - > mheap_.pagesSwept+=mspan.npages
-- > 
+- > 处理s.specials ？？？
+- > 若s.freeindex < s.nelems ： 处理僵死对象，检查分配了但是空闲的对象
+- > 设置allocCount 为被标记的对象（被标记的对象不能清理）
+- > 设置freeindex 为0
+- > 设置allocBits=gcmarkBits
+- > 重置gcmarkBits
+- > 重置refillAllocCache
+- > 设置sweepgen=heap.sweepgen
+- > 若被标记的对象（countAlloc）个数为0，表示所有对象均需要释放，则释放freeSpan该span，返回true
+- > 若被标记的对象等于nelems，表示span满了，放入mcentral.fullSwept,否则放入mcentral.partialSwept
+- > 若为大对象且有空闲，则直接释放freeSpan，返回true
+- > 若大对象无空闲，则放入mcentral.fullSwept
 - mheap.nextSpanForSweep:下一个需要被清扫的span
 - > 遍历mheap.central[spc].mcentral的full和partial的unswept集合，找到一个span
 - > 更新sweep.centralIndex,作为下一个查找的起点
