@@ -190,7 +190,25 @@ if runtime.writeBarrier.enabled {
 }
 ```
 ### 标记 s.elemsize == sys.PtrSize 表示span存的是指针
-#### markBits
+#### markBits 操作mspan.gcmarkBits，设置/清除/移动/判断等
+- greyobject： 获取markBits，已标记则返回，未标记则设置标记（对应位置未1）
+- gcmarknewobject: gc分配新对象是，直接设置对应的标记位
+- sweep：处理special对象是未标记则设置标记
+- wbBufFlush1: 未标记则设置标记
+```
+type markBits struct {
+	bytep *uint8
+	mask  uint8 //mask为index在该byte中的位置
+	index uintptr
+}
+```
+- markBitsForAddr：依据地址获取对应的markBits
+- > spanOf: 根据地址获取对应的span：依赖heapArean.spans获取
+- > mspan.objIndex: 根据地址p获取p地址在mspan内部的对象索引
+- > markBitsForIndex 获取markBits
+- allocBitsForIndex: 依据allocBitIndex在allocBits获取对应的byte和对应位置的mask，返回markBits
+- markBitsForIndex：依据objIndex在gcmarkBits获取对应的byte和对应位置的mask，返回markBits
+- markBitsForBase：返回mspan基地址对应的markBits
 
 #### heapBits 用于快速判定span中是否有指针
 - bitPointer = 1
@@ -247,6 +265,8 @@ for i := uintptr(0); i < n; i += sys.PtrSize { //以指针大小为步长遍历
 - Xadduintptr： 先将两个数交换，然后相加的和付给第一个变量
 - *gcBits :指向8字节对齐的一串字节
 - 每个bit对应span的一个elem，多余的bit不做处理
+- mspan.allocBits: 在allocSpan中调用newAllocBits分配，在sweep中用gcmarkBits赋值
+- mspan.gcmarkBits:在allocSpan中调用newMarkBits分配，在sweep中重新分配
 ##### 全局变量和函数
 - gcBitsChunkBytes： 65536
 - gcBitsHeaderBytes : 16
