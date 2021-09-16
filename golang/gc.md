@@ -191,7 +191,7 @@ if runtime.writeBarrier.enabled {
 ```
 ### 标记 s.elemsize == sys.PtrSize 表示span存的是指针
 #### markBits 操作mspan.gcmarkBits，设置/清除/移动/判断等
-- greyobject： 获取markBits，已标记则返回，未标记则设置标记（对应位置未1）
+- greyobject： 获取markBits，已标记则返回，未标记则设置标记（对应位置设置为1）
 - gcmarknewobject: gc分配新对象是，直接设置对应的标记位
 - sweep：处理special对象是未标记则设置标记
 - wbBufFlush1: 未标记则设置标记
