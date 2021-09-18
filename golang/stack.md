@@ -76,6 +76,7 @@ type stack struct {
 - > 返回分配的span
 - morestack_noctx ：
 - isShrinkStackSafe(gp)：是否适合收缩栈：系统调用，异步安全点（栈没有精确指针），在chan上等待时不可收缩栈
-- shrinkstack：栈收缩
+- shrinkstack：栈收缩，scanstack中调用，属于gc阶段；g.preemptShrink为true是调用，在newstack
+- newstack：
 # 引用
 - https://www.zhihu.com/question/22444939
