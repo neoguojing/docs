@@ -113,7 +113,9 @@ type adjustinfo struct {
 - > 设置gp的stack stackguard0=new.lo + _StackGuard  gp.sched.sp = new.hi - used等
 - > stackfree 释放旧栈
 - newstack：被morestack调用
-- 
+- > g被抢占，若m不可被抢占，重置gp.stackguard0 = gp.stack.lo + _StackGuard，调用gogo执行g
+- > g 被抢占，处理栈收缩，preemptPark或gopreempt_m
+- > 扩充栈大小为2倍copystack，完成之后gogo调度
 - morestack ：汇编函数设置调度参数，调用newstack
 # 引用
 - https://www.zhihu.com/question/22444939
