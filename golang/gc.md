@@ -501,14 +501,27 @@ type gcWork struct {
 - > 否则执行g栈空间销毁，系统栈运行：根据索引从allgs找到g，若是自我扫描，则需要设置g状态为_Gwaiting；suspendG阻塞g，返回状态，状态为dead，则退出；否则调用scanstack，完成之后resumeG，自我扫描需要切换g为_Grunning
 - flushmcache:清理allp[i]的内容,调用mcache.releaseAll和stackcache_clear清理mcache的堆和栈
 - markrootBlock：计算shard，调用scanblock
-- scanblock：用于扫描非堆roots：遍历bitmap，bit==0继续，否则调用findObject找到对象的起始地址，mspan和span的索引，调用greyobject置灰对象；若时栈对象，则放入栈扫描buf
+- scanblock：遍历所有指针，检查bitmap，若对应位置为1，则调用greyobject或者放入栈工作缓冲putPtr；使用显式的指针bitmap，如typ.gcdata
+- > 遍历所有的指针：
+- > 遍历bitmap，bit==0继续
+- > 否则遍历bitmap（8次）：
+- > 对应位置为1,则表示灰色对象，找到对应指针，若是栈对象则调用greyobject，否则调用putPtr放入栈工作缓冲
+- > bitmap左移一位
+- > 用于扫描非堆roots：，否则调用findObject找到对象的起始地址，mspan和span的索引，调用greyobject置灰对象；若时栈对象，则放入栈扫描buf
 - markrootFreeGStacks：释放空闲栈：遍历sched.gFree.stack，调用stackfree释放g的栈，将g放入sched.gFree.noStack
 - markrootSpans：标记specialobject：遍历bitmap，找到对饮span，使用scanobject扫描可达对象，scanblock扫描root本身
-- scanstack ： 只扫描_Grunnable, _Gsyscall, _Gwaiting的g，？？？？
-- > 判读是否可以收缩栈，可以则调用shrinkstack,否则设置gp.preemptShrink = true，下一轮收缩
+- scanstack ： 只扫描_Grunnable, _Gsyscall, _Gwaiting的g
+- > 判读是否可以收缩栈，可以则调用shrinkstack,否则设置gp.preemptShrink = true，在newstack中收缩
 - > scanblock扫描gp.sched.ctxt
 - > scanframeworker:扫描栈帧
-- > 扫描defer，panic
+- > 扫描defer
+- > 将g.panic指针放入栈扫描队列stackScanState中
+- > 将栈对象建立二叉搜索树
+- > 遍历二叉搜索树：
+- > 从stackScanState中getPtr，调用state.findObject找到包含指针的栈对象
+- >  obj.typ == nil，则表示已经扫描，遍历下一个
+- > 否则设置typ为nil，调用scanblock,已栈地址,typ.ptrdata(指针个数)，t.gcdata(指针掩码)等为参数
+- > 遍历所有stackObjectBuf，将buf放入work的empty的
 - scanframeworker：扫描栈帧：包括本地变量，函数参数和返回：？？？
 - gcMarkDone：mart to  mark termination 满足work.nwait == work.nproc && !gcMarkWorkAvailable(p)，才可以转换
 - > 获取markDoneSema互斥量
