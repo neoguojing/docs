@@ -97,7 +97,7 @@ type adjustinfo struct {
 - > 若span.first==nil，调用 mheap_.allocManual分配4页内存大小（32k）的mspan；更新mspan.manualFreeList;插入stackpool[order].item.span列表
 - > 从span.manualFreeList获取内存，并更新manualFreeList和allocCount
 - > 返回分配的span
-- morestack_noctx ：
+- morestack_noctx ：调用morestack
 - isShrinkStackSafe(gp)：是否适合收缩栈：系统调用，异步安全点（栈没有精确指针），在chan上等待时不可收缩栈
 - shrinkstack：栈收缩，scanstack中调用，属于gc阶段；g.preemptShrink为true是调用，在newstack
 - > 找到g对应的执行函数体findfunc(gp.startpc)
@@ -113,6 +113,7 @@ type adjustinfo struct {
 - > 设置gp的stack stackguard0=new.lo + _StackGuard  gp.sched.sp = new.hi - used等
 - > stackfree 释放旧栈
 - newstack：被morestack调用
-- morestack ：汇编函数
+- 
+- morestack ：汇编函数设置调度参数，调用newstack
 # 引用
 - https://www.zhihu.com/question/22444939
