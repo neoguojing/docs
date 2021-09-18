@@ -44,12 +44,35 @@
 - StackPreempt： 1314触发抢占
 - _NumStackOrders： 4
 - maxstacksize: 1GB
+- _StackSmall： 128
+- _StackLimit：800
 
 ## 结构体
 ```
+(x86)
+// +------------------+
+// | args from caller |
+// +------------------+ <- frame->argp
+// |  return address  |
+// +------------------+
+// |  caller's BP (*) | (*) if framepointer_enabled && varp < sp
+// +------------------+ <- frame->varp
+// |     locals       |
+// +------------------+
+// |  args to callee  |
+// +------------------+ <- frame->sp
+
 type stack struct {
-	lo uintptr
-	hi uintptr //栈顶指针，最开始分配：函数参数大小+4*RegSiz，将参数填入 
+	lo uintptr  // 栈的上边界，为增长方向
+	hi uintptr //栈底指针，最开始分配：函数参数大小+4*RegSiz，将参数填入 
+}
+
+type adjustinfo struct {
+	old   stack
+	delta uintptr //栈的基地址之间的距离new.hi - old.hi
+	cache pcvalueCache
+	// sghi is the highest sudog.elem on the stack.
+	sghi uintptr
 }
 ```
 ## 重要函数
@@ -77,6 +100,19 @@ type stack struct {
 - morestack_noctx ：
 - isShrinkStackSafe(gp)：是否适合收缩栈：系统调用，异步安全点（栈没有精确指针），在chan上等待时不可收缩栈
 - shrinkstack：栈收缩，scanstack中调用，属于gc阶段；g.preemptShrink为true是调用，在newstack
-- newstack：
+- > 找到g对应的执行函数体findfunc(gp.startpc)
+- > 计算栈大小，gp.stack.hi - gp.stack.lo
+- > 计算新栈大小，旧栈/2,小于2048则不收缩
+- > 使用的栈gp.stack.hi - gp.sched.sp（栈上边界-栈顶指针）大于已分配栈空间（gp.stack.hi - gp.stack.lo）的1/4，则不收缩
+- > 否则调用copystack，压缩栈
+- copystack： 系统调用时不允许copy  gp.syscallsp != 0 
+- > 调用stackalloc，分配新的栈空间
+- > gp.activeStackChans ==  false ,adjustsudogs;否则findsghi，syncadjustsudogs
+- > memmove 从old.hi-ncopy 移动ncopy字节到new.hi-ncopy
+- > adjustctxt adjustdefers adjustpanics
+- > 设置gp的stack stackguard0=new.lo + _StackGuard  gp.sched.sp = new.hi - used等
+- > stackfree 释放旧栈
+- newstack：被morestack调用
+- morestack ：汇编函数
 # 引用
 - https://www.zhihu.com/question/22444939
