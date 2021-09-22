@@ -62,6 +62,9 @@ type _defer struct {
 -  
 - reflectcall
 - freedefer： 在堆上无需释放；可能归还一半defer到全局pool；defer放入p-per缓冲
+- deferreturn: 编译器插入该函数到任何有defer的函数末尾；在函数执行完毕，会执行该函数
+- > 检测是否存在defer函数，若存在，则调用jmpdefer，执行defer
+- jmpdefer: 跳转到deffer函数执行
 
 ## 引用
 - https://blog.csdn.net/u010853261/article/details/102761955
