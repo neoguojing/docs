@@ -33,7 +33,8 @@ type _defer struct {
 }
 ```
 - gp._panic
-- 
+- p.deferpool
+- sched.deferpool
 ## 函数
 
 - gorecover ： recover关键字的实现,必须在defer中
@@ -54,3 +55,5 @@ type _defer struct {
 - > g_.m.dying为1,返回false
 - > 否则直接调用exit，退出
 - dopanic_m： 打印栈信息
+- 
+- freedefer： 在堆上无需释放；可能归还一半defer到全局pool；defer放入p-per缓冲
