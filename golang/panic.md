@@ -5,7 +5,7 @@
 panic只出现在栈上
 
 type _panic struct {
-	argp      unsafe.Pointer // 
+	argp      unsafe.Pointer // 指向defer参数的指针
 	arg       interface{}    //panic参数
 	link      *_panic        // 链接之前的panic
 	pc        uintptr        //程序指针
@@ -36,12 +36,12 @@ type _defer struct {
 - p.deferpool
 - sched.deferpool
 ## 函数
-
+- recovery：处理gorecover函数执行后恢复正常流程的问题
 - gorecover ： recover关键字的实现,必须在defer中
 - > 获取当前g的panic,g未退出，recovered=false，argp 指向最上层的defer的参数，则recovered=true，返回panic指针
 - > 否则返回nil
 - gopanic：panic关键字的实现
-- > 创建一个panic，设置arg，link指向g当前的panic；重新赋值g.panic
+- > 创建一个panic，设置arg，link指向g当前的panic；插入g.panic列表头部
 - > addOneOpenDeferFrame ??
 - > 循环：
 - > gp._defer == nil 则退出循环
@@ -55,5 +55,9 @@ type _defer struct {
 - > g_.m.dying为1,返回false
 - > 否则直接调用exit，退出
 - dopanic_m： 打印栈信息
-- 
+-  
+- reflectcall
 - freedefer： 在堆上无需释放；可能归还一半defer到全局pool；defer放入p-per缓冲
+
+## 引用
+- https://blog.csdn.net/u010853261/article/details/102761955
