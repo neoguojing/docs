@@ -41,11 +41,15 @@ type _defer struct {
 - > 获取当前g的panic,g未退出，recovered=false，argp 指向最上层的defer的参数，则recovered=true，返回panic指针
 - > 否则返回nil
 - gopanic：panic关键字的实现
-- > 创建一个panic，设置arg，link指向g当前的panic；插入g.panic列表头部
+- > 创建一个panic，设置arg，link指向g当前的panic；插入g.panic列表头部（执行panic函数，就在g的panic头部加入新的panic）
 - > addOneOpenDeferFrame ??
-- > 循环：
+- > 循环：遍历g.defer
 - > gp._defer == nil 则退出循环
-- > 
+- > 若d.started，表示该defer已经开始执行了，则设置d._panic.aborted = true，设置gp._defer = d.link，释放当前defer,遍历下一个defer
+- > 否则设置started=true，设置d._panic为当前panic，调用reflectcall执行defer函数体，gp._defer = d.link，释放当前defer
+- > 若p.recovered=true（defer中有recover函数），则调用recovery执行gogo继续调度,不返回
+- > 循环结束,表示没有recover
+- > 打印panic信息，调用fatalpanic，退出进程
 - fatalpanic : 不可恢复panic实现
 - > 系统栈调用，startpanic_m，返回true则打印panic信息，调用dopanic_m打印栈信息
 - > 系统调用exit 退出进程
