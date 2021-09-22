@@ -60,11 +60,15 @@ type _defer struct {
 - > 否则直接调用exit，退出
 - dopanic_m： 打印栈信息
 -  
-- reflectcall
+- reflectcall： 使用传入的参数列表，调用一个函数，汇编实现
 - freedefer： 在堆上无需释放；可能归还一半defer到全局pool；defer放入p-per缓冲
 - deferreturn: 编译器插入该函数到任何有defer的函数末尾；在函数执行完毕，会执行该函数
 - > 检测是否存在defer函数，若存在，则调用jmpdefer，执行defer
 - jmpdefer: 跳转到deffer函数执行
+- newdefer: 分配一个defer
+- deferproc：defer关键字的实现
+- > 创建一个defer，pc和sp指向调用者的pc和sp
+- > defer函数参数紧跟在defer结构体后面
 
 ## 引用
 - https://blog.csdn.net/u010853261/article/details/102761955
