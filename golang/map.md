@@ -70,5 +70,7 @@ type mapextra struct {
 - > 若B不为0，则新建2^B个bucket，并设置h.extra.nextOverflow
 - makeBucketArray：创建bucket和overflow
 - > 计算bucket个数2^B
-- > 若b>=4,
+- > 若b>=4,则需要2^(B-4)的额外空间用于overflow，计算总的bucket个数
+- > 调用newarray分配bucket类型的空间
+- > 若有overflow分配，
 - overLoadFactor 是超过装载因子：map的size>8,且size>13*2^B/2 .实际元素个数大于6.5*2^B
