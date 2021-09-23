@@ -1,5 +1,8 @@
 # panic/defer/recover
 
+## 概要
+- recover函数会校验是否存在defer
+- panic函数执行，会挂载panic结构体到g，同时遍历g的defer，依次执行defer，中间遇到recover函数则设置标记为true，切换到系统栈调用gogo切换到defreturn函数继续执行；否则打印panic信息，退出进程
 ## 架构
 ```
 panic只出现在栈上
@@ -47,7 +50,7 @@ type _defer struct {
 - > gp._defer == nil 则退出循环
 - > 若d.started，表示该defer已经开始执行了，则设置d._panic.aborted = true，设置gp._defer = d.link，释放当前defer,遍历下一个defer
 - > 否则设置started=true，设置d._panic为当前panic，调用reflectcall执行defer函数体，gp._defer = d.link，释放当前defer
-- > 若p.recovered=true（defer中有recover函数），则调用recovery执行gogo继续调度,不返回
+- > 若p.recovered=true（defer中有recover函数，gorecover已经执行），则调用recovery执行gogo继续调度,不返回
 - > 循环结束,表示没有recover
 - > 打印panic信息，调用fatalpanic，退出进程
 - fatalpanic : 不可恢复panic实现
