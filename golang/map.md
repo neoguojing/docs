@@ -67,10 +67,10 @@ type mapextra struct {
 - > 判断是否越界
 - > 若h==nil，则创建hmap，初始化hash0
 - > 判断是否超载，是则B++,知道满足需要，设置B
-- > 若B不为0，则新建2^B个bucket，并设置h.extra.nextOverflow
+- > 若B不为0，则新建2^B个bucket，并设置h.extra.nextOverflow（下一个空闲的overflow）
 - makeBucketArray：创建bucket和overflow
 - > 计算bucket个数2^B
 - > 若b>=4,则需要2^(B-4)的额外空间用于overflow，计算总的bucket个数
 - > 调用newarray分配bucket类型的空间
-- > 若有overflow分配，
+- > 若有overflow分配，返回overflow的起始指针，设置最后一个bucket
 - overLoadFactor 是超过装载因子：map的size>8,且size>13*2^B/2 .实际元素个数大于6.5*2^B
