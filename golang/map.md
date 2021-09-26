@@ -91,3 +91,13 @@ type mapextra struct {
 - mapaccess2：会返回值以及true，false
 - mapaccessK： 返回k/v
 - bmap.overflow: bucketsize-8，获得最后一个指针的位置，即overflow的指针的位置
+- mapassign：返回elem将要保存的位置
+- > 计算key的hash值
+- > hmap.buckets未nil，则创建一个bucket
+- > 计算bucket的lowhash
+- > 若oldbucket!= nil,表示正在迁移，调用growWork做迁移
+- > 否则根据lowhash，计算目标bucket的位置
+- > 计算tophash
+- > 遍历bucket内8个k
+- > 若tophash不相等，且bmap.tophash[i] <=emptyOne,则
+- growWork
