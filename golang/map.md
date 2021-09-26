@@ -1,11 +1,14 @@
 # runtime/map.go
 ## 概念
 - 数据存储在buckets数组中，bucket本身时一个type类型；每个bucket最多包含8对k/v
-- hash值的低8bit用于选择bucket，高8bit用于确定bucket内部k/v的位置
+- hash值的低2^B-1位，用于选择bucket，高8bit用于确定bucket内部k/v的位置
 - bucket值超过8，值放入extra bucket列表中
 - map增长，会新建一个2倍大小的bucket数组，动态增量的从老bucket复制过去
 - evacuated：即map大小变更
 - 装载因子以bucket的个数计算，而不是以elem
+- 掩码： 2^B-1
+- bucket选择：偏移hash & 2^B-1 * maptype.bucketsize
+- elem选择： 选择hash的搞8bit，与hmap的tophash逐一比较，相等，找到key的位置，比较key的值，相等，则偏移找到elem
 ## 架构
 ```
 // map头部
@@ -23,10 +26,7 @@ type hmap struct {
 }
 <!-- 数据存储，bucket的实际实现 -->
 type bmap struct {
-	// tophash generally contains the top byte of the hash value
-	// for each key in this bucket. If tophash[0] < minTopHash,
-	// tophash[0] is a bucket evacuation state instead.
-	tophash [bucketCnt]uint8
+	tophash [bucketCnt]uint8 //tophash[0] < minTopHash 则表示该bucket在迁移过程中
 	//紧跟8key+8value
 	//紧跟overflow指针
 }
@@ -60,7 +60,9 @@ type mapextra struct {
 - 装载因子：6.5，触发map增长
 - maxKeySize  = 128 字节
 - maxElemSize = 128
+- minTopHash : 5
 ## 函数
+- evacuated：判断是否在迁移
 - makemap_small： make(map[k]v)和make(map[k]v, <8)
 - > 创建一个hmap，返回
 - makemap : make(map[k]v, hint)
@@ -75,5 +77,17 @@ type mapextra struct {
 - > 若有overflow分配，返回overflow的起始指针，设置最后一个bucket
 - overLoadFactor 是超过装载因子：map的size>8,且size>13*2^B/2 .实际元素个数大于6.5*2^B
 - mapaccess1：返回h[key]的指针
-- > maptype.hasher：计算key的hash值
-- > 
+- > maptype.hasher：计算key的hash值；hash&（2^b-1[掩码]）得到lowhash,计算bucket的位置hash&（2^b-1[掩码]* maptype.bucketsize
+- > 若hmap.oldbuckets不为nil,若不是等大小grow，则掩码需要除以2，获取oldbucket的位置，若不在迁移过程中，则设置待遍历的bucket为oldbucket；
+- > 调用tophash，hash值左移56bit，获得一个8bit的tophash，tohash必须>5
+- > bucketloop ：遍历bucket和b.overflow:
+- > 遍历8个k/v：
+- > 若tophash不相等，若 b.tophash[i] == emptyRest，则跳到bucketloop，否则遍历下一个kv
+- > 否则tophash相等，直接找到第i个key的位置（i*maptype.keysize）
+- > 若key是指针，则需要提取指针的值
+- > 若key比较相等，则偏移i*maptype.keysize + i*maptype.elemsize
+- > elem为指针则提取指针的值，返回elem
+- > 未找到则返回空
+- mapaccess2：会返回值以及true，false
+- mapaccessK： 返回k/v
+- bmap.overflow: bucketsize-8，获得最后一个指针的位置，即overflow的指针的位置
