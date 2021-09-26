@@ -74,3 +74,6 @@ type mapextra struct {
 - > 调用newarray分配bucket类型的空间
 - > 若有overflow分配，返回overflow的起始指针，设置最后一个bucket
 - overLoadFactor 是超过装载因子：map的size>8,且size>13*2^B/2 .实际元素个数大于6.5*2^B
+- mapaccess1：返回h[key]的指针
+- > maptype.hasher：计算key的hash值
+- > 
