@@ -9,6 +9,7 @@
 - 掩码： 2^B-1
 - bucket选择：偏移hash & 2^B-1 * maptype.bucketsize
 - elem选择： 选择hash的搞8bit，与hmap的tophash逐一比较，相等，找到key的位置，比较key的值，相等，则偏移找到elem
+- 每次插入：都需要遍历8+overflow*8个
 ## 架构
 ```
 // map头部
@@ -94,10 +95,24 @@ type mapextra struct {
 - mapassign：返回elem将要保存的位置
 - > 计算key的hash值
 - > hmap.buckets未nil，则创建一个bucket
-- > 计算bucket的lowhash
+- > again：计算bucket的lowhash
 - > 若oldbucket!= nil,表示正在迁移，调用growWork做迁移
 - > 否则根据lowhash，计算目标bucket的位置
 - > 计算tophash
+- > bucketloop for：
 - > 遍历bucket内8个k
-- > 若tophash不相等，且bmap.tophash[i] <=emptyOne,则
+- > 若tophash不相等，且bmap.tophash[i] <=emptyOne,则保存tophash、k、v的位置信息，若tophash[i]等于emptyRest,跳转bucketloop，否则 continue
+- > 否则表示找到一个tophash相等的，获取key的位置，并比较key：
+- > key不相等，则continue
+- > key相等，则调用typedmemmove，更新key的值,获取elem的位置，跳转到done ----更新值路径
+- > 遍历完8，仍没有done，则遍历overflow，为nil则break
+- > 退出循环
+- > 若装载因子超标或bucket过多，则hashGrow，扩容，goto again
+- > 若bucket和overflow满了，则newoverflow，分配一个新的bucket，保存相关地址
+- > 为key、elem分配空间，将key的值放入对应位置，设置tophash的值，增加计数
+- > done：返回elem的位置
 - growWork
+- overLoadFactor
+- tooManyOverflowBuckets
+- hashGrow
+- typedmemmove
