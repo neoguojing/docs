@@ -62,6 +62,7 @@ type mapextra struct {
 - maxKeySize  = 128 字节
 - maxElemSize = 128
 - minTopHash : 5
+- emptyRest： 0 ，档期cell为空，且之后的entry和overflow都为空
 ## 函数
 - evacuated：判断是否在迁移
 - makemap_small： make(map[k]v)和make(map[k]v, <8)
@@ -101,7 +102,7 @@ type mapextra struct {
 - > 计算tophash
 - > bucketloop for：
 - > 遍历bucket内8个k
-- > 若tophash不相等，且bmap.tophash[i] <=emptyOne,则保存tophash、k、v的位置信息，若tophash[i]等于emptyRest,跳转bucketloop，否则 continue
+- > 若tophash不相等，且bmap.tophash[i] <=emptyOne,则保存tophash、k、v的位置信息，若tophash[i]等于emptyRest,跳出所有循环，否则 continue
 - > 否则表示找到一个tophash相等的，获取key的位置，并比较key：
 - > key不相等，则continue
 - > key相等，则调用typedmemmove，更新key的值,获取elem的位置，跳转到done ----更新值路径
@@ -116,3 +117,22 @@ type mapextra struct {
 - tooManyOverflowBuckets
 - hashGrow
 - typedmemmove
+- mapdelete： 删除key
+- > 计算hash值，设置hashWriting 写标志
+- > 计算bucket位置，
+- > 若在扩容，则执行growWork
+- > 计算bucket指针和tophash
+- >search： 遍历bucket和overflow中的元素
+- > tophash不相等，则continue,若b.tophash[i] == emptyRest 则break search（跳出所有循环）
+- > 若tophash相等，获取key的指针
+- > key不相等，指针则设置为nil，否则清空k的值
+- > 获取elem指针，指针值则设置为nil，否则清空elem的值
+- > 设置tophash值为emptyOne
+- > 若i为bucket最后一个entry，且overflow的tophash[0] != emptyRest，则跳转到notLast
+- > 否则下一个tophash!=emptyRest,跳转到noLast
+- > 循环：此时i已经为最后一个entry ，尝试从后往前设置所有emptyOne的tophash为emptyRest
+- > 设置tophash[i] = emptyRest
+- > i--，若b.tophash[i] != emptyOne，则退出当前循环
+- > 若i==0，
+- > noLast：count-1，若count为0，则重置hash0，跳出所有循环
+- > 清除写标志
