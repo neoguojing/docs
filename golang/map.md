@@ -10,6 +10,7 @@
 - bucket选择：偏移hash & 2^B-1 * maptype.bucketsize
 - elem选择： 选择hash的搞8bit，与hmap的tophash逐一比较，相等，找到key的位置，比较key的值，相等，则偏移找到elem
 - 每次插入：都需要遍历8+overflow*8个
+- map的遍历随机，是因为mapiterinit中设置了随机的起始bucket
 ## 架构
 ```
 // map头部
@@ -54,6 +55,24 @@ type mapextra struct {
 	nextOverflow *bmap
 }
 
+<!-- 遍历结构体 -->
+type hiter struct {
+	key         unsafe.Pointer // Must be in first position.  Write nil to indicate iteration end 
+	elem        unsafe.Pointer // Must be in second position 
+	t           *maptype
+	h           *hmap
+	buckets     unsafe.Pointer // bucket ptr at hash_iter initialization time
+	bptr        *bmap          // current bucket
+	overflow    *[]*bmap       // keeps overflow buckets of hmap.buckets alive
+	oldoverflow *[]*bmap       // keeps overflow buckets of hmap.oldbuckets alive
+	startBucket uintptr        // bucket iteration started at；是一个整形表示偏移
+	offset      uint8          // intra-bucket offset to start from during iteration (should be big enough to hold bucketCnt-1)
+	wrapped     bool           // already wrapped around from end of bucket array to beginning
+	B           uint8
+	i           uint8
+	bucket      uintptr   //
+	checkBucket uintptr
+}
 ```
 - bucketCnt: 8
 - loadFactorNum = 13
@@ -136,3 +155,11 @@ type mapextra struct {
 - > 若i==0，
 - > noLast：count-1，若count为0，则重置hash0，跳出所有循环
 - > 清除写标志
+- mapiterinit： 初始化hiter结构体,设置随机的起始位置，并调用mapiternext
+- mapiternext：
+- > 若it.bucket == it.startBucket且it.wrapped（从结尾反转），则表示遍历结束，设置it的key和elem，返回
+- > 若正在扩容，且B没有变化，表示没有迁移完毕，则通过it.bucket，从oldbucket获取起始地址
+- > 否则，从当前buckets获取起始地址
+- > it.bucket++,若等于最后一个bucket的索引，则设置 it.bucket=0，it.wrapped = true
+- > 遍历当前buckets
+- > 
