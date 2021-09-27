@@ -1,5 +1,6 @@
 # runtime/map.go
 ## 概念
+- reflexive: 反射性的，k==k；在计算机里浮点数的比较是在一定范围能相等则表示相等，key类型是float32\float64\complex64\complex64\interface的或包含该类型的都是反射性key。
 - 数据存储在buckets数组中，bucket本身时一个type类型；每个bucket最多包含8对k/v
 - hash值的低2^B-1位，用于选择bucket，高8bit用于确定bucket内部k/v的位置
 - bucket值超过8，值放入extra bucket列表中
@@ -13,13 +14,14 @@
 - map的遍历随机，是因为mapiterinit中设置了随机的起始bucket
 
 ### map扩容
+#### 触发
+- set时
 #### 扩容条件
 - 存储的k/v超过装载因子 : 实施2倍扩容
 - 溢出bucket的个数大于2^B B<=15 ： 实施等量扩容
 #### 何时扩容
 - 执行set的时候
 - 执行delete的时候
-- 
 ## 架构
 ```
 // map头部
@@ -62,6 +64,14 @@ type mapextra struct {
 
 	// nextOverflow holds a pointer to a free overflow bucket.
 	nextOverflow *bmap
+}
+
+<!--  迁移目的地-->
+type evacDst struct {
+	b *bmap          // current destination bucket
+	i int            // key/elem index into b
+	k unsafe.Pointer // pointer to current key storage
+	e unsafe.Pointer // pointer to current elem storage
 }
 
 <!-- 遍历结构体 -->
@@ -150,9 +160,19 @@ type hiter struct {
 - evacuate: 从索引位置开始迁移
 - > 计算oldbucket中bucket的指针，计算oldbucket的bucket的个数
 - > 若当前bucket未迁移：
-- > 
+- > 计算oldbuket对应的b，在hmap.buckets中的目的地址；在扩容2倍的情况下，迁移地址分为两部分，x:索引等于oldbucket，y:索引位置加上oldmap的bucket个数
+- > 遍历old bucket以及overflow中的entry：
+- > tophash为空，则直接设置b.tophash[i] = evacuatedEmpty，continue
+- > 非等量扩容：非反射性key，重新计算tophash；通过top或者hash&（oldmap的大小） != 0 来设置是否迁移到y的标记
+- > 设置oldbucket.tophash[i]=evacuatedX + useY，设置迁移状态
+- > 获取迁移地址evacDst，若dst.i == 8，表示bucket满了，创建ovf
+- > 设置dst.b.tophash为新的top值，copy k和elem的值
+- > 增加dst 索引 k 和v的索引
+- > 遍历结束
+- > 清空ovf，辅助gc
 - > 若当前bucket索引等于h.nevacuate ，则advanceEvacuationMark：增加nevacuate，设置结束标记等
 - advanceEvacuationMark：增加h.nevacuate 计数，若所有oldbucket均迁移，则清空h.oldbuckets ，h.extra.oldoverflow = nil，清空标记
+- newoverflow：创建ovf
 - evacuated： 判断是否迁移完毕，通过bucket.tophash[0]判读，值大于emptyOne，小于5
 - overLoadFactor: 元素个数大于bucket个数，且> 6.5 * 2^B,返回true，表示要扩容
 - tooManyOverflowBuckets： noverflow >= uint16(1)<<(B&15)
