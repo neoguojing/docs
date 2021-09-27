@@ -173,6 +173,7 @@ type hiter struct {
 - > 若当前bucket索引等于h.nevacuate ，则advanceEvacuationMark：增加nevacuate，设置结束标记等
 - advanceEvacuationMark：增加h.nevacuate 计数，若所有oldbucket均迁移，则清空h.oldbuckets ，h.extra.oldoverflow = nil，清空标记
 - newoverflow：创建ovf
+- 
 - evacuated： 判断是否迁移完毕，通过bucket.tophash[0]判读，值大于emptyOne，小于5
 - overLoadFactor: 元素个数大于bucket个数，且> 6.5 * 2^B,返回true，表示要扩容
 - tooManyOverflowBuckets： noverflow >= uint16(1)<<(B&15)
