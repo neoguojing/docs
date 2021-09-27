@@ -107,9 +107,9 @@ type mapextra struct {
 - > key相等，则调用typedmemmove，更新key的值,获取elem的位置，跳转到done ----更新值路径
 - > 遍历完8，仍没有done，则遍历overflow，为nil则break
 - > 退出循环
-- > 若装载因子超标或bucket过多，则hashGrow，扩容，goto again
-- > 若bucket和overflow满了，则newoverflow，分配一个新的bucket，保存相关地址
-- > 为key、elem分配空间，将key的值放入对应位置，设置tophash的值，增加计数
+- > 若装载因子超标或bucket过多，则hashGrow，扩容，goto again                  --扩容路径
+- > 若bucket和overflow满了，则newoverflow，分配一个新的bucket，保存相关地址   -- overflow增加路径
+- > 为key、elem分配空间，将key的值放入对应位置，设置tophash的值，增加计数      -- 设置值路径
 - > done：返回elem的位置
 - growWork
 - overLoadFactor
