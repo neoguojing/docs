@@ -11,6 +11,10 @@
 - elem选择： 选择hash的搞8bit，与hmap的tophash逐一比较，相等，找到key的位置，比较key的值，相等，则偏移找到elem
 - 每次插入：都需要遍历8+overflow*8个
 - map的遍历随机，是因为mapiterinit中设置了随机的起始bucket
+
+### map扩容的条件
+- 存储的k/v超过装载因子 : 实施2倍扩容
+- 溢出bucket的个数大于2^B B<=15 ： 实施等量扩容
 ## 架构
 ```
 // map头部
@@ -18,11 +22,11 @@ type hmap struct {
 	count     int // # live cells == size of map
 	flags     uint8
 	B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
-	noverflow uint16 // approximate number of overflow buckets; see incrnoverflow for details
+	noverflow uint16 // overflow bucket的个数
 	hash0     uint32 // hash seed
 	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
 	oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
-	nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
+	nevacuate  uintptr        // 已经迁移的bucket个数
 
 	extra *mapextra // optional fields
 }
@@ -66,7 +70,7 @@ type hiter struct {
 	overflow    *[]*bmap       // keeps overflow buckets of hmap.buckets alive
 	oldoverflow *[]*bmap       // keeps overflow buckets of hmap.oldbuckets alive
 	startBucket uintptr        // bucket iteration started at；是一个整形表示偏移
-	offset      uint8          // intra-bucket offset to start from during iteration (should be big enough to hold bucketCnt-1)
+	offset      uint8          // bucket内部值遍历的索引
 	wrapped     bool           // already wrapped around from end of bucket array to beginning
 	B           uint8
 	i           uint8
@@ -82,6 +86,12 @@ type hiter struct {
 - maxElemSize = 128
 - minTopHash : 5
 - emptyRest： 0 ，档期cell为空，且之后的entry和overflow都为空
+- evacuatedX     = 2 // k/v被疏散到新map的第一半
+- evacuatedY     = 3 //k/v被疏散到新map的第二半
+- evacuatedEmpty = 4 // 迁移完成
+- minTopHash     = 5 // minimum tophash for a normal filled cell.
+- iterator     = 1 // there may be an iterator using buckets
+- oldIterator  = 2 // there may be an iterator using oldbuckets
 ## 函数
 - evacuated：判断是否在迁移
 - makemap_small： make(map[k]v)和make(map[k]v, <8)
@@ -131,10 +141,15 @@ type hiter struct {
 - > 若bucket和overflow满了，则newoverflow，分配一个新的bucket，保存相关地址   -- overflow增加路径
 - > 为key、elem分配空间，将key的值放入对应位置，设置tophash的值，增加计数      -- 设置值路径
 - > done：返回elem的位置
-- growWork
-- overLoadFactor
-- tooManyOverflowBuckets
-- hashGrow
+- growWork: 调用evacuate
+- evacuate:
+- overLoadFactor: 元素个数大于bucket个数，且> 6.5 * 2^B,返回true，表示要扩容
+- tooManyOverflowBuckets： noverflow >= uint16(1)<<(B&15)
+- hashGrow: 
+- > 若overLoadFactor返回false，执行等量扩容sameSizeGrow,设置标记
+- > makeBucketArray 创建新的空间，等量扩容创建等量空间，否则扩大2倍
+- > 设置hmap参数，绑定oldbuckets和buckets
+- >hmap 溢出bucket不为nil，设置h.extra.oldoverflow = h.extra.overflow,h.extra.nextOverflow = nextOverflow
 - typedmemmove
 - mapdelete： 删除key
 - > 计算hash值，设置hashWriting 写标志
@@ -155,11 +170,19 @@ type hiter struct {
 - > 若i==0，
 - > noLast：count-1，若count为0，则重置hash0，跳出所有循环
 - > 清除写标志
-- mapiterinit： 初始化hiter结构体,设置随机的起始位置，并调用mapiternext
+- mapiterinit： 初始化hiter结构体,设置随机的起始位置，包括bucket以及bucket内的offset，并调用mapiternext
 - mapiternext：
+- next：
 - > 若it.bucket == it.startBucket且it.wrapped（从结尾反转），则表示遍历结束，设置it的key和elem，返回
 - > 若正在扩容，且B没有变化，表示没有迁移完毕，则通过it.bucket，从oldbucket获取起始地址
 - > 否则，从当前buckets获取起始地址
 - > it.bucket++,若等于最后一个bucket的索引，则设置 it.bucket=0，it.wrapped = true
 - > 遍历当前buckets
-- > 
+- > tophash为空，则继续
+- > 获取key的地址和elem的地址
+- > 若map在扩容，continue，忽略即将迁移的key？？？
+- > 若b.tophash[offi] 不是疏散状态，则设置it的key和elem
+- > 否则表示key已经迁移完毕，调用mapaccessK，获取当前k/v，并设置it，k为空表示已经删除；此处需要处理k被删除更新等
+- > 重置bucket bptr i等值，返回
+- > 获取overflow的起始地址，跳转到next
+- mapclear： 清空map
