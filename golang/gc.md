@@ -173,9 +173,11 @@ var writeBarrier struct {
 ```
 
 #### 函数
+- memclrHasPointers：清空有指针的内存
+- bulkBarrierPreWrite： 为区域内的所有指针执行内存屏障
 - wbBuf.putFast:将新旧指针放入p.wbbuf
 - wbBufFlush：
-- wbBufFlush1: 将写屏障buf同步到gc work 队列
+- wbBufFlush1: 将写屏障buf同步到gc work 
 - setGCPhase：设置gcphase，设置写屏障的状态
 - gcWriteBarrier: 汇编函数
 - > 增加wbBuf.next的位置
