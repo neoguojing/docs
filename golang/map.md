@@ -12,9 +12,14 @@
 - 每次插入：都需要遍历8+overflow*8个
 - map的遍历随机，是因为mapiterinit中设置了随机的起始bucket
 
-### map扩容的条件
+### map扩容
+#### 扩容条件
 - 存储的k/v超过装载因子 : 实施2倍扩容
 - 溢出bucket的个数大于2^B B<=15 ： 实施等量扩容
+#### 何时扩容
+- 执行set的时候
+- 执行delete的时候
+- 
 ## 架构
 ```
 // map头部
@@ -141,8 +146,14 @@ type hiter struct {
 - > 若bucket和overflow满了，则newoverflow，分配一个新的bucket，保存相关地址   -- overflow增加路径
 - > 为key、elem分配空间，将key的值放入对应位置，设置tophash的值，增加计数      -- 设置值路径
 - > done：返回elem的位置
-- growWork: 调用evacuate
-- evacuate:
+- growWork: 调用evacuate，从当前set或者delete的bucket位置开始执行
+- evacuate: 从索引位置开始迁移
+- > 计算oldbucket中bucket的指针，计算oldbucket的bucket的个数
+- > 若当前bucket未迁移：
+- > 
+- > 若当前bucket索引等于h.nevacuate ，则advanceEvacuationMark：增加nevacuate，设置结束标记等
+- advanceEvacuationMark：增加h.nevacuate 计数，若所有oldbucket均迁移，则清空h.oldbuckets ，h.extra.oldoverflow = nil，清空标记
+- evacuated： 判断是否迁移完毕，通过bucket.tophash[0]判读，值大于emptyOne，小于5
 - overLoadFactor: 元素个数大于bucket个数，且> 6.5 * 2^B,返回true，表示要扩容
 - tooManyOverflowBuckets： noverflow >= uint16(1)<<(B&15)
 - hashGrow: 
