@@ -22,6 +22,11 @@
 #### 何时扩容
 - 执行set的时候
 - 执行delete的时候
+#### 如何扩容
+- 根据oldbucket 索引，定位到oldbucket；遍历bucket内的entry以及ovf，根据hash值随机的迁移的新map的x和y区域
+- x区域和oldbucket的索引一致，即相对位置不变
+- y区域是old索引+old所有元素的个数，做偏移
+- k/v的前后顺序保持不变，但是空元素会被忽略
 ## 架构
 ```
 // map头部
