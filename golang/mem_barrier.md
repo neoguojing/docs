@@ -26,10 +26,19 @@ var writeBarrier struct {
 ```
 
 ## 函数
-- typedmemmove： map中经常会用到，清理对象或者删除
-- > 
-- memclrHasPointers：清空有指针的内存
+- typedmemmove： 内存copy;map等会使用
+- > 若需要内存屏障且typ.ptrdata != 0（对象有指针），调用bulkBarrierPreWrite
+- > 调用memmove，执行内存copy
+- memclrHasPointers：清空有指针的内存：调用bulkBarrierPreWrite和memclrNoHeapPointers
 - bulkBarrierPreWrite： 为区域内的所有指针执行内存屏障
+- > 未开启内存屏障，则返回
+- > 查找dst指针对应的span
+- > 若span == nil，表明是一个全局的（data或bss值），遍历data和bss，多dst在该区域内，则执行bulkBarrierBitmap;返回
+- > 否则，若dst之前在堆中，现在不在了，则直接返回
+- > 否则，dst在heap中，获取dst的heapBits：
+- > 若src==0（内存清理）,以8字节遍历指针内存，若heapBits.isPointer,则将目标地址和0放入wbBuf，若wbBuf满了，执行wbBufFlush，
+- > 否则,同上，不同的是将dst+i和src+i放入wbBuf
+- bulkBarrierBitmap：设置data和bss的bitmap，掩码计算为1则放入wbbuf
 - wbBuf.putFast:将新旧指针放入p.wbbuf
 - wbBufFlush：
 - wbBufFlush1: 将写屏障buf同步到gc work 
