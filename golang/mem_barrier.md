@@ -3,8 +3,10 @@
 - mbarrier.go
 - wbBufEntries：256
 - wbBufEntryPointers： 每个写屏障写入buf的指针数量
-- shade：查找对象findObject，将对象greyobject
+- shade：查找对象findObject，将对象greyobject；
 - gcphase == _GCmark || gcphase == _GCmarktermination 时开启写屏障
+- slot ： 目标对象
+- ptr: 指针
 
 ## 结构体
 ```
@@ -24,6 +26,8 @@ var writeBarrier struct {
 ```
 
 ## 函数
+- typedmemmove： map中经常会用到，清理对象或者删除
+- > 
 - memclrHasPointers：清空有指针的内存
 - bulkBarrierPreWrite： 为区域内的所有指针执行内存屏障
 - wbBuf.putFast:将新旧指针放入p.wbbuf
