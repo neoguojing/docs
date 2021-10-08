@@ -7,6 +7,8 @@
 - 关闭nil或closed的chan会panic
 - select使用的chan是非阻塞的，revc和send不需要执行gopark暂停当前g
 - send中唤醒recvq中的g，recv唤醒sendq中的g
+- select：加锁按照lockorder正向遍历加锁，解锁则反向遍历解锁
+- select：lockorder按照hchan的地址从小到大顺序排序
 ## channel
 
 ### 概览
@@ -75,7 +77,12 @@ type scase struct {
 - selectnbrecv： 对应select的读case，调用chanrecv，block参数为false
 - selectnbrecv2：对应case v, ok = <-c:
 - selectgo： 实现select状态转换;返回：返回选择的case的索引和是否读取到数据；入参：cas0指向[ncases]scase，order0指向[2*ncases]uint16，ncases<=65536
-- > nsend和nrecv表示读和写的个数，相加=ncase,scase=cas0
+- > nsend和nrecv表示读和写的个数，相加=ncase,scases=cas0
 - > pollorder对应order0[0:ncase]:控制遍历case的顺序
 - > lockorder对应order0[ncase:2*ncases]：控制加锁顺序
+- > 遍历scases，过滤nil的hchan，通过随机函数计算新的pollorder,norder<=ncases
+- > 遍历lockorder，堆排序，按照hchan的地址大小排序，顺序存储于lockorder
+- > sellock对所有chan按照lockorder，加锁
 - > 
+- sellock：对scases按照lockorder加锁,正序遍历
+- selunlock：倒叙遍历lockorder，依次解锁hchan.lock
