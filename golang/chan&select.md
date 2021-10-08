@@ -78,11 +78,26 @@ type scase struct {
 - selectnbrecv2：对应case v, ok = <-c:
 - selectgo： 实现select状态转换;返回：返回选择的case的索引和是否读取到数据；入参：cas0指向[ncases]scase，order0指向[2*ncases]uint16，ncases<=65536
 - > nsend和nrecv表示读和写的个数，相加=ncase,scases=cas0
-- > pollorder对应order0[0:ncase]:控制遍历case的顺序
+- > pollorder对应order0[0:ncase]:控制遍历case的顺序，值大于nsend为recv case否则为send case
 - > lockorder对应order0[ncase:2*ncases]：控制加锁顺序
 - > 遍历scases，过滤nil的hchan，通过随机函数计算新的pollorder,norder<=ncases
 - > 遍历lockorder，堆排序，按照hchan的地址大小排序，顺序存储于lockorder
 - > sellock对所有chan按照lockorder，加锁
-- > 
+- > 遍历pollorder：
+- > 值大于nsends，表示为recv chan阻塞，尝试从sendq出队sudog，不为nil，则跳转的recv，若c.qcount > 0，则跳转到bufrecv，若 c.closed != 0 ，跳转到rclose
+- > 否则，分辨跳转到sclose，send和bufsend
+- > 非阻塞，则解锁selunlock，跳转搭到retc
+- > 按照lockorder，为每个case创建sudog，分别加入sendq和recvq，并在gp.waiting 构建sudog列表
+- > gopark 挂起当前g
+- > 被唤醒：sellock加锁,获取唤醒g的sudog
+- > 切断gp.waiting的sudog列表
+- > 遍历lockorder，dequeueSudoG在sendq或recvq，获取到被激活的hchan，解锁，跳转到retc？
+- > bufrecv:从buff recv，从buff取出数据付给scase.elem，selunlock,跳转到retc
+- > bufsend:从scase.elem，放入buff,解锁，跳转到retc
+- > recv:调用recv，从sender sg获取data写入scase.elem.跳转到retc
+- > rclose: 从关闭的chan 读数据，解锁，清理scase.elem,跳转到retc
+- > send: 调用send，将scase.elem发送给receiver的sg
+- > retc:返回case的索引和recvOK
+- >sclose: 解锁，panic，表示向关闭的chan 发送数据
 - sellock：对scases按照lockorder加锁,正序遍历
 - selunlock：倒叙遍历lockorder，依次解锁hchan.lock
