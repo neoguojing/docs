@@ -6,9 +6,14 @@
 - waitq从队列头出队
 - 关闭nil或closed的chan会panic
 - select使用的chan是非阻塞的，revc和send不需要执行gopark暂停当前g
-- send中唤醒recvq中的g，recv唤醒sendq中的g
+- send中唤醒recvq中的g，recv唤醒sendq中的g，send和recv会唤醒select的g
 - select：加锁按照lockorder正向遍历加锁，解锁则反向遍历解锁
 - select：lockorder按照hchan的地址从小到大顺序排序
+- select流程：
+- > 1.优先处理已经挂起的操作，即在recvq和sendq中挂起的sudog，每次一个，成功返回
+- > 2.若select非阻塞，可能是default，则解锁，索引为-1，执行返回动作
+- > 3.以lockorder将所有的case，通过sudog建立列表（isSelect为true），并挂到sendq/recvq，现在所有case都放在了等待队列里,可以被1处理，gopark挂起go，挂起之后会解锁
+- > 4.select g被send或者recev等操作唤醒，并会在g.param中加入对应的sudog，加锁，以lockorde遍历所有sudog出队，解锁，返回被唤醒的case的索引，
 ## channel
 
 ### 概览
@@ -63,6 +68,7 @@
 - > 否则，获取recvx对应的指针，将数据copy给elem，将sender的数据copy到buf，c.recvx++
 - > goready唤醒sender对应的g
 - recvDirect：从sender dog cp数据到返回指针
+- waitq.dequeue:从队列头取一个sg，若是在select中要判断sg的isSelect和竞争sgp.g.selectDone，竞争失败则continue
 ## select 阻塞直到其中某个case就绪
 
 ### 结构
@@ -86,12 +92,12 @@ type scase struct {
 - > 遍历pollorder：
 - > 值大于nsends，表示为recv chan阻塞，尝试从sendq出队sudog，不为nil，则跳转的recv，若c.qcount > 0，则跳转到bufrecv，若 c.closed != 0 ，跳转到rclose
 - > 否则，分辨跳转到sclose，send和bufsend
-- > 非阻塞，则解锁selunlock，跳转搭到retc
+- > 非阻塞，则解锁selunlock，索引置为-1，跳转搭到retc
 - > 按照lockorder，为每个case创建sudog，分别加入sendq和recvq，并在gp.waiting 构建sudog列表
 - > gopark 挂起当前g
 - > 被唤醒：sellock加锁,获取唤醒g的sudog
 - > 切断gp.waiting的sudog列表
-- > 遍历lockorder，dequeueSudoG在sendq或recvq，获取到被激活的hchan，解锁，跳转到retc？
+- > 遍历lockorder，出队所有sudog，返回唤醒的chan的case索引
 - > bufrecv:从buff recv，从buff取出数据付给scase.elem，selunlock,跳转到retc
 - > bufsend:从scase.elem，放入buff,解锁，跳转到retc
 - > recv:调用recv，从sender sg获取data写入scase.elem.跳转到retc
