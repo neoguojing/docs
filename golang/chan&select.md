@@ -5,6 +5,10 @@
 - closed的chan写入 panic
 - waitq从队列头出队
 - 关闭nil或closed的chan会panic
+- 关闭chan：将recvq和sendq的g，放入列表，依次调用goready唤醒
+- makechan：对于没有指针的chan，只分配一次内存，否则分配两次
+- send：总是优先从recvq获取g，直接发送数据；否则写入buf；buf满才挂起
+- recv： 优先从sendq的g获取数据；否则从buf获取；buf空则挂起
 - select使用的chan是非阻塞的，revc和send不需要执行gopark暂停当前g
 - send中唤醒recvq中的g，recv唤醒sendq中的g，send和recv会唤醒select的g
 - select：加锁按照lockorder正向遍历加锁，解锁则反向遍历解锁
