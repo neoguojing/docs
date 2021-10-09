@@ -148,6 +148,7 @@
 ### 变量
 - lockedm： 锁定的m，dolockOSThread有调用
 - startpc： g 函数执行地址
+- g.param: 用于在gopark和goready之间传递数据，如sudog
 
 ### 函数：
 - getg： 从TLS（线程本地缓存）获取当前运行的指向g结构体的指针
@@ -169,7 +170,7 @@
 - > dropg：设置g_.m.curg.m=nil，g_.m.curg=nil，解除g和m的绑定关系
 - > waitunlockf不为空，则执行waitunlockf，释放g获取的锁，返回false，则切换状态为_Grunnable，执行execute，
 - > 否则，调用schedule()
--  goready(gp)：
+-  goready(gp)：系统栈调用ready
 - suspendG
 - resumeG
 - func ready(gp *g, traceskip int, next bool) ：
@@ -207,6 +208,9 @@
 - wirep：设置m.p为穿入p，设置p.m为当前m，设置p为_Prunning
 - 
 ## m
+### 状态
+- spinning： 空转状态，本地工作结束，没有从global工作队列和netpoller获取到工作；
+- park： 若处于spinning的未找到work，则park自己
 
 ### 结构体
 - newmHandoff： m的列表，列表里的m都没有绑定os thread，通过 m.schedlink构建列表
@@ -214,6 +218,7 @@
 - m.park: 暂停等待的指针
 - lockedg: 保存g的指针，在dolockOSThread有使用，明确m加锁的g
 - preemptoff: !="" 则不允许抢占
+- spinning：m是否处于空转状态
 
 ### 重要函数
 - startm：调度一个m去运行p，必要时创建一个新m
