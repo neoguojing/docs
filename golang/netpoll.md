@@ -114,7 +114,7 @@ struct epoll_event {
 - > 抢占netpollWakeSig
 - > 向netpollBreakWr写入一个字节，循环写，直到写成功
 - netpollIsPollDescriptor
-- netpoll：检查就绪的网络连接,delay<0 永久阻塞，==0不阻塞，大于0等待ns，返回一个就绪g列表runnable
+- netpoll：检查就绪的网络连接，返回g列表,delay<0 永久阻塞，==0不阻塞，大于0等待ns，返回一个就绪g列表runnable
 - > 调用epollwait
 - > 若返回值< 0，若delay > 0 ,返回空glist，否则重新调用epollwait
 - > 否则，遍历所有返回的事件：
