@@ -4,6 +4,7 @@
 - string:是一个壳，里面存储了指针
 - string是一个只读段，本身没有内存
 - string和byte转换内存copy的原因：多g的竞争修改
+- rune转换为string要经过utf8编码
 ## 结构
 ```
 type stringStruct struct {
