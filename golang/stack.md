@@ -2,7 +2,11 @@
 ## 总结：
 - 在每个函数开始执行前，会有一段汇编代码检查栈是否溢出
 - 过程：morestack-> newstack ，执行抢占调度、栈收缩或者栈扩容
+- 栈缩小是一个无任何代价的操作
+- 栈扩容要考虑指针位置的变更：的每一个栈帧，对其中的每一个指针，检测指针指向的地址，如果指向地址是落在旧栈范围内的，则将它加上一个偏移使它指向新栈的相应地址。这个偏移值等于新栈基地址减旧栈基地址（new.hi - old.hi）
 ## 栈原理
+- 当启动一个C实现的thread时，C标准库会负责分配一块内存作为这个线程的栈。标准库分配这块内存，告诉内核它的位置并让内核处理这个线程 的执行。
+- 在linux系统中，可通过 ulimit -s查看系统栈大小（8M）。
 - 栈帧：函数执行的环境
 - 从高地址向低地址延伸，向下生长
 - 每个函数的每次调用，都有它自己独立的一个栈帧
@@ -112,7 +116,7 @@ type adjustinfo struct {
 - > 调用stackalloc，分配新的栈空间
 - > gp.activeStackChans ==  false ,adjustsudogs;否则findsghi，syncadjustsudogs
 - > memmove 从old.hi-ncopy 移动ncopy字节到new.hi-ncopy
-- > adjustctxt adjustdefers adjustpanics
+- > adjustctxt adjustdefers adjustpanics 调整栈内指针的位置，试其指向新栈
 - > 设置gp的stack stackguard0=new.lo + _StackGuard  gp.sched.sp = new.hi - used等
 - > stackfree 释放旧栈
 - newstack：被morestack调用
