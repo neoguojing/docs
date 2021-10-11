@@ -199,6 +199,7 @@
 - lockedg: 保存g的指针，在dolockOSThread有使用，明确m加锁的g
 - preemptoff: !="" 则不允许抢占
 - spinning：m是否处于空转状态
+- blocked： 线程被notesleep睡眠了
 
 ### 重要函数
 - startm：调度一个m去运行p，必要时创建一个新m
