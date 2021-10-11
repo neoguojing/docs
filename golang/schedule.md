@@ -144,6 +144,7 @@
 - > 将参数放入栈帧，构建stkmap，计算sp，栈顶指针
 - > 初始化g：newg.sched.sp=newg.stktopsp，newg.sched.pc调整为指向goexit的pc，newg.sched.g为newg，newg.gopc为上一级函数pc，newg.ancestors：祖先信息，newg.startpc为当前函数pc
 - > 切换状态为_Grunnable，设置goid，返回newg
+- goparkunlock：对gopark的封装，强调了解锁操作
 - gopark： 暂停go ，并释放g获得的锁，同goparkunlock
 - > 禁止抢占，获取g状态，设置mp.waitlock 和mp.waitunlockf等
 - > 恢复抢占，调用mcall(park_m)，切换到g0执行
