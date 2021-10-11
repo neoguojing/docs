@@ -153,8 +153,6 @@
 - > waitunlockf不为空，则执行waitunlockf，释放g获取的锁，返回false，则切换状态为_Grunnable，执行execute，
 - > 否则，调用schedule()
 -  goready(gp)：系统栈调用ready
-- suspendG
-- resumeG
 - func ready(gp *g, traceskip int, next bool) ：
 - > 设置当前g为_Grunnable
 - > runqput放入本地p
