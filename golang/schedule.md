@@ -4,11 +4,11 @@
 - excute
 - goschedImpl
 ### g相关
-- gopark
-- goready
-
+- gopark ：暂停当前g，切换g状态为_Gwaiting，解绑m和g，execute调度当前g或者schedule执行下一轮调度
+- goready：系统栈设置g状态_Grunnable，g放入当前p的运行队列，获取一个m取执行p
+- dropg ： 设置g和m的参数，解绑g和m
 ### p相关
-- handoffp
+- handoffp： 从系统调用或locked M.解锁p，使p取执行本地队列，全局队列，gc
 - acquirep/releasep
 - wakep
 - wirep
@@ -18,6 +18,8 @@
 - mstart
 - stopm
 - startlockedm
+- acquirem/releasem
+- startm
 ## trace
 - 调用栈跟踪：level分为0，1，2，all 和crash
 - gotraceback 设置调用栈级别
