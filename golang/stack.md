@@ -1,4 +1,7 @@
 # 栈
+## 总结：
+- 在每个函数开始执行前，会有一段汇编代码检查栈是否溢出
+- 过程：morestack-> newstack ，执行抢占调度、栈收缩或者栈扩容
 ## 栈原理
 - 栈帧：函数执行的环境
 - 从高地址向低地址延伸，向下生长
@@ -119,3 +122,4 @@ type adjustinfo struct {
 - morestack ：汇编函数设置调度参数，调用newstack
 # 引用
 - https://www.zhihu.com/question/22444939
+- https://www.cnblogs.com/mafeng/p/10305419.html
