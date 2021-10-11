@@ -124,6 +124,7 @@ type adjustinfo struct {
 - > g 被抢占，处理栈收缩，preemptPark（执行抢占）或gopreempt_m
 - > 扩充栈大小为2倍copystack，完成之后gogo调度
 - morestack ：汇编函数设置调度参数，调用newstack
+- adjustpointer ： 调整指向旧栈空间的指针，使其指向新栈空间
 # 引用
 - https://www.zhihu.com/question/22444939
 - https://www.cnblogs.com/mafeng/p/10305419.html
