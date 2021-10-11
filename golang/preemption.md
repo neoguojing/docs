@@ -9,7 +9,7 @@
 - > 异步安全点：用户code控制；实现主要是通过os的信号量等；
 - 抢占的实现大部分在newstack函数实现
 - m可被抢占的条件canPreemptM：mp.locks == 0，m为处理内存分配，preemptoff="",且m绑定p处于运行状态
-- 
+- g可以异步抢占的条件：：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
 ### 参数
 - gp.preempt：true为可以抢占
 - gp.stackguard0 = stackPreempt：每次g中的函数调用都会检查此标记，来检测抢占
@@ -36,3 +36,5 @@
 - doSigPreempt： 处理g的抢占信号
 - > wantAsyncPreempt判断g是否需要抢占,isAsyncSafePoint是否在异步安全点，注冊asyncPreempt函數和返回點函數
 - > 重置m.signalPending
+- wantAsyncPreempt：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
+- isAsyncSafePoint： ？？？
