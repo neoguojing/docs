@@ -117,24 +117,6 @@
 - 将当前m挂到allm列表上
 - 若是cgo调用，则更新mp.cgoCallers
 
-## 抢占
-> 抢占大多数时候意味这一次调度，调用schedule
-### 参数
-- gp.preempt：true为可以抢占
-- gp.stackguard0 = stackPreempt：每次g中的函数调用都会检查此标记，来检测抢占
-- preemptMSupported： 异步抢占标记
-- _p_.preempt：p应该执行调度，不管当前的g在执行什么
-- mp.signalPending：抢占信号
-- _g_.m.locks++: 禁止抢占
-### 函数
-- preemptall：遍历allp，调用preemptone，尽力停止所有g
-- preemptone：
-- > m和g为空，返回false
-- > 设置g的抢占标记gp.preempt gp.stackguard0 = stackPreempt
-- > 异步抢占：设置_p_.preempt，调用preemptM
-- preemptM：设置m的抢占信号为1，调用系统调用tgkill，发送_SIGURG给m对应的线程
-- acquirem：禁止抢占
-- releasem：恢复抢占
 ## sudog 
 
 ### 函数
