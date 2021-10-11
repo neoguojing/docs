@@ -1,5 +1,9 @@
 # 信号
 
+- signal_unix.go
+- os_linux.go
+- signal_amd64.go
+
 对于 Linux来说，实际信号是软中断，许多重要的程序都需要处理信号。信号，为 Linux 提供了一种处理异步事件的方法
 
 - 信号有65种
@@ -19,4 +23,6 @@ SIG_SETBLOCK   ：直接将进程信号掩码设为set；
 ```
 
 ## 函数
-
+- setsig
+- sighandler
+- doSigPreempt:处理g的抢占信号
