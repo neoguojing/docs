@@ -8,6 +8,8 @@
 - > 同步安全点：g在检查一个抢占请求；主要是通过设置gp.stackguard0==stackPreempt，在执行函数检查栈是触发morestack，在调用newstack是执行抢占调度
 - > 异步安全点：用户code控制；实现主要是通过os的信号量等；
 - 抢占的实现大部分在newstack函数实现
+- m可被抢占的条件canPreemptM：mp.locks == 0，m为处理内存分配，preemptoff="",且m绑定p处于运行状态
+- 
 ### 参数
 - gp.preempt：true为可以抢占
 - gp.stackguard0 = stackPreempt：每次g中的函数调用都会检查此标记，来检测抢占
@@ -25,7 +27,12 @@
 - preemptM：设置m的抢占信号为1，调用系统调用tgkill，发送_SIGURG给m对应的线程
 - acquirem：禁止抢占
 - releasem：恢复抢占
-- suspendG
-- resumeG
-- preemptPark
-- gopreempt_m
+- suspendG：將g挂起在安全的，markroot中調用，状态机，尝试_Gpreempted-> _Gwaiting| -> _Gwaiting|_Gscan
+- resumeG : 对于stopped的g使用ready唤醒
+- preemptPark ： 切换g状态为_Gscan|_Gpreempted，dropg解绑m和g，切换状态_Gpreempted，调用schedule
+- gopreempt_m ： 切换状态为_Grunnable，解绑m和g，将g放入全局p，schedule
+- asyncPreempt:保存用户寄存器，调用asyncPreempt2
+- asyncPreempt2：设置g的asyncSafePoint=true，preemptStop=true，则preemptPark，否则gopreempt_m，设置asyncSafePoint=false
+- doSigPreempt： 处理g的抢占信号
+- > wantAsyncPreempt判断g是否需要抢占,isAsyncSafePoint是否在异步安全点，注冊asyncPreempt函數和返回點函數
+- > 重置m.signalPending
