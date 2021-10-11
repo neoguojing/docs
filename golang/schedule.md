@@ -1,5 +1,24 @@
 # 调度
-# trace
+## 总结
+- schedule：
+- excute
+- goschedImpl
+### g相关
+- gopark
+- goready
+
+### p相关
+- handoffp
+- acquirep/releasep
+- wakep
+- wirep
+
+### m相关
+- mPark
+- mstart
+- stopm
+- startlockedm
+## trace
 - 调用栈跟踪：level分为0，1，2，all 和crash
 - gotraceback 设置调用栈级别
 
