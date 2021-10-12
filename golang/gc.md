@@ -457,7 +457,7 @@ type gcWork struct {
 - > 遍历所有的指针：
 - > 遍历bitmap，bit==0继续
 - > 否则遍历bitmap（8次）：
-- > 对应位置为1,则表示灰色对象，找到对应指针，若是栈对象则调用greyobject，否则调用putPtr放入栈工作缓冲
+- > 对应位置为1,则表示灰色对象，找到对应指针，若是堆对象则调用greyobject，否则调用putPtr放入栈工作缓冲
 - > bitmap左移一位
 - > 用于扫描非堆roots：，否则调用findObject找到对象的起始地址，mspan和span的索引，调用greyobject置灰对象；若时栈对象，则放入栈扫描buf
 - markrootFreeGStacks：释放空闲栈：遍历sched.gFree.stack，调用stackfree释放g的栈，将g放入sched.gFree.noStack
