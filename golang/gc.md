@@ -142,13 +142,6 @@ semrelease(&worldsema)
 - allg:代表栈信息
 - finblock：由销毁机制的对象
 
-### 安全点
-
-#### 参数
-- sched.safePointWait:等待到达安全点的p的数量
-- sched.safePointFn 
-- p.runSafePointFn:执行sched.safePointFn 在下一个安全点
-- 
 ### 标记 s.elemsize == sys.PtrSize 表示span存的是指针
 #### markBits 操作mspan.gcmarkBits，设置/清除/移动/判断等
 - greyobject： 获取markBits，已标记则返回，未标记则设置标记（对应位置设置为1）
