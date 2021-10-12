@@ -1,25 +1,29 @@
 # 调度
 ## 总结
-- schedule：
-- excute
-- goschedImpl
+- 启动流程：
+- schedule：挑选一个g运行：优先执行标记g，间歇的从本地全局runq获取g，从其他p偷g，
+- execute：调度g在当前m上直接运行
+- goschedImpl：设置g为_Grunnable，放入全局运行队列，执行schedule调度
 ### g相关
 - gopark ：暂停当前g，切换g状态为_Gwaiting，解绑m和g，execute调度当前g或者schedule执行下一轮调度
 - goready：系统栈设置g状态_Grunnable，g放入当前p的运行队列，获取一个m取执行p
 - dropg ： 设置g和m的参数，解绑g和m
 ### p相关
-- handoffp： 从系统调用或locked M.解锁p，使p取执行本地队列，全局队列，gc
-- acquirep/releasep
-- wakep
-- wirep
+- handoffp： 从系统调用或locked M中解放p，是p执行其他工作；运行队列，gc，netpoll等
+- acquirep ： 绑定p和m，并清理mcache
+- releasep： 解绑p和m，设置状态为_Pidle
+- wakep：当g变为runnable时，运行一个p取执行g
+- wirep(p) : 绑定当前g的p和m，设置p状态为_Prunning
 
 ### m相关
-- mPark
-- mstart
-- stopm
-- startlockedm
-- acquirem/releasem
-- startm
+- mPark ： 休眠m对应的线程，futex休眠
+- mstart: 进程启动时设置g0，初始化信号量等
+- stopm：将m放入空闲队列，并休眠m，唤醒后绑定p和m
+- startlockedm：调用锁定的m取运行锁定的g，主动释放p
+- stoplockedm：休眠m，唤醒后绑定nextp与m
+- acquirem/releasem：对m.locks加一或者减一
+- startm：从空闲m队列或新建一个m与p绑定（nmp.nextp=p），并唤醒m
+- gcstopm：解绑和休眠当前m，通常用于stw的目的
 ## trace
 - 调用栈跟踪：level分为0，1，2，all 和crash
 - gotraceback 设置调用栈级别
@@ -85,7 +89,7 @@
 - > 若gp==nil，则每_g_.m.p.ptr().schedtick%61 == 0 从全局runq获取一个g
 - > 若gp==nil,从本地runq获取一个g
 - > 若gp==nil，findrunnable获取g
-- > _g_.m.spinning,resetspinning
+- > _g_.m.spinning,resetspinning，启动一个新的spinning m
 - > 判断gp是否可被调度，sched.disable.user，否则放入待调度队列，重新调度
 - > gp和某个m锁定，startlockedm调度m去执行锁定的g，重新调度
 - > 调用execute
