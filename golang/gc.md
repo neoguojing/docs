@@ -5,7 +5,27 @@
 
 ## 总结
 - 启动gc有三种方式：手动，定时和分配内存时达到阈值
-- 
+- 工作模式：生产者：g扫描置灰的对象写入栈/gcw任务缓冲，内存屏障产生对象放入wbbuf;若gcw缓冲满了则刷入全局缓冲；消费者：g从本地gcw缓冲获取对象，执行标记
+- gc流程：
+- > 准备阶段：启动gomaxprocs个后台扫描g（暂停放入gcBgMarkWorkerPool）；重置pageMark等
+- > stw 
+- > 准备工作：确保上一轮的请稍工作完成（循环sweepone），清理sudog，syncpool和deferpool,计算gc参数
+- > mark：计算markroot的个数和job个数，标记tiny对象；开启写屏障（非白对象都会被标记为黑色）
+- > start world：换新sysmon，调度m执行p
+- > schedule唤醒gcBgMarkWorker，执行标记任务；mallocgc调用gcAssistAlloc辅助一定部分的标记任务
+- > gcMarkDone:将所有p的写屏障缓存刷入gcw
+- > stw
+- > 关闭写屏障
+- > 唤醒所有辅助gc的g，计算gc的扫描结果
+- > _GCmarktermination：在g0上标记当前g
+- > _GCoff
+- > sweep: 唤醒sweep.g（后台sweep），唤醒work.sweepWaiters(在mark term 到 sweep切换时等待的g),
+- > start world:释放栈和清理所有p的mcache
+- > bgsweep循环清理对象
+- stw：本质是设置所有的p的状态为stop；重启世界时：则优先从netpoll获取g
+- 标记用法：
+- gc参数计算:
+- 如何获取清理对象：
 
 ## 三色标记法
 
@@ -254,6 +274,7 @@ type gcBitsArena struct {
 - > 上一步失败，则fresh.tryAlloc,失败则抛出异常
 - > fresh挂到列表上
 - newAllocBits：调用newMarkBits
+#### pageMarks
 
 ## 结构体
 ```
