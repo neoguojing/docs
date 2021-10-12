@@ -1,6 +1,5 @@
 # 调度
 ## 总结
-- 启动流程：
 - schedule：挑选一个g运行：优先执行标记g，间歇的从本地全局runq获取g，从其他p偷g，
 - execute：调度g在当前m上直接运行
 - goschedImpl：设置g为_Grunnable，放入全局运行队列，执行schedule调度
@@ -8,6 +7,8 @@
 - gopark ：暂停当前g，切换g状态为_Gwaiting，解绑m和g，execute调度当前g或者schedule执行下一轮调度
 - goready：系统栈设置g状态_Grunnable，g放入当前p的运行队列，获取一个m取执行p
 - dropg ： 设置g和m的参数，解绑g和m
+- newproc ：创建和运行g
+- malg：分配g
 ### p相关
 - handoffp： 从系统调用或locked M中解放p，是p执行其他工作；运行队列，gc，netpoll等
 - acquirep ： 绑定p和m，并清理mcache
