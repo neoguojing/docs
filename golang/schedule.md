@@ -1,5 +1,7 @@
 # 调度
 ## 总结
+- 启动流程： osinit -> scheduleinit -> newproc(runtime.main)
+- main函数： 启动sysmon，执行init，启动gc，执行main.main
 - schedule：挑选一个g运行：优先执行标记g，间歇的从本地全局runq获取g，从其他p偷g，
 - execute：调度g在当前m上直接运行
 - goschedImpl：设置g为_Grunnable，放入全局运行队列，执行schedule调度
@@ -105,7 +107,7 @@
 - main: 必须在m0上执行
 - > 设置栈全局变量,
 - > 调用newm，执行sysmon()函数
-- > lockOSThread，设置m0参数和全局参数
+- > lockOSThread，设置m0参数和全局参数，锁定main g到m
 - > doInit: 调用init函数
 - > 调用gcenable: 启动bgsweep 和bgscavenge
 - > doInit: 调用main init函数
