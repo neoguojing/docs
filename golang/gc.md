@@ -26,6 +26,7 @@
 - 标记用法：
 - gc参数计算:
 - 如何获取清理对象：
+- GOGC的用法：GOGC=off不需要gc,实际上gcpercent=100000
 
 ## 三色标记法
 
@@ -64,7 +65,6 @@
   1.gc开始时，扫描栈，标记所有对象为黑色（解决重复扫描栈的问题）；栈上新建对象均标记为黑色（避免引入屏障）；
   2.gc开始后，堆上对象：新建对象标记为灰色；被删除对象标记为灰色；
 
-## 屏障是如何实现的？
 
 ## 常量
 - GOGC：环境变量，off：关闭gc，0：不断触发gc，对调试由帮助；默认100，当栈达到4MB是触发gc
@@ -166,6 +166,43 @@ semrelease(&worldsema)
 - allg:代表栈信息
 - finblock：由销毁机制的对象
 
+### gc参数和指标计算
+```
+type gcControllerState struct {
+	scanWork int64 //扫描工作计数,通过累积gcw.scanWork获得
+	bgScanCredit int64 //后台扫描增加，辅助扫描消费
+	assistTime int64 //辅助gc的时间
+	dedicatedMarkTime int64 //专注gc的时间
+	fractionalMarkTime int64
+	idleMarkTime int64
+	markStartTime int64
+	dedicatedMarkWorkersNeeded int64 //需要专注gc的g个数
+	assistWorkPerByte uint64 //每个辅助g应该负责多少工作
+	assistBytesPerWork uint64 // 1/assistWorkPerByte
+	fractionalUtilizationGoal float64 //fractional mark worker需要花费的时间
+	_ cpu.CacheLinePad
+}
+```
+#### 常量和公式
+- gcBackgroundUtilization： 后台标记的cpu利用率，0.25
+- gcGoalUtilization：标记的目标cpu利用率
+- dedicatedMarkWorkersNeeded = gomaxprocs * 0.25+0.5 （取整）
+- totalUtilizationGoal = gomaxprocs * 0.25
+- utilError = dedicatedMarkWorkersNeeded/totalUtilizationGoal -1  |utilError| > 0.3 则fractionalUtilizationGoal ！= 0
+- fractionalUtilizationGoal = （totalUtilizationGoal - dedicatedMarkWorkersNeeded）/gomaxprocs
+- gcpercent： GOGC 默认为100，off时为10000
+```
+gomaxprocs = 8
+dedicatedMarkWorkersNeeded = 8 * 0.25 + 0.5 = 2
+totalUtilizationGoal = 8 * 0.25 = 2
+utilError = 0
+fractionalUtilizationGoal = 0
+```
+#### 函数
+- startCycle：gc启动时调用,next_gc=heap_live+1M计算dedicatedMarkWorkersNeeded和fractionalUtilizationGoal，调用revise
+- revise：重新修订gc参数，memstats.heap_scan,memstats.heap_live, or memstats.next_gc变化时都有调用，主要计算assistWorkPerByte
+- > 期望的扫描量 = heap_scan * 100 / （100 + gcpercent），默认为heap_scan * 100 /200 = heap_scan/2
+- endCycle: gc结束时调用
 ### 标记 s.elemsize == sys.PtrSize 表示span存的是指针
 #### markBits 操作mspan.gcmarkBits，设置/清除/移动/判断等
 - greyobject： 获取markBits，已标记则返回，未标记则设置标记（对应位置设置为1）
