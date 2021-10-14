@@ -8,25 +8,20 @@
 - 工作模式：生产者：g扫描置灰的对象写入栈/gcw任务缓冲，内存屏障产生对象放入wbbuf;若gcw缓冲满了则刷入全局缓冲；消费者：g从本地gcw缓冲获取对象，执行标记
 - gc流程：
 - > 准备阶段：启动gomaxprocs个后台扫描g（暂停放入gcBgMarkWorkerPool）；重置pageMark等
-- > stw 
-- > 准备工作：确保上一轮的请稍工作完成（循环sweepone），清理sudog，syncpool和deferpool,计算gc参数
+- > stw ：确保上一轮的请稍工作完成（循环sweepone），清理sudog，syncpool和deferpool,计算gc参数
 - > mark：计算markroot的个数和job个数，标记tiny对象；开启写屏障（非白对象都会被标记为黑色）
-- > start world：换新sysmon，调度m执行p
-- > schedule唤醒gcBgMarkWorker，执行标记任务；mallocgc调用gcAssistAlloc辅助一定部分的标记任务
+- > start world：换新sysmon，调度m执行p；schedule唤醒gcBgMarkWorker，执行标记任务；mallocgc调用gcAssistAlloc辅助一定部分的标记任务
 - > gcMarkDone:将所有p的写屏障缓存刷入gcw
-- > stw
-- > 关闭写屏障
-- > 唤醒所有辅助gc的g，计算gc的扫描结果
+- > stw： 关闭写屏障，唤醒所有辅助gc的g，计算gc的扫描结果
 - > _GCmarktermination：在g0上标记当前g
-- > _GCoff
-- > sweep: 唤醒sweep.g（后台sweep），唤醒work.sweepWaiters(在mark term 到 sweep切换时等待的g),
+- > _GCoff：唤醒sweep.g（后台sweep），唤醒work.sweepWaiters(在mark term 到 sweep切换时等待的g)
 - > start world:释放栈和清理所有p的mcache
 - > bgsweep循环清理对象
 - stw：本质是设置所有的p的状态为stop；重启世界时：则优先从netpoll获取g
 - 标记用法：
 - gc参数计算:
 - 如何获取清理对象：
-- GOGC的用法：GOGC=off不需要gc,实际上gcpercent=100000
+- GOGC的用法：GOGC=off不需要gc,实际上GOGC=100000;默认值为100
 
 ## 三色标记法
 
@@ -140,7 +135,6 @@ m.preemptoff = ""
 systemstack(startTheWorldWithSema)
 semrelease(&worldsema)
 ```
-
 - stopTheWorldWithSema：需要获取worldsema，同时静止抢占，系统栈调用
 - > 设置sched.stopwait = gomaxprocs sched.gcwaiting =1
 - > preemptall尝试抢占所有g
@@ -201,8 +195,19 @@ fractionalUtilizationGoal = 0
 #### 函数
 - startCycle：gc启动时调用,next_gc=heap_live+1M计算dedicatedMarkWorkersNeeded和fractionalUtilizationGoal，调用revise
 - revise：重新修订gc参数，memstats.heap_scan,memstats.heap_live, or memstats.next_gc变化时都有调用，主要计算assistWorkPerByte
-- > 期望的扫描量 = heap_scan * 100 / （100 + gcpercent），默认为heap_scan * 100 /200 = heap_scan/2
+- > 期望的扫描量 = heap_scan * 100 / （100 + gcpercent），默认为heap_scan * 100 /200 = heap_scan/2，为可扫描对象的一半
+- > 若heap_live > next_gc 或 scanwork > 期望的扫描量,则next_gc * 1.1 期望的扫描量 = heap_scan
+- > 计算剩余工作量量 = 期望的扫描量（heap_scan）- scanwork ,< 1000 则赋值1000
+- > 堆剩余量 = next_gc - heap_live
+- > assistWorkPerByte = 计算剩余工作量量/堆剩余量
+- > assistBytesPerWork = 堆剩余量 / 计算剩余工作量量
 - endCycle: gc结束时调用
+- > 人为触发不计算
+- > goalGrowthRatio(实际增长率) = （next_gc - heap_marked）/heap_marked
+- > actualGrowthRatio = heap_live/heap_marked - 1
+- > assistDuration = 当前时间 - markStartTime
+- > 利用率 = 0.25 + assistTime/assistDuration * gomaxprocs
+- > 
 ### 标记 s.elemsize == sys.PtrSize 表示span存的是指针
 #### markBits 操作mspan.gcmarkBits，设置/清除/移动/判断等
 - greyobject： 获取markBits，已标记则返回，未标记则设置标记（对应位置设置为1）
