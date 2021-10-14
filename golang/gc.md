@@ -207,7 +207,13 @@ fractionalUtilizationGoal = 0
 - > actualGrowthRatio = heap_live/heap_marked - 1
 - > assistDuration = 当前时间 - markStartTime
 - > 利用率 = 0.25 + assistTime/assistDuration * gomaxprocs
-- > 
+- > triggerError = goalGrowthRatio - memstats.triggerRatio - utilization/gcGoalUtilization*(actualGrowthRatio-memstats.triggerRatio)
+- >triggerRatio =  memstats.triggerRatio + triggerGain*triggerError
+- gcSetTriggerRatio 
+- >  next_gc = max(heap_marked + heap_marked*uint64(gcpercent)/100,heap_marked*(1+triggerRatio))
+- >  0.6 * gcpercent / 100 <= triggerRatio =< 0.95 * gcpercent / 100
+- > gc_trigger = heap_marked * (1+triggerRatio)
+- > sweepPagesPerByte = (pagesInUse - pagesSwept) / (gc_trigger-heap_live)
 ### 标记 s.elemsize == sys.PtrSize 表示span存的是指针
 #### markBits 操作mspan.gcmarkBits，设置/清除/移动/判断等
 - greyobject： 获取markBits，已标记则返回，未标记则设置标记（对应位置设置为1）
