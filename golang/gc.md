@@ -8,7 +8,7 @@
 - 工作模式：生产者：g扫描置灰的对象写入栈/gcw任务缓冲，内存屏障产生对象放入wbbuf;若gcw缓冲满了则刷入全局缓冲；消费者：g从本地gcw缓冲获取对象，执行标记
 - gc流程：
 - > 准备阶段：启动gomaxprocs个后台扫描g（暂停放入gcBgMarkWorkerPool）；重置pageMark等
-- > stw ：确保上一轮的请稍工作完成（循环sweepone），清理sudog，syncpool和deferpool,计算gc参数
+- > stw ：确保上一轮的清扫工作完成（循环sweepone），清理sudog，syncpool和deferpool,计算gc参数
 - > mark：计算markroot的个数和job个数，标记tiny对象；开启写屏障（非白对象都会被标记为黑色）
 - > start world：换新sysmon，调度m执行p；schedule唤醒gcBgMarkWorker，执行标记任务；mallocgc调用gcAssistAlloc辅助一定部分的标记任务
 - > gcMarkDone:将所有p的写屏障缓存刷入gcw
