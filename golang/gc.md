@@ -210,7 +210,7 @@ fractionalUtilizationGoal = 0
 - > triggerError = goalGrowthRatio - memstats.triggerRatio - utilization/gcGoalUtilization*(actualGrowthRatio-memstats.triggerRatio)
 - >triggerRatio =  memstats.triggerRatio + triggerGain*triggerError
 - gcSetTriggerRatio 
-- >  next_gc = max(heap_marked + heap_marked*uint64(gcpercent)/100,heap_marked*(1+triggerRatio))
+- >  next_gc = max(heap_marked + heap_marked * gcpercent/100,heap_marked*(1+triggerRatio))
 - >  0.6 * gcpercent / 100 <= triggerRatio =< 0.95 * gcpercent / 100
 - > gc_trigger = heap_marked * (1+triggerRatio)
 - > sweepPagesPerByte = (pagesInUse - pagesSwept) / (gc_trigger-heap_live)
