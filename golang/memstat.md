@@ -58,7 +58,7 @@ type mstats struct {
 
 	gc_trigger uint64 //触发标记的堆大小，在end时计算
 
-	heap_live uint64 //被gc认为的活跃的heap大小bytes
+	heap_live uint64 //被gc认为的活跃的heap大小bytes,从os获取，但未分配对象的内存
 
 	// heap_scan is the number of bytes of "scannable" heap. This
 	// is the live heap (as counted by heap_live), but omitting
