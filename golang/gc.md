@@ -22,6 +22,11 @@
 - > gcmarkBits/markBits : 在gc时灰色对象的对应bit被置为1
 - > allocBits: 清扫完成会使用gcmarkBits赋值，并重新创建新的gcmarkBits
 - > heapBits： 辅助扫描，确定对象是否包含指针
+- 扫描流程：
+- > 1. 编译器堆结构体填充_type对象，记录指针信息到ptrdata和gcdata字段
+- > 2.mallocgc时调用heapBitsSetType，根据编译器信息填充heapBits
+- > 3.scanstack扫描g的栈空间，获取对象，利用type.ptrdata, type.gcdata信息调用scanblock扫描
+- > 4.scanobject扫描内存地址指向的object，利用heapBit判断指针是否存在
 - gc参数计算: 主要计算需要启用的mark协程格式等，gc目标是占用25%的cpu时间，最高不超过30%
 - 如何获取清理对象：
 - GOGC的用法：GOGC=off不需要gc,实际上GOGC=100000;默认值为100
@@ -290,6 +295,7 @@ for i := uintptr(0); i < n; i += sys.PtrSize { //以指针大小为步长遍历
 - > 否则调用nextArena
 - heapBit.nextArena:arena+1，计算下一个arenaidx找到对应的heaparean
 - heapBit.isPointer: bitp左移shift位 与上1 ，非0则是指针，否则非指针
+- heapBitsSetType： 从编译器type生成heapBits??
 #### gcbits bitmap
 
 ##### 概念
