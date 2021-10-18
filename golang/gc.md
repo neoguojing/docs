@@ -22,13 +22,14 @@
 - > gcmarkBits/markBits : 在gc时灰色对象的对应bit被置为1
 - > allocBits: 清扫完成会使用gcmarkBits赋值，并重新创建新的gcmarkBits
 - > heapBits： 辅助扫描，确定对象是否包含指针
+- > pageMarks： 页中存在被标记的span，用于回收页时判断
 - 扫描流程：
 - > 1. 编译器堆结构体填充_type对象，记录指针信息到ptrdata和gcdata字段
 - > 2.mallocgc时调用heapBitsSetType，根据编译器信息填充heapBits
 - > 3.scanstack扫描g的栈空间，获取对象，利用type.ptrdata, type.gcdata信息调用scanblock扫描
 - > 4.scanobject扫描内存地址指向的object，利用heapBit判断指针是否存在
-- gc参数计算: 主要计算需要启用的mark协程格式等，gc目标是占用25%的cpu时间，最高不超过30%
-- 如何获取清理对象：
+- gc参数计算: 主要计算需要启用的mark协程个数等，gc目标是占用25%的cpu时间，最高不超过30%
+- 如何获取清理对象：从mcentral unswept队列获取
 - GOGC的用法：GOGC=off不需要gc,实际上GOGC=100000;默认值为100
 - uintptr: 是一个整形存储指针，不会被gc扫描
 ## gc内存
@@ -335,6 +336,9 @@ type gcBitsArena struct {
 - > fresh挂到列表上
 - newAllocBits：调用newMarkBits
 #### pageMarks
+- pageIndexOf: 通过指针获取对象所在的arena page索引和mask
+- greyObject/gcmarknewobject/wbBufFlush1中设置对应的bit为1
+- reclaimChunk回收page时利用pageMark甄别空闲页
 
 ## 结构体
 ```
