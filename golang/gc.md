@@ -21,12 +21,13 @@
 - 标记用法：
 - > gcmarkBits/markBits : 在gc时灰色对象的对应bit被置为1
 - > allocBits: 清扫完成会使用gcmarkBits赋值，并重新创建新的gcmarkBits
-- > heapBits： 辅助定位mspan里的指针
-- > 
+- > heapBits： 辅助扫描，确定对象是否包含指针
 - gc参数计算: 主要计算需要启用的mark协程格式等，gc目标是占用25%的cpu时间，最高不超过30%
 - 如何获取清理对象：
 - GOGC的用法：GOGC=off不需要gc,实际上GOGC=100000;默认值为100
 
+## gc内存
+- 结构体的地址对齐
 ## 三色标记法
 
 - 程序所创建的对象初始默认标记为白色
