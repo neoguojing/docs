@@ -9,6 +9,7 @@
 - Tiny allocator:小对象分配器，处理小于16字节的无指针类型分配；分配多个对象到一个内存块，只有在所有对象都失效的情况下，才会释放该内存块；主要处理小字符串和逃逸的独立变量，减少12%的内存分配和20%的堆大小；是一个堆指针，不受gc管理，在mcache的releaseAll清除
 - Huge pages：为了减轻页表管理的难度，对于GB内存大页为2MB ，对于TB内存大页为1GB，预分配
 - THP：透明大页，redhad6引入，抽象层，使开发人员更方便管理大页，是动态分配的
+- scav：scav中保存的是空闲并且已经垃圾回收的span。
 
 ## mmap：
 - PROT_NONE ： 页不可访问
@@ -150,7 +151,7 @@ type mspan struct {
 - 非堆空间span：更新 limit，设置状态为mSpanManual
 - 堆空间：若spanclass==0，则所有空间为一个elem，nelems=1，elemsize=所有分配的空间；否则，elemsize为spanclass对应的大小，nelems=分配空间/elemsize，更新div相关参数
 - freeindex=0 allocCache全部置1表示空闲 ，构建nelems的gcmarkBits和allocBits（全部为0），状态置mSpanInUse
-- 
+- mspan.scavenge()把span释放还给OS
 ### 函数
 - nextFreeIndex：
 - > 若freeindex == snelems 则返回freeindex
