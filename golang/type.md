@@ -6,8 +6,8 @@
 - ../cmd/compile/internal/gc/reflect.go:dcommontype
 ```
 type _type struct {
-	size       uintptr
-	ptrdata    uintptr // size of memory prefix holding all pointers
+	size       uintptr   //字节对齐后的类型的字节数
+	ptrdata    uintptr // 指针截止的长度位置；40表示前40个字节内包含指针，之后再没有指针
 	hash       uint32
 	tflag      tflag
 	align      uint8
@@ -16,10 +16,7 @@ type _type struct {
 	// function for comparing objects of this type
 	// (ptr to object A, ptr to object B) -> ==?
 	equal func(unsafe.Pointer, unsafe.Pointer) bool
-	// gcdata stores the GC type data for the garbage collector.
-	// If the KindGCProg bit is set in kind, gcdata is a GC program.
-	// Otherwise it is a ptrmask bitmap. See mbitmap.go for details.
-	gcdata    *byte
+	gcdata    *byte //bitmap，记录相应字段是否是指针，每个bit表示一个8byte（指针大小）的内存
 	str       nameOff
 	ptrToThis typeOff
 }
