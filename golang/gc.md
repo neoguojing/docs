@@ -19,6 +19,10 @@
 - > bgsweep循环清理对象
 - stw：本质是设置所有的p的状态为stop；重启世界时：则优先从netpoll获取g
 - 标记用法：
+- > gcmarkBits/markBits : 在gc时灰色对象的对应bit被置为1
+- > allocBits: 清扫完成会使用gcmarkBits赋值，并重新创建新的gcmarkBits
+- > heapBits： 辅助定位mspan里的指针
+- > 
 - gc参数计算: 主要计算需要启用的mark协程格式等，gc目标是占用25%的cpu时间，最高不超过30%
 - 如何获取清理对象：
 - GOGC的用法：GOGC=off不需要gc,实际上GOGC=100000;默认值为100
@@ -217,7 +221,7 @@ fractionalUtilizationGoal = 0
 ### 标记 s.elemsize == sys.PtrSize 表示span存的是指针
 #### markBits 操作mspan.gcmarkBits，设置/清除/移动/判断等
 - greyobject： 获取markBits，已标记则返回，未标记则设置标记（对应位置设置为1）
-- gcmarknewobject: gc分配新对象是，直接设置对应的标记位
+- gcmarknewobject: 分配新对象时，直接设置对应的标记位
 - sweep：处理special对象是未标记则设置标记
 - wbBufFlush1: 未标记则设置标记
 ```
@@ -252,13 +256,14 @@ type heapBits struct {
 	last  *uint8 // Last byte arena's bitmap &ha.bitmap[len(ha.bitmap)-1]
 }
 
+使用方法：
 hbits := heapBitsForAddr(base)//根据基地址计算heapBits
 n := s.elemsize  //对象的大小
 for i := uintptr(0); i < n; i += sys.PtrSize { //以指针大小为步长遍历
 	if hbits.isPointer() {}
 	hbits = hbits.next()
 }
-使用方法：
+
 
 ```
 - heapArena.pageMarks: 哪些span上有已标记的对象
@@ -275,15 +280,15 @@ for i := uintptr(0); i < n; i += sys.PtrSize { //以指针大小为步长遍历
 - > 调用heapBits.forwardOrBoundary,下一个heapBits的位置和当前可以保存的指针个数
 - > 根据指针数计算需要的bitmap的个数 n/4=nbyte
 - > 若是指针则设置bitp指向的数组的所有bit为1
-- > 不是指针调用memclrNoHeapPointers，清理bit
+- > 不是指针调用memclrNoHeapPointers，清理bit，全0
 - heapBit.forwardOrBoundary:调用forward，返回heapBits的位置和当前可以保存的指针个数
 - heapBit.forward: 根据span存储的指针数，计算需要的字节数，并把heapBits的bitp向后移动n个字节
-- heapBi..next:若heapBit当前描述地址p，则next描述p+8byte
+- heapBit.next:若heapBit当前描述地址p，则next描述p+8byte
 - > 若shift<3,则shift+1
 - > 否则若h.bitp != h.last，则bitp向后移动1个byte
 - > 否则调用nextArena
 - heapBit.nextArena:arena+1，计算下一个arenaidx找到对应的heaparean
-
+- heapBit.isPointer: bitp左移shift位 与上1 ，非0则是指针，否则非指针
 #### gcbits bitmap
 
 ##### 概念
