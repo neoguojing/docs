@@ -5,6 +5,7 @@
 
 ## 总结
 - 启动gc有三种方式：手动，定时和分配内存时达到阈值
+- gc触发条件：1.heap_live > gc_trigger;2.gcpercent小于0不会触发定时清理，上次到现在的时间大于forcegcperiod；3.gcTrigger.n-work.cycles > 0
 - 工作模式：生产者：g扫描置灰的对象写入栈/gcw任务缓冲，内存屏障产生对象放入wbbuf;若gcw缓冲满了则刷入全局缓冲；消费者：g从本地gcw缓冲获取对象，执行标记
 - gc流程：
 - > 准备阶段：启动gomaxprocs个后台扫描g（暂停放入gcBgMarkWorkerPool）；重置pageMark等
