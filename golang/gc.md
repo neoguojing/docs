@@ -673,6 +673,7 @@ type sweepdata struct {
 
 ### scavenge 回收清扫的span
 - mheap.cavengeAll
+- pageAlloc.scav
 
 ## 引用
 
