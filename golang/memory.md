@@ -1,12 +1,13 @@
 # memory
-
+## 总结
+- Tiny allocator:小对象分配器，处理小于16字节的无指针类型分配；分配多个对象到一个内存块，只有在所有对象都失效的情况下，才会释放该内存块；主要处理小字符串和逃逸的独立变量，减少12%的内存分配和20%的堆大小；是一个堆指针，不受gc管理，在mcache的releaseAll清除
+- noscan: 无需gc扫描的对象：nil或者无指针的对象，_type == nil || _type.ptrdata == 0
+- spanClass：[1,67] * 2 分为noscan和scan，对应8B-32k的的
 ## 概念
 - small 分配器处理小于32kb的70个大小的内存分类
 - 页可以被分裂为一个固定大小的许多对象的集合
 - GOOS: 操作系统- darwin, freebsd, linux等
 - GOARCH: 架构-386, amd64, arm, s390x 等
-- noscan: 无需gc扫描的对象：nil或者无指针的对象，_type == nil || _type.ptrdata == 0
-- Tiny allocator:小对象分配器，处理小于16字节的无指针类型分配；分配多个对象到一个内存块，只有在所有对象都失效的情况下，才会释放该内存块；主要处理小字符串和逃逸的独立变量，减少12%的内存分配和20%的堆大小；是一个堆指针，不受gc管理，在mcache的releaseAll清除
 - Huge pages：为了减轻页表管理的难度，对于GB内存大页为2MB ，对于TB内存大页为1GB，预分配
 - THP：透明大页，redhad6引入，抽象层，使开发人员更方便管理大页，是动态分配的
 - scav：scav中保存的是空闲并且已经垃圾回收的span。
