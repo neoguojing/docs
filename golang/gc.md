@@ -29,7 +29,7 @@
 - > 2.mallocgc时调用heapBitsSetType，根据编译器信息填充heapBits
 - > 3.scanstack扫描g的栈空间，获取对象，利用type.ptrdata, type.gcdata信息调用scanblock扫描
 - > 4.scanobject扫描内存地址指向的object，利用heapBit判断指针是否存在，进行对象标记
-- gc参数计算: 主要计算需要启用的mark协程个数等，gc目标是占用25%的cpu时间，最高不超过30%
+- gc参数计算: 主要计算需要启用的mark协程个数等，gc目标是占用25%的cpu时间，最高不超过30%；计算heap_live和gc_trigger，用于判断gc触发条件
 - 如何获取清理对象：从mcentral unswept队列获取
 - GOGC的用法：GOGC=off不需要gc,实际上GOGC=100000;默认值为100
 - uintptr: 是一个整形存储指针，不会被gc扫描
