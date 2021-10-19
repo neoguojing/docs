@@ -80,10 +80,11 @@
 - heapArenaBitmapBytes：2^21
 - arenaL1Bits ： 1
 - arenaL2Bits： 48
-## madvise 内存的分配方式或者说是分配的细节方式
-- MADV_FREE：标记过的内存，内核会等到内存紧张时才会释放。在释放之前，这块内存依然可以复用；速度更快，但是RSS内存显示无法立即下降；更积极的回收策略
-- MADV_DONTNEED： 标记过的内存如果再次使用，会触发缺页中断；内存下降较快。1.16默认使用
-- _MADV_HUGEPAGE ： 与khugepaged沟通，将对应内存块提升为大页映射
+## madvise 它允许一个 application 来告诉内核如何它需要使用某些映射或共享内存区域,使内核可以选择适当的预读和缓存技术
+- MADV_FREE：标记过的内存，内核会等到内存紧张时才会释放。在释放之前，这块内存依然可以复用；速度更快，但是RSS内存显示无法立即下降；
+- MADV_DONTNEED： 标记过的内存如果再次使用，会触发缺页中断；内存下降较快。1.16默认使用,更积极的回收策略;告诉系统改内存短期内不会被使用
+- _MADV_HUGEPAGE ： 与khugepaged沟通，将对应内存块提升为大页映射；内核会定期扫描被标记的页，并将之替换未大页，
+- _MADV_NOHUGEPAGE :在指定的地址范围以确保内存地址和长度将不会被折叠到极大的页
 
 ## 各架构内存bit数
 - 符号扩展: 在amd64架构中，只用48bit地址位，且多余的16bit应该和48bit的最高bit相同（第47bit）；导致高地址是负数，低地址是正数
@@ -109,7 +110,8 @@
 - newarray: 数组分配器,调用mallocgc
 - sysAlloc: 分配大内存,调用 mmap(nil, n, _PROT_READ|_PROT_WRITE, _MAP_ANON|_MAP_PRIVATE, -1, 0)
 - sysReserve：  mmap(v, n, _PROT_NONE, _MAP_ANON|_MAP_PRIVATE, -1, 0)
-- sysUsed ：madvise(addr unsafe.Pointer, n uintptr, flags int32) int32
+- sysUsed ：madvise(addr unsafe.Pointer, n uintptr, _MADV_HUGEPAGE) int32
+- sysUnused: madvise(v, n, _MADV_DONTNEED/_MADV_FREE)：告诉系统内存页暂时不需要可用回收
 - persistentalloc: sysAlloc的包装,被mallocgc等调用,实际分配内存；由全局和per-p两种
 ```
 persistentalloc流程：
