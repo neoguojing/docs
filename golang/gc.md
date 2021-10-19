@@ -33,6 +33,7 @@
 - 如何获取清理对象：从mcentral unswept队列获取
 - GOGC的用法：GOGC=off不需要gc,实际上GOGC=100000;默认值为100
 - uintptr: 是一个整形存储指针，不会被gc扫描
+- bgscavenge：定期回收一个物理页大小的内存给操作系统
 ## gc内存
 - 结构体的地址对齐
 ## 三色标记法
@@ -677,8 +678,9 @@ type sweepdata struct {
 - scavengeEWMA：0.01 辅助scav应该占用的单核时间
 - mheap.cavengeAll
 - pageAlloc.scav
+- pageAlloc.scavengeRangeLocked: 调用sysUnused释放page
 - pageAlloc.scavengeOne：最小回收4k，最大由参数决定
-- > 
+- > 找到合适大小的page，调用scavengeRangeLocked，释放该页
 - pageAlloc.scavenge：
 - > 调用scavengeOne，知道释放足够byte
 - bgscavenge:后台scav；被sysmon或者finishsweep_m阶段唤醒
