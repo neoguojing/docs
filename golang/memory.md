@@ -11,9 +11,10 @@
 - > 4.对于16B到32k的内存，从mcache分配
 - > 5.对于包含指针的类型，初始化heapBits
 - > 6.gc中，则需要标记对象
-- > 
+- > 7.条件满足触发gc
 - 如何在span中快速找到未分配的内存？
-- > 
+- > 1. allocCache缓存allocBits，freeindex记录检索空闲元素的起始位置；通过bit运算和索引，快速找到空闲元素的地址
+- > 2. 找不到则mcache已经满了，从mcentral获取新的span
 ## 概念
 - small 分配器处理小于32kb的70个大小的内存分类
 - 页可以被分裂为一个固定大小的许多对象的集合
@@ -307,7 +308,7 @@ type pageCache struct {
 ## mallocgc
 - _GCmarktermination阶段不允许分配内存
 ### nextFreeFast mspan快速重用空闲对象
-- Ctz64计算allocCache开通为0的bit数量（从左到右）theBit，表示空闲内存的偏移；0表示已分配；每个bit表示一个elem
+- Ctz64计算allocCache开始为0的bit数量（从左到右）theBit，表示空闲内存的偏移；0表示已分配；每个bit表示一个elem
 - 若theBit<64,从freeindex开始加上偏移量，即找到空闲对象的位置索引，s.freeindex + uintptr(theBit)=result
 - result<nelems: 更新freeindex=result+1 allocCache>>theBit + 1 allocCount++ ,返回result*s.elemsize + s.base()，一个虚拟地址
 
