@@ -672,9 +672,22 @@ type sweepdata struct {
 - balance： 迁移部分work到全局队列
 
 ### scavenge 回收清扫的span
+- scavengeGoal: 需要归还给os的内存
+- heapRetained ：rss内存估算
+- scavengeEWMA：0.01 辅助scav应该占用的单核时间
 - mheap.cavengeAll
 - pageAlloc.scav
-
+- pageAlloc.scavengeOne：最小回收4k，最大由参数决定
+- > 
+- pageAlloc.scavenge：
+- > 调用scavengeOne，知道释放足够byte
+- bgscavenge:后台scav；被sysmon或者finishsweep_m阶段唤醒
+- > 启动设置park参数，设置定时器，调用gopark,暂停
+- > 被唤醒之后，进入死循环：
+- > 系统栈调用：pageAlloc.scavenge回收一个物理页，更新scav统计信息
+- > 若未释放，则挂起
+- > 依据scavengeEWMA计算sleeptime，并调用scavengeSleep休眠
+- > 计算新的scavengeEWMA
 ## 引用
 
 - https://blog.csdn.net/qq_33339479/article/details/108491796
