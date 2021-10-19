@@ -670,6 +670,10 @@ type sweepdata struct {
 - > 清空sched.deferpool
 ### gcw
 - balance： 迁移部分work到全局队列
+
+### scavenge 回收清扫的span
+- mheap.cavengeAll
+
 ## 引用
 
 - https://blog.csdn.net/qq_33339479/article/details/108491796
