@@ -7,7 +7,11 @@
 - mallocgc做了什么？
 - > 1.写屏障若开启，则当前g的gcAssistBytes小于0，则需要辅助gc
 - > 2.无指针且小于16B，则使用mcache分配tiny类型的内存
-- > 3.大于32k则使用allocLarge直接分配需要p
+- > 3.大于32k则使用allocLarge直接分配需要数量的page
+- > 4.对于16B到32k的内存，从mcache分配
+- > 5.对于包含指针的类型，初始化heapBits
+- > 6.gc中，则需要标记对象
+- > 
 - 如何在span中快速找到未分配的内存？
 - > 
 ## 概念
