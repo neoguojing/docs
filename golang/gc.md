@@ -34,6 +34,8 @@
 - GOGC的用法：GOGC=off不需要gc,实际上GOGC=100000;默认值为100
 - uintptr: 是一个整形存储指针，不会被gc扫描
 - bgscavenge：定期回收一个物理页大小的内存给操作系统
+- 辅助gc：两种
+- > 
 ## gc内存
 - 结构体的地址对齐
 ## 三色标记法
@@ -130,7 +132,6 @@
 - > 调用gcw.balance() tryGetFast tryGet wbBufFlush等确保获取到一个工作
 - > 若工作依旧未空，则尝试markroot
 - > scanobject扫描对象
-- > 
 - gcParkAssist: 将g放入work.assistQueue.q，调用goparkunlock暂停
 - gcWakeAllAssists: 从work.assistQueue.q获取多个g，调用injectglist从runq中获取p，交给m执行
 ### stw
