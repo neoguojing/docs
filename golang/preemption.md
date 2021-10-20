@@ -21,6 +21,7 @@
 - sched.safePointWait:等待到达安全点的p的数量
 - sched.safePointFn: p到达安全点要执行的函数，一般在gc时候使用
 - p.runSafePointFn:执行sched.safePointFn 在下一个安全点
+- m.gsignal： 处理信号量
 ### 函数
 - preemptall：遍历allp，调用preemptone，尽力停止所有g
 - preemptone：
