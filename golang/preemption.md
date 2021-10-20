@@ -41,3 +41,6 @@
 - > 重置m.signalPending
 - wantAsyncPreempt：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
 - isAsyncSafePoint： ？？？
+
+## 引用
+- https://medium.com/a-journey-with-go/go-asynchronous-preemption-b5194227371c
