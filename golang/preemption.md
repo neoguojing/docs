@@ -44,3 +44,4 @@
 
 ## 引用
 - https://medium.com/a-journey-with-go/go-asynchronous-preemption-b5194227371c
+- https://medium.com/a-journey-with-go/go-goroutine-and-preemption-d6bc2aa2f4b7
