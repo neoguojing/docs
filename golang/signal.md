@@ -23,6 +23,9 @@ SIG_SETBLOCK   ：直接将进程信号掩码设为set；
 ```
 
 ## 函数
+- m.gsignal :处理信号的g
+- > mcommoninit中调用malg分配一个32k栈大小的g
+- > 
 - setsig
 - sighandler
 - doSigPreempt:处理g的抢占信号
