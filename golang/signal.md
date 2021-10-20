@@ -26,3 +26,7 @@ SIG_SETBLOCK   ：直接将进程信号掩码设为set；
 - setsig
 - sighandler
 - doSigPreempt:处理g的抢占信号
+
+
+## 引用
+- https://medium.com/a-journey-with-go/go-gsignal-master-of-signals-329f7ff39391
