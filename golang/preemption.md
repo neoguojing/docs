@@ -10,7 +10,7 @@
 - 抢占的实现大部分在newstack函数实现
 - m可被抢占的条件canPreemptM：mp.locks == 0，m为处理内存分配，preemptoff="",且m绑定p处于运行状态
 - g可以异步抢占的条件：：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
-- 异步抢占：1.sysmon发下g运行超过10ms，想m发送SIGURG信号；2.m.gsignal发现是抢占信号，会修改g的程序计数器，使g暂停，并指向下一轮调度。
+- 异步抢占：1.sysmon发下g运行超过10ms，想m发送SIGURG信号；2.m.gsignal发现是抢占信号，会修改g的程序计数器，使g暂停，并指向下一轮调度。解决没有函数调用的循环
 ### 参数
 - gp.preempt：true为可以抢占
 - gp.stackguard0 = stackPreempt：每次g中的函数调用都会检查此标记，来检测抢占
