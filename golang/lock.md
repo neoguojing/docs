@@ -53,7 +53,7 @@ type mutex struct {
 
 ### 关闭静态锁排序 lockrank_off.go
 
-#### 加锁流程 
+#### lock2 加锁流程 
 - 获取m.lock++,禁止抢占
 - xchg指令加锁
 - 加锁失败，自旋4次：用cas指令抢占，抢占失败，执行pause等待；
@@ -65,6 +65,7 @@ type mutex struct {
 - xchg设置锁状态为unlock
 - 若之前锁状态为sleep，则使用futexwakeup 唤醒
 - m.locks-- 开启抢占
+- 恢复g的抢占状态
 
 ### 开启静态锁排序 lockrank_on.go
 
