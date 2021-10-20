@@ -36,7 +36,7 @@
 - bgscavenge：定期回收一个物理页大小的内存给操作系统
 - 辅助gc：两种
 - > gcAssistAlloc ： mallocgc中根据g的负债状态（<0）,由调用mallocgc的g辅助gc（gcDrainN）；申请内存增加负债/辅助gc减少负债
-- > gcBgMarkWorkerPool: 其中包含全职/碎片时间辅助gc，由findRunnableGCWorker/findrunnable函数在调度scedule时启动；
+- > gcBgMarkWorkerPool: 其中包含全职/碎片时间辅助gc，由findRunnableGCWorker/findrunnable函数在调度scedule时启动；进程启动时会创建gomaxprocs个gcBgMarkWorker的g放入pool中，可能不会都启动。
 ## gc内存
 - 结构体的地址对齐
 ## 三色标记法
