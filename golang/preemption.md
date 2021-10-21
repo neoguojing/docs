@@ -45,8 +45,12 @@
 - > 重置m.signalPending
 - wantAsyncPreempt：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
 - isAsyncSafePoint： ？？？
-- retake： 在sysmon中调用
-
+- retake： 每个sysmon循环都会调用
+- > 遍历所有p：
+- > p处于_Prunning或_Psyscall
+- > 更新sysmontick
+- > 若上次p被调度的时间+10ms <= 当前时间，表示g超时了 调用preemptone设置抢占标记，向m发出信号
+- > 若p处于_Psyscall，更新syscalltick或者设置p为_Pidle，调用handoffp从系统调用解锁
 ## 引用
 - https://medium.com/a-journey-with-go/go-asynchronous-preemption-b5194227371c
 - https://medium.com/a-journey-with-go/go-goroutine-and-preemption-d6bc2aa2f4b7
