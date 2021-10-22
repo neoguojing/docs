@@ -103,8 +103,8 @@ var sig struct {
 - sigreturn：汇编代码
 - doSigPreempt:处理g的抢占信号
 - sigfwdgo：signal是否要转发给go处理
-- sigFetchG:通过栈地址获取g；g被保存在栈底
-- setg：汇编代码，保存g，使得能够被needm使用
+- sigFetchG:调用getg；其他通过栈地址获取g；g被保存在栈底
+- setg：汇编代码，保存g，使得能够被needm使用；保存g到tls？
 - sigsend：将信号加入sig.mask,并设置sig.state,通知recv接受;
 - signal_recv
 
