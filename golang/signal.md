@@ -1,7 +1,11 @@
 # 信号
-
+主要处理异步通知，同时实现了异步抢占
 ## 总结：
-- 
+- 进程启动时为所有信号注册handler，initsig
+- 通过signal.Notiy或runtime.signalM 发送信号量到m
+- os通知m执行handler处理
+
+## 参数
 - signal_unix.go
 - os_linux.go
 - signal_amd64.go
