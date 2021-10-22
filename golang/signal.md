@@ -44,6 +44,20 @@ type sigactiont struct {
 	sa_restorer uintptr  //信号处理返回地址，值为sigreturn
 	sa_mask     uint64  // 信号掩码
 }
+
+type sigctxt struct {
+	info *siginfo
+	ctxt unsafe.Pointer
+}
+
+type siginfo struct {
+	si_signo int32
+	si_errno int32
+	si_code  int32
+	// below here is a union; si_addr is the only field we use
+	si_addr uint64
+}
+
 ```
 
 
