@@ -13,7 +13,8 @@
 - 信号编号小于等于31的信号都是不可靠信号，肯能会丢失
 - 阻塞信号状态：暂时屏蔽该信号，用户可读写
 - pending：信号未决状态，内核依据阻塞信号设置，用户只读
-- sigprocmask()系统调用改变和检查自己的信号掩码的值：
+- rt_sigaction： 系统调用，为信号设置处理和返回函数等。
+- sigprocmask()系统调用改变和检查自己的信号掩码的值
 ```
 数how的取值及含义如下：
 
@@ -62,11 +63,12 @@ type siginfo struct {
 
 
 ## 函数
-- initsig：进程启动时调用，遍历sigtable[64],调用setsig设置sigactiont结构体
+- initsig：进程启动时调用，遍历sigtable[64],调用setsig设置sigactiont结构体，调用系统调用rt_sigaction设置信号处理函数；
 - m.gsignal :处理信号的g
 - > mcommoninit中调用malg分配一个32k栈大小的g，用于满足大部分架构，且栈不会扩容
 - > 每个m都有这样一个g
-- setsig
+- setsig：填充sigactiont，调用sigaction设置信号回调等
+- sigaction：调用sysSigaction
 - signalM：调用tgkill发送信号到对应m
 - sighandler： 信号处理函数最终的信号处理函数
 - > _SIGPROF信号交给sigprof
