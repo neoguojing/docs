@@ -6,7 +6,7 @@
 - 安全点(safe point)分类：
 - > 阻塞的安全点：g被停止调度，阻塞在同步原语或者系统调用中
 - > 同步安全点：g在检查一个抢占请求；主要是通过设置gp.stackguard0==stackPreempt，在执行函数检查栈是触发morestack，在调用newstack是执行抢占调度
-- > 异步安全点：用户code控制；实现主要是通过os的信号量等；
+- > 异步安全点：实现主要是通过os的信号量等；异步安全点要求：能够安全的挂起和扫描栈，有充足的栈注入ayncPreempt，不会死锁等。
 - 抢占的实现大部分在newstack函数实现
 - m可被抢占的条件canPreemptM：mp.locks == 0，m为处理内存分配，preemptoff="",且m绑定p处于运行状态
 - g可以异步抢占的条件：：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
@@ -25,6 +25,7 @@
 - sched.safePointFn: p到达安全点要执行的函数，一般在gc时候使用
 - p.runSafePointFn:执行sched.safePointFn 在下一个安全点
 - m.gsignal： 处理信号量
+- asyncPreemptStack: asyncPreempt函数需要的栈空间，init时初始化
 ### 函数
 - preemptall：遍历allp，调用preemptone，尽力停止所有g
 - preemptone：
@@ -44,7 +45,10 @@
 - > wantAsyncPreempt判断g是否需要抢占,isAsyncSafePoint是否在异步安全点，注冊asyncPreempt函數和返回點函數
 - > 重置m.signalPending
 - wantAsyncPreempt：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
-- isAsyncSafePoint： ？？？
+- isAsyncSafePoint：
+- > m可以被抢占
+- > g的栈能够存储asyncPreemptStack
+- > 检查pc是否时一个不安全点
 - retake： 每个sysmon循环都会调用
 - > 遍历所有p：
 - > p处于_Prunning或_Psyscall
