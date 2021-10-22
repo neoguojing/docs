@@ -10,7 +10,7 @@
 - 抢占的实现大部分在newstack函数实现
 - m可被抢占的条件canPreemptM：mp.locks == 0，m为处理内存分配，preemptoff="",且m绑定p处于运行状态
 - g可以异步抢占的条件：：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
-- 异步抢占：1.sysmon发下g运行超过10ms，向m发送SIGURG信号；2.m.gsignal发现是抢占信号，会修改g的程序计数器，使g暂停，并指向下一轮调度。解决没有函数调用的循环无法被抢占的问题
+- 异步抢占：1.sysmon发下g运行超过10ms，向m发送SIGURG信号；2.handler被执行，修改g的程序计数器，使g暂停，并指向下一轮调度。解决没有函数调用的循环无法被抢占的问题
 - 强制抢占可以调用runtime.GoSched
 - GODEBUG=asyncpreemptoff=1 ：关闭异步抢占
 ### 参数
@@ -42,7 +42,7 @@
 - asyncPreempt:保存用户寄存器，调用asyncPreempt2
 - asyncPreempt2：设置g的asyncSafePoint=true，preemptStop=true，则preemptPark，否则gopreempt_m，设置asyncSafePoint=false
 - doSigPreempt： 处理g的抢占信号
-- > wantAsyncPreempt判断g是否需要抢占,isAsyncSafePoint是否在异步安全点，注冊asyncPreempt函數和返回點函數
+- > wantAsyncPreempt判断g是否需要抢占,isAsyncSafePoint是否在异步安全点，修改g的pc指向asyncPreempt
 - > 重置m.signalPending
 - wantAsyncPreempt：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
 - isAsyncSafePoint：
