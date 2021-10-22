@@ -64,6 +64,18 @@ type siginfo struct {
 	si_addr uint64
 }
 
+<!-- out going队列 -->
+var sig struct {
+	note       note
+	mask       [(_NSIG + 31) / 32]uint32
+	wanted     [(_NSIG + 31) / 32]uint32
+	ignored    [(_NSIG + 31) / 32]uint32
+	recv       [(_NSIG + 31) / 32]uint32
+	state      uint32
+	delivering uint32
+	inuse      bool
+}
+
 ```
 
 
@@ -93,7 +105,8 @@ type siginfo struct {
 - sigfwdgo：signal是否要转发给go处理
 - sigFetchG:通过栈地址获取g；g被保存在栈底
 - setg：汇编代码，保存g，使得能够被needm使用
-- sigsend：
+- sigsend：将信号加入sig.mask,并设置sig.state,通知recv接受;
+- signal_recv
 
 ## 引用
 - https://medium.com/a-journey-with-go/go-gsignal-master-of-signals-329f7ff39391
