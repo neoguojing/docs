@@ -54,8 +54,12 @@ type sigactiont struct {
 - > 每个m都有这样一个g
 - setsig
 - signalM：调用tgkill发送信号到对应m
-- sighandler： 信号处理函数
-- sigtramp：汇编代码，会调用sigtrampgo，次为go信号的实际handler
+- sighandler： 信号处理函数最终的信号处理函数
+- > _SIGPROF信号交给sigprof
+- > sigPreempt 调用doSigPreempt
+- > _SI_USER|_SigNotify ：调用sigsend发送信号
+- _SigKill：dieFromSignal处理
+- sigtramp：汇编代码，会调用sigtrampgo，次为go信号的实际handler 
 - sigtrampgo：真正的runtime信号处理函数：
 - > sigfwdgo是否需要转发给g处理，true，直接返回
 - > cgo处理？？
@@ -68,7 +72,7 @@ type sigactiont struct {
 - sigfwdgo：signal是否要转发给go处理
 - sigFetchG:通过栈地址获取g；g被保存在栈底
 - setg：汇编代码，保存g，使得能够被needm使用
-
+- sigsend：
 
 ## 引用
 - https://medium.com/a-journey-with-go/go-gsignal-master-of-signals-329f7ff39391
