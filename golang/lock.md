@@ -16,6 +16,7 @@
 - > 3.空闲且处于饥饿，则不抢占锁，直接陷入休眠
 - > 4.已加锁且非饥饿，则计数加1，陷入休眠
 - > 5.已加锁且饥饿，计数加1，陷入休眠
+- 解锁流程：饥饿状态，直接交接；否则，无等待或者锁已经被抢占或已经唤醒一个g直接返回；否则唤醒一个g
 ## 锁类型
 - 自旋锁： 自旋+osyield（多进程竞争影响效率） 自旋+sleep（时间不好控制） 自旋+futex；自旋锁不可递归（重入）；自旋锁关闭了中断和抢占
 ## 原子操作：
@@ -104,6 +105,12 @@ type Locker interface {
 	mutexWoken = 2  //表示是否有协程已被唤醒，0：没有协程唤醒 1：已有协程唤醒，正在加锁过程中。
 	mutexStarving = 4
 	mutexWaiterShift = 3 //偏移位数
+	
+type semaRoot struct {
+	lock  mutex
+	treap *sudog // root of balanced tree of unique waiters.
+	nwait uint32 // Number of waiters. Read w/o the lock.
+}
 ```
 ### 函数
 - Lock:
@@ -117,7 +124,7 @@ type Locker interface {
 - > 若已唤醒，则清空new的mutexWoken
 - > cas设置锁为new状态值，成功：
 - > 锁之前未处于mutexLocked|mutexStarving，则加锁成功，break
-- > 调用sync_runtime_SemacquireMutex，进入休眠
+- > 调用sync_runtime_SemacquireMutex，进入休眠，若waitStartTime非0，则直接加入等待队列头部
 - > 计算等待时间，判断是否需要进入饥饿
 - > 锁处于饥饿状态：队列只有一个等待，则清理饥饿状态，加锁状态和计数器减一
 - sync_runtime_canSpin ：不能自旋的场景
@@ -127,15 +134,31 @@ type Locker interface {
 - > 当前m有一个p，且p本地运行队列不为空 (为什么)
 - sync_runtime_doSpin：调用汇编函数procyield，执行30次pause
 - sync_runtime_SemacquireMutex：semacquire1
-- semacquire1：
-- Unlock：
+- semacquire1：抢占信号量，成功则返回，否则休眠当前g，并把当前信号量放入等待队列；lifo=true，将等待者放入队列头部
+- > cansemacquire:若addr所对应的值通过cas成功减1，则抢占成功，直接返回
+- > 申请sudog
+- > 循环：
+- > root.nwait+1
+- > 调用cansemacquire成功，则 root.nwait-1,返回
+- > 失败则将sudog放入sema树上（lifo=true放入前面）
+- > goparkunlock:休眠g
+- > 唤醒之后，重新调用cansemacquire，成退出
+- > 继续循环
+- Unlock
 - > 状态-锁定状态：1，设置新的状态
 - > 新状态不为0，则调用unlockSlow
 - unlockSlow:
-- > 饥饿模式：调用sync_runtime_Semrelease，将所有权交个下一个等待者
-- > 正常模式：循环：无等待者，则返回；3个标记有一个设置，则返回；计数器减1，并设置唤醒标记，调用runtime_Semrelease唤醒某个g
-- sync_runtime_Semrelease:semrelease1
-- semrelease1:
+- > 饥饿模式：调用sync_runtime_Semrelease，直接设置调度器，运行被唤醒的g
+- > 正常模式：循环：无等待者，则返回；3个标记有一个设置，则返回；计数器减1，并设置唤醒标记，调用runtime_Semrelease唤醒某个g，并不直接运行
+- sync_runtime_Semrelease:semrelease1 ： 
+- semrelease1:从等待队列出队，调用goredy唤醒g并放入runnext，下一轮执行；handoff =true，则直接运行调度，使p开始执行runnext
+-  > root.nwait == 0 则返回
+-  > 等待者为0，则直接返回
+-  > 对调用root.dequeue出队，获取sudog
+-  > root.nwait-1
+-  > handoff = true且cansemacquire成功，则sudog.ticket = 1
+-  > goready唤醒sudog对应的g，将g设置为runable，放入p的runnext下一轮运行
+-  > sudog.ticket = 1 则调用goyield，设置当前g为runable，放入当前p的队列，执行调度
 ## 引用
 
 - https://blog.csdn.net/sydhappy/article/details/115500346
