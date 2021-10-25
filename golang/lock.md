@@ -16,7 +16,9 @@
 - > 3.空闲且处于饥饿，则不抢占锁，直接陷入休眠
 - > 4.已加锁且非饥饿，则计数加1，陷入休眠
 - > 5.已加锁且饥饿，计数加1，陷入休眠
+- > 6.继续下轮循环
 - 解锁流程：饥饿状态，直接运行唤醒的g；否则，无等待或者锁已经被抢占或已经唤醒一个g直接返回；否则唤醒一个g，等待调度
+- 读锁最多2^30个读角色
 ## 锁类型
 - 自旋锁： 自旋+osyield（多进程竞争影响效率） 自旋+sleep（时间不好控制） 自旋+futex；自旋锁不可递归（重入）；自旋锁关闭了中断和抢占
 ## 原子操作：
@@ -111,6 +113,16 @@ type semaRoot struct {
 	treap *sudog // root of balanced tree of unique waiters.
 	nwait uint32 // Number of waiters. Read w/o the lock.
 }
+
+<!-- 读写锁，读写信号量，读计数和读等待 -->
+type RWMutex struct {
+	w           Mutex  // held if there are pending writers
+	writerSem   uint32 // semaphore for writers to wait for completing readers
+	readerSem   uint32 // semaphore for readers to wait for completing writers
+	readerCount int32  // number of pending readers
+	readerWait  int32  // number of departing readers
+}
+
 ```
 ### 函数
 - Lock:
@@ -159,6 +171,19 @@ type semaRoot struct {
 -  > handoff = true且cansemacquire成功，则sudog.ticket = 1
 -  > goready唤醒sudog对应的g，将g设置为runable，放入p的runnext下一轮运行
 -  > sudog.ticket = 1 则调用goyield，设置当前g为runable，放入当前p的队列，执行调度
+### 读写锁
+-  RLock：readerCoun+1；若readerCount<0,则调用sync_runtime_SemacquireMutex，在readerSem挂起当前读锁
+-  RUnlock：rw.readerCoun-1；readerCount<0,则调用rUnlockSlow
+-  rUnlockSlow：rw.readerWait-1；readerWait=0，则sync_runtime_Semrelease唤醒writerSem，唤醒写操作
+-  Lock：写锁定
+-  > 获取互斥锁
+-  > rw.readerCount - rwmutexMaxReaders 变为负数；告知读操作有写操作在进行
+-  > rw.readerCount的副本不为0，则设置rw.readerWait = rw.readerCount
+-  > sync_runtime_SemacquireMutex挂起写操作在writerSem
+-  Unlock: 写解锁
+-  > rw.readerCount + rwmutexMaxReaders 转为正数；
+-  > 唤醒所有的读操作sync_runtime_Semrelease
+-  > 释放互斥锁
 ## 引用
 
 - https://blog.csdn.net/sydhappy/article/details/115500346
