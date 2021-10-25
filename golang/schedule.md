@@ -7,7 +7,7 @@
 - goschedImpl：设置g为_Grunnable，放入全局运行队列，执行schedule调度
 ### g相关
 - gopark ：暂停当前g，切换g状态为_Gwaiting，解绑m和g，execute调度当前g或者schedule执行下一轮调度
-- goready：系统栈设置g状态_Grunnable，g放入当前p的运行队列，获取一个m取执行p
+- goready：系统栈设置g状态_Grunnable，g放入当前p的runnext使得下一轮调度，获取一个m取执行p
 - dropg ： 设置g和m的参数，解绑g和m
 - newproc ：创建和运行g
 - malg：分配g
@@ -17,6 +17,7 @@
 - releasep： 解绑p和m，设置状态为_Pidle
 - wakep：当g变为runnable时，运行一个p取执行g
 - wirep(p) : 绑定当前g的p和m，设置p状态为_Prunning
+- runqput： next为true则放入p.runnext,下一轮调度；否则放入队列尾部；队列满了，则放入全局队列
 
 ### m相关
 - mPark ： 休眠m对应的线程，futex休眠
