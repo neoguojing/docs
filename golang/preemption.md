@@ -6,7 +6,15 @@
 - 安全点(safe point)分类：
 - > 阻塞的安全点：g被停止调度，阻塞在同步原语或者系统调用中
 - > 同步安全点：g在检查一个抢占请求；主要是通过设置gp.stackguard0==stackPreempt，在执行函数检查栈是触发morestack，在调用newstack是执行抢占调度
+```
+    //同步抢占触发
+    gp.preemptStop = true
+    gp.preempt = true
+    gp.stackguard0 = stackPreempt
+```
 - > 异步安全点：实现主要是通过os的信号量等；异步安全点要求：能够安全的挂起和扫描栈，有充足的栈注入ayncPreempt，不会死锁等。
+```
+```
 - 抢占的实现大部分在newstack函数实现
 - m可被抢占的条件canPreemptM：mp.locks == 0，m为处理内存分配，preemptoff="",且m绑定p处于运行状态
 - g可以异步抢占的条件：：g是否可以被异步抢占：g.preempt 和p.preempt为true，g是运行状态
