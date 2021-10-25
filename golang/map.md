@@ -1,7 +1,7 @@
 # runtime/map.go
-## 概念
+## 总结
 - reflexive: 反射性的，k==k；在计算机里浮点数的比较是在一定范围能相等则表示相等，key类型是float32\float64\complex64\complex64\interface的或包含该类型的都是反射性key。
-- 数据存储在buckets数组中，bucket本身时一个type类型；每个bucket最多包含8对k/v
+- 数据存储在buckets数组中，bucket本身是一个type类型；每个bucket最多包含8对k/v
 - hash值的低2^B-1位，用于选择bucket，高8bit用于确定bucket内部k/v的位置
 - bucket值超过8，值放入extra bucket列表中
 - map增长，会新建一个2倍大小的bucket数组，动态增量的从老bucket复制过去
@@ -9,7 +9,7 @@
 - 装载因子以bucket的个数计算，而不是以elem
 - 掩码： 2^B-1
 - bucket选择：偏移hash & 2^B-1 * maptype.bucketsize
-- elem选择： 选择hash的搞8bit，与hmap的tophash逐一比较，相等，找到key的位置，比较key的值，相等，则偏移找到elem
+- elem选择： 选择hash的高8bit，与hmap的tophash逐一比较，相等，找到key的位置，比较key的值，相等，则偏移找到elem
 - 每次插入：都需要遍历8+overflow*8个
 - map的遍历随机，是因为mapiterinit中设置了随机的起始bucket
 
@@ -17,8 +17,8 @@
 #### 触发
 - set时
 #### 扩容条件
-- 存储的k/v超过装载因子 : 实施2倍扩容
-- 溢出bucket的个数大于2^B B<=15 ： 实施等量扩容
+- 存储的k/v超过装载因子 : 实施2倍扩容；实际元素个数大于6.5*2^B
+- 溢出bucket的个数大于2^B B<=15 ： 实施等量扩容；溢出bucket的数量过多
 #### 何时扩容
 - 执行set的时候
 - 执行delete的时候
