@@ -10,6 +10,12 @@
 - 锁模式：正常（性能优异，g可以多次获得锁）和饥饿（解决尾端延时问题），
 - 饥饿状态：超过1ms未抢到锁，锁陷入饥饿状态；锁的拥有权直接交给队列前面的等待者；新的竞争者不竞争，不自旋，直接陷入等待；
 - 正常模式切换：最后一个等待者或者超时小于1ms，则切换饥饿状态为正常状态
+- 加锁流程：先自旋，抢占不到则休眠
+- > 1.自旋4次检测锁状态是否为空闲
+- > 2.空闲且不处于饥饿：直接抢占，成功则返回，不成功则休眠
+- > 3.空闲且处于饥饿，则不抢占锁，直接陷入休眠
+- > 4.已加锁且非饥饿，则计数加1，陷入休眠
+- > 5.已加锁且饥饿，计数加1，陷入休眠
 ## 锁类型
 - 自旋锁： 自旋+osyield（多进程竞争影响效率） 自旋+sleep（时间不好控制） 自旋+futex；自旋锁不可递归（重入）；自旋锁关闭了中断和抢占
 ## 原子操作：
@@ -95,7 +101,7 @@ type Locker interface {
 }
 
   mutexLocked = 1 
-	mutexWoken = 2
+	mutexWoken = 2  //表示是否有协程已被唤醒，0：没有协程唤醒 1：已有协程唤醒，正在加锁过程中。
 	mutexStarving = 4
 	mutexWaiterShift = 3 //偏移位数
 ```
@@ -104,7 +110,16 @@ type Locker interface {
 - > CompareAndSwapInt32设置锁状态，成功则返回
 - > 失败，陷入lockSlow
 - lockSlow：循环
-- > 锁处于锁定状态且可自旋，则自旋，非饥饿状态尝试设置mutexWoken
+- > old锁处于锁定状态且可自旋，则自旋;wake标记未设置则尝试设置mutexWoken
+- > old锁状态非饥饿，则设置new为mutexLocked //若锁处于饥饿状态，则当前g不加锁
+- > old锁mutexLocked|mutexStarving状态已设置，则new的计数器加一 // 入等待队列
+- > 锁超时且old锁为mutexLocked，设置new的mutexStarving
+- > 若已唤醒，则清空new的mutexWoken
+- > cas设置锁为new状态值，成功：
+- > 锁之前未处于mutexLocked|mutexStarving，则加锁成功，break
+- > 调用sync_runtime_SemacquireMutex，进入休眠
+- > 计算等待时间，判断是否需要进入饥饿
+- > 锁处于饥饿状态：队列只有一个等待，则清理饥饿状态，加锁状态和计数器减一
 - sync_runtime_canSpin ：不能自旋的场景
 - > 已经字段超过4次
 - > 单核不自旋
@@ -118,7 +133,7 @@ type Locker interface {
 - > 新状态不为0，则调用unlockSlow
 - unlockSlow:
 - > 饥饿模式：调用sync_runtime_Semrelease，将所有权交个下一个等待者
-- > 正常模式：循环：无等待者，则返回；计数器减1，并设置唤醒标记，调用runtime_Semrelease唤醒某个g
+- > 正常模式：循环：无等待者，则返回；3个标记有一个设置，则返回；计数器减1，并设置唤醒标记，调用runtime_Semrelease唤醒某个g
 - sync_runtime_Semrelease:semrelease1
 - semrelease1:
 ## 引用
