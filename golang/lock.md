@@ -1,14 +1,25 @@
 # 锁
-
+## 总结
+- 只有cpu个数大于1，才使用自旋
+### 运行时锁：
+- 锁状态包含:未锁定，锁定和休眠
+- 加锁：m加锁，xchg抢锁，失败则自旋（4+1）+pause+osyield，尝试抢占，仍然不成功，则futex休眠
+- 解锁：设置锁状态为解锁，若之前状态为休眠，则futex唤醒；
+### 用户锁
+- 锁标记：锁定，唤醒，饥饿
+- 锁模式：正常（性能优异，g可以多次获得锁）和饥饿（解决尾端延时问题），
+- 饥饿状态：超过1ms未抢到锁，锁陷入饥饿状态；锁的拥有权直接交给队列前面的等待者；新的竞争者不竞争，不自旋，直接陷入等待；
+- 正常模式切换：最后一个等待者或者超时小于1ms，则切换饥饿状态为正常状态
 ## 锁类型
 - 自旋锁： 自旋+osyield（多进程竞争影响效率） 自旋+sleep（时间不好控制） 自旋+futex；自旋锁不可递归（重入）；自旋锁关闭了中断和抢占
-- 
 ## 原子操作：
 - lock指令： lock前缀的指令，会锁cpu总线
 - xchg指令： 原子操作，将新值存入变量，并返回旧值；锁内存总线
 - 原子类型： int类型，禁止寄存器缓存
 - cmpxchg： 变量值与旧值比较，相同则用新值覆盖，并返回旧值
 - barrier()：空操作，告诉编译器这里有一个内存屏障，放弃在寄存器中的暂存值，重新从内存中读入
+- PAUSE：指令给处理器提了个醒：这段代码序列是个循环等待；执行一个预定义的等待，降低耗电
+- osyield： 系统调用，主动释放cpu
 
 ## 系统调用或汇编
 - runtime·osyield：linux系统调用sched_yield，主动放弃cpu，当前进程或者线程进入调度队列等待重新调度
@@ -71,8 +82,45 @@ type mutex struct {
 
 
 ## 用户锁
+```
+type Mutex struct {
+	state int32 // | waiters（29bit） |starv（1bit）|waken（1bit）|locked（1bit）|
+	sema  uint32
+}
 
+// A Locker represents an object that can be locked and unlocked.
+type Locker interface {
+	Lock()
+	Unlock()
+}
 
+  mutexLocked = 1 
+	mutexWoken = 2
+	mutexStarving = 4
+	mutexWaiterShift = 3 //偏移位数
+```
+### 函数
+- Lock:
+- > CompareAndSwapInt32设置锁状态，成功则返回
+- > 失败，陷入lockSlow
+- lockSlow：循环
+- > 锁处于锁定状态且可自旋，则自旋，非饥饿状态尝试设置mutexWoken
+- sync_runtime_canSpin ：不能自旋的场景
+- > 已经字段超过4次
+- > 单核不自旋
+- > GOMAXPROCS < 1
+- > 当前m有一个p，且p本地运行队列不为空 (为什么)
+- sync_runtime_doSpin：调用汇编函数procyield，执行30次pause
+- sync_runtime_SemacquireMutex：semacquire1
+- semacquire1：
+- Unlock：
+- > 状态-锁定状态：1，设置新的状态
+- > 新状态不为0，则调用unlockSlow
+- unlockSlow:
+- > 饥饿模式：调用sync_runtime_Semrelease，将所有权交个下一个等待者
+- > 正常模式：循环：无等待者，则返回；计数器减1，并设置唤醒标记，调用runtime_Semrelease唤醒某个g
+- sync_runtime_Semrelease:semrelease1
+- semrelease1:
 ## 引用
 
 - https://blog.csdn.net/sydhappy/article/details/115500346
