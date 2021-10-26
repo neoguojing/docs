@@ -4,7 +4,9 @@
 - 进程启动时为所有信号注册handler，initsig
 - 通过signal.Notiy或runtime.signalM 发送信号量到m
 - os通知m执行handler处理
-
+- _SIGPROF： sigprof
+- _SIGURG：doSigPreempt
+- _SigKill： dieFromSignal
 ## 参数
 - signal_unix.go
 - os_linux.go
@@ -38,9 +40,7 @@ SIG_SETBLOCK   ：直接将进程信号掩码设为set；
 - > _SigUnblock: 非阻塞的信号
 - > _SigIgn: 忽略信号
 
-- _SIGPROF： sigprof
-- _SIGURG：doSigPreempt
-- _SigKill： dieFromSignal
+
 ## 结构体
 ```
 //信号的执行体
