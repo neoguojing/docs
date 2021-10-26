@@ -1,4 +1,7 @@
-# 运行时内存屏障
+# 运行时屏障
+## 总结
+- 何时开启写屏障：2个阶段： gcphase == _GCmark || gcphase == _GCmarktermination 
+- 
 ## 内存屏障相关
 - mbarrier.go
 - wbBufEntries：256
