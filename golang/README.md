@@ -31,19 +31,19 @@
 - src/runtime/lockrank.go 运行时锁的排序定义
 
 ### runtime 启动流程 src/runtime/asm_amd64.s
-- _rt0_amd64_linux
+- _rt0_amd64_linux： 将argc argv从内存拉到寄存器
 - _rt0_amd64
-- rt0_go 
+- rt0_go ：
 - 保存函数参数
 - 保存g0到寄存器，并设置栈
 - 发现系统cpu类型，设置相关参数
 - cgo处理
 - 设置tls
 - 设置g0和m0
-- runtime·osinit
-- runtime·schedinit
-- runtime·newproc(runtime.main)
-- runtime·mstart -> runtime.schedule
+- runtime·osinit： 初始化系统核心数
+- runtime·schedinit ： 初始化调度器
+- runtime·newproc(runtime.main) ： 创建main 协程
+- runtime·mstart -> runtime.schedule ：主线程进入调度
 
 ### 常用算法
 - func Ctz64(x uint64) int : 计算小端字节序末尾0的个数
