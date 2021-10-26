@@ -2,6 +2,7 @@
 ## 总结
 - 何时开启写屏障：2个阶段： gcphase == _GCmark || gcphase == _GCmarktermination 
 - gc开启后：栈上对象都为黑色，新建栈对象也为黑色对象；堆上，删除和修改都变灰色
+- 写屏障的作用：将要操作的指针和指针的值放如wbBuf，等价于标记为灰色，有标记g会从缓冲中获取对象继续递归标记。
 ## 内存屏障相关
 - mbarrier.go
 - wbBufEntries：256
@@ -13,10 +14,11 @@
 
 ## 结构体
 ```
+<!-- 每个p有一个，内存说刷如workBuf -->
 type wbBuf struct {
-	next uintptr
-	end uintptr
-	buf [512]uintptr
+	next uintptr //指向下一个指针
+	end uintptr //指向结束
+	buf [512]uintptr //缓冲
 }
 var writeBarrier struct {
 	enabled bool    // compiler emits a check of this before calling write barrier
