@@ -1,7 +1,7 @@
 # 运行时屏障
 ## 总结
 - 何时开启写屏障：2个阶段： gcphase == _GCmark || gcphase == _GCmarktermination 
-- 
+- gc开启后：栈上对象都为黑色，新建栈对象也为黑色对象；堆上，删除和修改都变灰色
 ## 内存屏障相关
 - mbarrier.go
 - wbBufEntries：256
