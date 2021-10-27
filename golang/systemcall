@@ -1,0 +1,6 @@
+# syscall
+
+## 总结
+- 执行syscall之前，主动放弃p和m的绑定
+- syscall结束时：1.尝试获取原来的p执行；2.从获取一个p从空闲列表中3.将g放到全局runq，m回到空闲列表
+- 非阻塞io（netpoll时）m没有被阻塞，因此仍然和p绑定；只是g被park了
