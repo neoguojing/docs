@@ -6,7 +6,7 @@
 - 编译器在每个函数末尾植入deferreturn，检测是否有defer需要执行
 - panic发生时，需要记录当前栈帧的pc和sp，一遍在recover之后恢复到正常流程；pc实际指向当前函数末尾的runtime.deferreturn；
 - panic函数后面的代码不会被执行
-- Goexit: 会触发panic，但是设置一个标记，以便运行时不会执行recover
+- Goexit: 会触发panic，但是设置一个标记goexit = true，以便运行时不会执行recover
 ## 架构
 ```
 panic只出现在栈上
