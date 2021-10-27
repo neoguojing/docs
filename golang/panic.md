@@ -8,6 +8,7 @@
 - panic函数后面的代码不会被执行；panic在deferreturn前面被执行
 - Goexit: 会触发panic，但是设置一个标记goexit = true，以便运行时不会执行recover
 - defer改写return结果：如下返回值时一个已命名的参数
+```
 这种情况下，defer会改写返回值
 func namedParam() (x int) {
    x = 1
@@ -16,7 +17,7 @@ func namedParam() (x int) {
 }
 ```
 ## 架构
-```
+
 panic只出现在栈上
 
 type _panic struct {
@@ -51,6 +52,7 @@ type _defer struct {
 - p.deferpool
 - sched.deferpool
 ## 函数
+- panicIndex：数组越界触发的panic
 - recovery：处理gorecover函数执行后恢复正常流程的问题
 - gorecover ： recover关键字的实现,必须在defer中
 - > 获取当前g的panic,g未退出，recovered=false，argp 指向最上层的defer的参数，则recovered=true，返回panic指针
