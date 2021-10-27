@@ -1,7 +1,12 @@
 # debug
 
+## 编译
 禁止内联和优化
 go build -gcflag "-N -l"
+
+## 协程泄露：
+- 协程以为某些原因阻塞，导致协程越来越多，最终导致系统崩溃
+- https://github.com/uber-go/goleak
 
 ## vscode 
 
