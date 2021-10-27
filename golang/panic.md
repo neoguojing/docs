@@ -2,7 +2,11 @@
 
 ## 概要
 - recover函数会校验是否存在defer
-- panic函数执行，会挂载panic结构体到g，同时遍历g的defer，依次执行defer，中间遇到recover函数则设置标记为true，切换到系统栈调用gogo切换到defreturn函数继续执行；否则打印panic信息，退出进程
+- panic函数执行后，会挂载panic结构体到g，同时遍历g的defer，依次执行defer，中间遇到recover函数则设置标记为true，切换到系统栈调用gogo切换到defreturn函数继续执行；否则打印panic信息，退出进程
+- 编译器在每个函数末尾植入deferreturn，检测是否有defer需要执行
+- panic发生时，需要记录当前栈帧的pc和sp，一遍在recover之后恢复到正常流程；pc实际指向当前函数末尾的runtime.deferreturn；
+- panic函数后面的代码不会被执行
+- Goexit: 会触发panic，但是设置一个标记，以便运行时不会执行recover
 ## 架构
 ```
 panic只出现在栈上
