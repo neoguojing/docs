@@ -4,7 +4,8 @@
 - 禁止内联和优化
 > go build -gcflag "-N -l"
 - 生成汇编：go tool compile -S main.go
-
+- 打印边界检查结果：-gcflags="-d=ssa/check_bce/debug=1"
+- 打印内存逃逸：-gcflags="-m"
 ## 协程泄露：
 - 协程以为某些原因阻塞，导致协程越来越多，最终导致系统崩溃
 - https://github.com/uber-go/goleak
