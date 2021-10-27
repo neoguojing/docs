@@ -1,4 +1,9 @@
 # compiler
 
+## 编译器计算的值
+- len
+- cap
+- unsafe.Sizeof
+- unsafe.Alignof
 ## 引用
 - https://medium.com/a-journey-with-go/go-goroutine-and-preemption-d6bc2aa2f4b7
