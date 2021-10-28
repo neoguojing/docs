@@ -18,13 +18,18 @@
 - GOTRACEBACK=system：用户g加系统g
 
 ## dlv 
+> 启动时首先加载符号表
 - dlv core 调试core文件
 - bt 打印堆栈
 - frame 数字：进入当前栈帧
 - locals ：查看该栈帧的本地变量
 - vars：打印包的变量
 
-## 符号表的使用：保存函数和全局变量，编译阶段产生
+## 符号表的使用：
+> 保存函数和全局变量，编译阶段产生
+> 确保使用的符号被申明
+> 在运行时无用，仅用于debug
+- -ldflags=-s ： 去除符号表和DWARF信息
 - go tool nm
 - b： bss
 - d： data
@@ -119,3 +124,7 @@ launch.json
     ]
 }
 ```
+
+
+## 引用
+- https://webkit.org/blog/2826/unusual-speed-boost-size-matters/
