@@ -6,6 +6,7 @@
 - 系统m：sysmon；templateThread
 - 系统g：除了runtime.main,handleAsyncEvent和runfinq，其他有runtime前缀的都是系统g
 - 正在运行的线程大于0，则不是死锁：（sched.mnext（已经创建的m） - sched.nmfreed（释放的m））- sched.nmidle（空闲的m） - sched.nmidlelocked（锁住的空闲m） - sched.nmsys（系统m）
+- 如何判断死锁：在运行的非系统m = 0，所有g都处于等待或抢占状态，且没有p在等待定时器超时，p没有定时器，则发生死锁。
 ### 运行时锁：
 - 锁状态包含:未锁定，锁定和休眠
 - 加锁：m加锁，xchg抢锁，失败则自旋（4+1）+pause+osyield，尝试抢占，仍然不成功，则futex休眠
@@ -206,8 +207,12 @@ type RWMutex struct {
 - > 忽略系统g
 - > 检查g的状态：若是_Gwaiting，_Gpreempted表示，grunning++；
 - > _Grunnable,_Grunning,_Gsyscall状态，则抛出异常，因为m为0，不可能有运行的g
-- > 若正在运行的g ，grunning = 0 ，则抛出异常表示死锁
-- > 
+- > 若无正在运行的g ，grunning = 0 ，则抛出异常表示正在退出进程-死锁
+- > 此处，grunning！=0，
+- > timeSleepUntil获取最近超时的timmer和对应的p，从midle列表获取m，绑定m和p，唤醒m，返回
+- > 遍历allp，若_p_.timers 个数大于0，返回，无死锁
+- > 设置g.m.throwing = -1 表示不导出所有栈
+- > 抛出异常，表示-所有g在sleep-死锁
 ## 引用
 
 - https://blog.csdn.net/sydhappy/article/details/115500346
