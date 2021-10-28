@@ -1,6 +1,11 @@
 # 锁
 ## 总结
 - 只有cpu个数大于1，才使用自旋
+### 死锁检测
+- 什么时候执行死锁检测：具体为m变空闲或退出的时候：1.sched.nmfreed增加；2.sched.nmsys增加3.sched.nmidlelocked增加，4.sched.nmidle增加
+- 系统m：sysmon；templateThread
+- 系统g：除了runtime.main,handleAsyncEvent和runfinq，其他有runtime前缀的都是系统g
+- 正在运行的线程大于0，则不是死锁：（sched.mnext（已经创建的m） - sched.nmfreed（释放的m））- sched.nmidle（空闲的m） - sched.nmidlelocked（锁住的空闲m） - sched.nmsys（系统m）
 ### 运行时锁：
 - 锁状态包含:未锁定，锁定和休眠
 - 加锁：m加锁，xchg抢锁，失败则自旋（4+1）+pause+osyield，尝试抢占，仍然不成功，则futex休眠
@@ -190,6 +195,19 @@ type RWMutex struct {
 -  > rw.readerCount + rwmutexMaxReaders 转为正数；
 -  > 唤醒所有的读操作sync_runtime_Semrelease
 -  > 释放互斥锁
+
+### 死锁检测
+- checkdead：检查死锁的场景：mexit，templateThread，incidlelocked，sysmon，mput
+- > 调度器上锁
+- > 正在发生panic则退出
+- > 计算正在运行的m，run= （sched.mnext - sched.nmfreed）- sched.nmidle - sched.nmidlelocked - sched.nmsys
+- > linux下，run > 0 则返回，即正在运行的m大于0，则非死锁
+- > 当前运行的m为0，遍历allg：
+- > 忽略系统g
+- > 检查g的状态：若是_Gwaiting，_Gpreempted表示，grunning++；
+- > _Grunnable,_Grunning,_Gsyscall状态，则抛出异常，因为m为0，不可能有运行的g
+- > 若正在运行的g ，grunning = 0 ，则抛出异常表示死锁
+- > 
 ## 引用
 
 - https://blog.csdn.net/sydhappy/article/details/115500346
