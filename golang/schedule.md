@@ -6,6 +6,7 @@
 - execute：调度g在当前m上直接运行
 - goschedImpl：设置g为_Grunnable，放入全局运行队列，执行schedule调度
 - 启动时根据cpu，创建足够的p
+- 模板线程：单独存在的，不绑定p；
 ### g相关
 - gopark ：暂停当前g，切换g状态为_Gwaiting，解绑m和g，execute调度当前g或者schedule执行下一轮调度
 - goready：系统栈设置g状态_Grunnable，g放入当前p的runnext使得下一轮调度，获取一个m取执行p
@@ -243,7 +244,7 @@
 - > 设置doesPark=true,nextp绑定p，sigmask设置
 - > newosproc为m创建线程
 - func newosproc(mp *m)：创建操作系统线程
-- > mp.g0.stack.hi 获取栈顶指针
+- > mp.g0.stack.hi 获取栈底指针
 - > 调用系统调用clone创建线程，运行mstart
 - allocm: 分配一个m，不绑定任何thread
 - > 当前g.m.p == 0 ,则acquirep，临时借用一个p
@@ -269,6 +270,23 @@
 - stopm： 停止当前m直到一个新的work就绪
 - mput ： m放入sched.midle
 - startlockedm: 调度锁定的m去执行锁定的g，解绑p，赋值mp.nextp=p，唤醒m.park,stopm停止m
-
+### 模板线程m
+```
+<!-- 被newm使用，用于在os线程无法安全创建线程的时候 -->
+var newmHandoff struct {
+	lock mutex
+	newm muintptr //指向一个m结构体列表
+	waiting bool //表示需要唤醒
+	wake    note
+	haveTemplateThread uint32 //1表示templateThread已经启动
+}
+```
+- startTemplateThread：1.main中使用cgo的时候，用于在c环境下创建线程；2.LockOSThread：启动一个
+- > 启动newm(templateThread, nil, -1)
+- templateThread：用于启动其他os线程，在其他线程状态不对的情况下
+- > 增加一个系统线程计数，检查死锁
+- > 进入循环：
+- > 从newmHandoff.newm获取所有m，调用newm1为m创建os线程
+- > 调用notesleep，休眠templateThread
 ## 引用
 - https://blog.csdn.net/zdy0_2004/article/details/106392885
