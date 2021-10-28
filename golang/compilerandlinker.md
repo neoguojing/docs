@@ -9,6 +9,7 @@
 - go tool nm main.o： 查看符号表
 - -l：避免inline
 - -x：打印编译信息
+- -X：编译时设置符号表的值
 - -w： 删除debug信息
 ## 编译器计算的值
 - len
