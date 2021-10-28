@@ -23,6 +23,12 @@
 - frame 数字：进入当前栈帧
 - locals ：查看该栈帧的本地变量
 - vars：打印包的变量
+
+## 符号表的使用：保存函数和全局变量，编译阶段产生
+- go tool nm
+- b： bss
+- d： data
+- t： text 函数相关信息
 ## vscode 
 
 shift + ctrl + p 创建task
