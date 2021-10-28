@@ -5,6 +5,8 @@
 - string是一个只读段，本身没有内存
 - string和byte转换内存copy的原因：多g的竞争修改
 - rune转换为string要经过utf8编码
+- byte转string，涉及到内存分配和copy
+- byte转string在哪些场景默认被优化： switch，map和字符串拼接和字符串比较
 ## 结构
 ```
 type stringStruct struct {
