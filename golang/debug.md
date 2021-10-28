@@ -10,6 +10,19 @@
 - 协程以为某些原因阻塞，导致协程越来越多，最终导致系统崩溃
 - https://github.com/uber-go/goleak
 
+## core dump
+- ulimit -c unlimited
+- GOTRACEBACK=crash ：打印所有g的堆栈，包括runtime，生成coredump文件
+- GOTRACEBACK=single：只打印当前g堆栈
+- GOTRACEBACK=all ：所有用户g的堆栈
+- GOTRACEBACK=system：用户g加系统g
+
+## dlv 
+- dlv core 调试core文件
+- bt 打印堆栈
+- frame 数字：进入当前栈帧
+- locals ：查看该栈帧的本地变量
+- vars：打印包的变量
 ## vscode 
 
 shift + ctrl + p 创建task
