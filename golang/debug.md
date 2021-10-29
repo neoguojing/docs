@@ -34,6 +34,9 @@
 - b： bss
 - d： data
 - t： text 函数相关信息
+
+## pprof
+- 
 ## vscode 
 
 shift + ctrl + p 创建task
