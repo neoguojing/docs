@@ -3,6 +3,7 @@
 - compile 工具打包和并发编译
 - linker链接和打包二进制
 - 二进制赋值和删除临时目录
+- 二进制包大小对性能的影响:1.使cpu cache命中率下降；2.内存大小和加载慢
 # compiler
 - go tool compile -S -l main.go ： 查看编译时的指令地址和目标文件
 - go tool objdump main.o： 解封装
