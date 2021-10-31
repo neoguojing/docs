@@ -42,6 +42,30 @@
 - 每个m一个定时器ITIMER_PROF
 - 通过信号，将收集的信息导入到buffer中
 - 专门的线程将收集信息导入文件
+
+## gops
+```
+ackage main
+
+import (
+	"log"
+	"time"
+
+	"github.com/google/gops/agent"
+)
+
+func main() {
+	if err := agent.Listen(agent.Options{}); err != nil {
+		log.Fatal(err)
+	}
+	time.Sleep(time.Hour)
+}
+```
+- gops <pid> 2s
+- gops stack (<pid>|<addr>)
+-  gops memstats (<pid>|<addr>)
+- gops pprof-cpu (<pid>|<addr>)
+- gops pprof-heap (<pid>|<addr>)
 ## vscode 
 
 shift + ctrl + p 创建task
