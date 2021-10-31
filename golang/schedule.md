@@ -7,6 +7,7 @@
 - goschedImpl：设置g为_Grunnable，放入全局运行队列，执行schedule调度
 - 启动时根据cpu，创建足够的p
 - 模板线程：单独存在的，不绑定p；
+- 调度时：g->g0,g0->g
 ### g相关
 - g的启动newproc：创建栈，收集pc和调用者信息，更新id和状态，放入local runq的头部，下一个执行周期执行
 - g的结束：在创建g栈的时候，在g的执行函数之前插入goexit；在函数退出时执行goexit->goexit1->goexit0->schedule
@@ -16,6 +17,9 @@
 - newproc ：创建和运行g
 - malg：分配g
 - g0：系统启动时创建的第一个g；g0运行调度代码，选择合适的g在m上运行；固定的更大的栈；负责：1.g的实际创建（新g子runq上优先运行）；2.gc；3.栈扩容 4.调度
+- g什么时候切换？1.syscall，lock和channe了，g进行sleep或进入sudog，进行调度并切换其他g；2.执行函数，需要栈增长时，执行调度和切换；
+- g切换需要保存什么：1.切换时的下一条指令pc；2.g的执行栈
+- g切换流程： 1.g的pc和stack保存在g结构中，设置g0running，并替换栈为g0的栈；10us级别；2.g0执行调度100us级别；3.获取待执行stack和pc，跳转到pc 10us级别
 ### p相关
 - handoffp： 从系统调用或locked M中解放p，是p执行其他工作；运行队列，gc，netpoll等
 - acquirep ： 绑定p和m，并清理mcache
