@@ -1,5 +1,8 @@
 # debug
 - go tool objdump：导出汇编指令
+
+## inline替换函数调用为函数的body，增大binary，提高了运行效率
+- -gcflags="-m"：打印inline的函数
 ## 编译
 - 禁止内联和优化
 > go build -gcflag "-N -l"
