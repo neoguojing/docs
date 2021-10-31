@@ -1,5 +1,5 @@
 # debug
-
+- go tool objdump：导出汇编指令
 ## 编译
 - 禁止内联和优化
 > go build -gcflag "-N -l"
