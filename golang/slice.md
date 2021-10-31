@@ -3,7 +3,16 @@
 ## 总结
 - 内存如何增长：当前cap小于1024，则新空间翻倍；当前cap大于1024，则扩容1/4
 - 编译器自动计算len和cap的长度，没有对应函数
-
+- copy重叠问题：
+```
+<!-- 将a，copy到从第二个地址开始的 
+从前向后copy：会有内存重叠问题
+memmove实现了从后向前copy，解决该问题-->
+func main() {
+   a := []byte("hello")
+   copy(a[2:], a)
+}
+```
 ## 结构
 ```
 type slice struct {
