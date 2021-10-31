@@ -13,6 +13,7 @@
 - dropg ： 设置g和m的参数，解绑g和m
 - newproc ：创建和运行g
 - malg：分配g
+- g0：系统启动时创建的第一个g；g0运行调度代码，选择合适的g在m上运行；固定的更大的栈；负责：1.g的实际创建（新g子runq上优先运行）；2.gc；3.栈扩容4.
 ### p相关
 - handoffp： 从系统调用或locked M中解放p，是p执行其他工作；运行队列，gc，netpoll等
 - acquirep ： 绑定p和m，并清理mcache
