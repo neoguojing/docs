@@ -36,7 +36,12 @@
 - t： text 函数相关信息
 
 ## pprof
-- 
+- _SIGPROF： sigprof： 信号触发处理函数
+- 默认interval 100HZ： 每秒处理100次收集
+- 系统无法触发500HZ的信号处理
+- 每个m一个定时器ITIMER_PROF
+- 通过信号，将收集的信息导入到buffer中
+- 专门的线程将收集信息导入文件
 ## vscode 
 
 shift + ctrl + p 创建task
