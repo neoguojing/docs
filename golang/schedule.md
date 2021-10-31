@@ -8,6 +8,8 @@
 - 启动时根据cpu，创建足够的p
 - 模板线程：单独存在的，不绑定p；
 ### g相关
+- g的启动newproc：创建栈，收集pc和调用者信息，更新id和状态，放入local runq的头部，下一个执行周期执行
+- g的结束：在创建g栈的时候，在g的执行函数之前插入goexit；在函数退出时执行goexit->goexit1->goexit0->schedule
 - gopark ：暂停当前g，切换g状态为_Gwaiting，解绑m和g，execute调度当前g或者schedule执行下一轮调度
 - goready：系统栈设置g状态_Grunnable，g放入当前p的runnext使得下一轮调度，获取一个m取执行p
 - dropg ： 设置g和m的参数，解绑g和m
