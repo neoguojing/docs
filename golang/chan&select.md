@@ -12,6 +12,8 @@
 - select使用的chan是非阻塞的，revc和send不需要执行gopark暂停当前g
 - send中唤醒recvq中的g，recv唤醒sendq中的g，send和recv会唤醒select的g
 - select：加锁按照lockorder正向遍历加锁，解锁则反向遍历解锁
+- select每次遍历的顺序是随机的，因为pollorker是随机的
+- select允许重复的chan吗，可以因此提供某个chan被选中的几率
 - select：lockorder按照hchan的地址从小到大顺序排序
 - select流程：
 - > 1.优先处理已经挂起的操作，即在recvq和sendq中挂起的sudog，每次一个，成功返回
