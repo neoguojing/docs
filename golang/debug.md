@@ -43,7 +43,7 @@
 - 通过信号，将收集的信息导入到buffer中
 - 专门的线程将收集信息导入文件
 
-## gops
+## gops 和进程交互，包括gc和pprof等
 ```
 ackage main
 
