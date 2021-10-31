@@ -3,6 +3,8 @@
 ## 总结
 - 内存如何增长：当前cap小于1024，则新空间翻倍；当前cap大于1024，则扩容1/4
 - 编译器自动计算len和cap的长度，没有对应函数
+- 内存清理：调用runtime.memclrNoHeapPointers或runtime.memclrHasHeapPointers
+- 创建加速：正常情况下，创建slice会先清理内存；在make+copy时，则不清理内存，直接copy
 - copy重叠问题：
 ```
 <!-- 将a，copy到从第二个地址开始的 
