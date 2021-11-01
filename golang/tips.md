@@ -5,7 +5,8 @@
 -  multierr
 ## 一个错误，多个g
 - errgroup
-
+## 2d游戏渲染库
+- https://ebiten.org/
 ## 别名
 ```
 type T2 struct {}
