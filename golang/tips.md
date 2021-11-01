@@ -1,5 +1,7 @@
 # 技巧
 
+## ORM
+- ent
 ## fuzz 测试
 - https://github.com/google/gofuzz
 ## 聚合g中的多个错误
