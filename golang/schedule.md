@@ -20,6 +20,7 @@
 - g什么时候切换？1.syscall，lock和channe了，g进行sleep或进入sudog，进行调度并切换其他g；2.执行函数，需要栈增长时，执行调度和切换；
 - g切换需要保存什么：1.切换时的下一条指令pc；2.g的执行栈
 - g切换流程： 1.g的pc和stack保存在g结构中，设置g0running，并替换栈为g0的栈；10us级别；2.g0执行调度100us级别；3.获取待执行stack和pc，跳转到pc 10us级别
+- g回收：1.本地p有队列放置exit g,超过64则回收一半到全局队列；2.全局有两个队列，一个包含栈的空闲g,一个不包含栈；3 超过2k则栈不保留
 ### p相关
 - handoffp： 从系统调用或locked M中解放p，是p执行其他工作；运行队列，gc，netpoll等
 - acquirep ： 绑定p和m，并清理mcache
