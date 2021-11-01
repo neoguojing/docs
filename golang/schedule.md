@@ -17,6 +17,9 @@
 - > 6.定时器g；
 - > 7.等待sema的g；
 - > 8.等待chan的g；
+- GOMAXPROCS ：默认等于逻辑cpu的个数；增加值不会影响到新能；允许在运行时更新,容器或者虚拟机重新配置：
+- > 增加p，新建一个mcache，在start world时运行g
+- > 减少p,将runq的g移动到全局；mcache释放到mcentral，
 ### g相关
 - g的启动newproc：创建栈，收集pc和调用者信息，更新id和状态，放入local runq的头部，下一个执行周期执行
 - g的结束：在创建g栈的时候，在g的执行函数之前插入goexit；在函数退出时执行goexit->goexit1->goexit0->schedule
