@@ -77,6 +77,15 @@
 - midle：空闲的m，nmidle控制个数
 - nmidlelocked： 被g锁定的等待运行的m的个数
 - lastpoll: 0 表示正在调用netpoll
+- gFree：空闲g列表
+```
+gFree struct {
+	lock    mutex
+	stack   gList // Gs with stacks
+	noStack gList // Gs without stacks stksize != _FixedStack 则释放栈
+	n       int32
+}
+```
 
 ## 重要函数
 - Gosched：不会挂起当前g，只是放入全局queue：切换到g0，执行gosched_m；
@@ -206,7 +215,7 @@
 -	_Psyscall
 - _Pgcstop
 -	_Pdead
--	
+- gFree：空闲g列表	
 ### 函数
 - pidleput： 将p放入空闲列表
 - runqput： 将g放入p末尾，p满了，则放入全局p
