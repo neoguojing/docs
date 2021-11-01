@@ -18,7 +18,9 @@
 - > _GCoff：唤醒sweep.g（后台sweep），唤醒work.sweepWaiters(在mark term 到 sweep切换时等待的g)
 - > start world:释放栈和清理所有p的mcache
 - > bgsweep循环清理对象
-- stw：本质是设置所有的p的状态为stop，g都在全局队列上等待；重启世界时：则优先从netpoll获取g；
+- stw：本质是设置所有的p的状态为stop，；重启世界时：则优先从netpoll获取g；
+- > g都在全局队列上等待
+- > stw期间执行完的syscall标记为stop，等待start world
 - 标记用法：
 - > gcmarkBits/markBits : 在gc时灰色对象的对应bit被置为1
 - > allocBits: 清扫完成会使用gcmarkBits赋值，并重新创建新的gcmarkBits
