@@ -1,5 +1,7 @@
 # 技巧
 
+## fuzz 测试
+- https://github.com/google/gofuzz
 ## 聚合g中的多个错误
 -  go-multierror 效率更高
 -  multierr
@@ -27,3 +29,6 @@ func f(t T1) {
 - 升级代码，兼容性更强
 - 可读性更强
 - 别名的转换在编译时候进行，不影响代码执行
+
+## 引用
+- - https://medium.com/a-journey-with-go/go-fuzz-testing-in-go-deb36abc971f
