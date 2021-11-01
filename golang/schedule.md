@@ -8,6 +8,15 @@
 - 启动时根据cpu，创建足够的p
 - 模板线程：单独存在的，不绑定p；
 - 调度时：g->g0,g0->g
+- 调度亲和性：runqput在放入运行队列时，next为true则放入p的runnext，下一轮调度执行；包括：
+- > 1.新建g；
+- > 2.fin的g；
+- > 3.resumeG；
+- > 4.sweep g；
+- > 5.netpoll的g；
+- > 6.定时器g；
+- > 7.等待sema的g；
+- > 8.等待chan的g；
 ### g相关
 - g的启动newproc：创建栈，收集pc和调用者信息，更新id和状态，放入local runq的头部，下一个执行周期执行
 - g的结束：在创建g栈的时候，在g的执行函数之前插入goexit；在函数退出时执行goexit->goexit1->goexit0->schedule
