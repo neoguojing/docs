@@ -2,7 +2,17 @@
 - go tool objdump：导出汇编指令
 
 ## inline替换函数调用为函数的body，增大binary，提高了运行效率
+- inline对效率的提升在5-6%
 - -gcflags="-m"：打印inline的函数
+- gcflags="-d pctab=pctoinline": 打印inline和原函数的映射树
+- 内联函数：减少调用开销的栈内存（创建栈，保存和恢复寄存器），但是涉及到函数copy，会增大代码量；
+- 内联规则：
+- > 足够简单，ast树上的node要小于80
+- > 函数不包含闭包，循环，select，defer，recover
+- > 没有 go:noinline，没有go:uintptrescapes,
+- > 有body
+- 问题：发生panic，如何确定出错的行数
+- > 内部记录inline函数的map树
 ## 编译
 - 禁止内联和优化
 > go build -gcflag "-N -l"
