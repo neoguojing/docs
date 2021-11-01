@@ -41,6 +41,10 @@
 - > gcBgMarkWorkerPool: 其中包含全职/碎片时间辅助gc，由findRunnableGCWorker/findrunnable函数在调度scedule时启动；
 - > - 进程启动时会创建gomaxprocs个gcBgMarkWorker的g放入pool中，可能不会都启动。
 - > - 碎片时间辅助会在辅助时间大于fractionalUtilizationGoal的时候退出辅助
+- 如何清理：
+- > 1.bgsweep一个一个清理；
+- > 2.在准备清理阶段，所有mcache->mcentral;p分配内存时调用cachespan从mcentral获取span，并调用deductSweepCredit执行内存清理。
+- > 3.gc开始时会辅助清理
 ## gc内存
 - 结构体的地址对齐
 ## 三色标记法
@@ -675,6 +679,7 @@ type sweepdata struct {
 - > 清空sync.Pools
 - > 清空sched.sudogcache
 - > 清空sched.deferpool
+- deductSweepCredit： 在cacheSpan（从mcentral->mcache时）时，执行sweep
 ### gcw
 - balance： 迁移部分work到全局队列
 
