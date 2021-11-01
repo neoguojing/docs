@@ -2,7 +2,7 @@
 ## 总结
 - 启动流程： osinit -> scheduleinit -> newproc(runtime.main)
 - main函数： 启动sysmon，执行init，启动gc，执行main.main
-- schedule：挑选一个g运行：优先执行标记g，间歇的从本地全局runq获取g，从其他p偷g，
+- schedule：挑选一个g运行：优先执行标记g，间歇的从本地全局runq获取g，从全局q获取，从netpoll获取；从其他p偷一半（单数则取多的一份）
 - execute：调度g在当前m上直接运行
 - goschedImpl：设置g为_Grunnable，放入全局运行队列，执行schedule调度
 - 启动时根据cpu，创建足够的p
@@ -20,6 +20,8 @@
 - GOMAXPROCS ：默认等于逻辑cpu的个数；增加值不会影响到新能；允许在运行时更新,容器或者虚拟机重新配置：
 - > 增加p，新建一个mcache，在start world时运行g
 - > 减少p,将runq的g移动到全局；mcache释放到mcentral，
+- g何时放入全局队列：1.本地队列满（> 256）；2.批量注入：netpoll和gc期间休眠的g
+- 系统调用阻塞时，g被放入全局runq
 ### g相关
 - g的启动newproc：创建栈，收集pc和调用者信息，更新id和状态，放入local runq的头部，下一个执行周期执行
 - g的结束：在创建g栈的时候，在g的执行函数之前插入goexit；在函数退出时执行goexit->goexit1->goexit0->schedule
@@ -228,6 +230,7 @@ gFree struct {
 - _Pgcstop
 -	_Pdead
 - gFree：空闲g列表	
+- runq： 256个
 ### 函数
 - pidleput： 将p放入空闲列表
 - runqput： 将g放入p末尾，p满了，则放入全局p
