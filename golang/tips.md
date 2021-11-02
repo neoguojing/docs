@@ -1,4 +1,10 @@
 # 技巧
+
+## init函数
+- 在main函数之前执行
+- initdone：确保init只被执行一次；初始为1，所有init执行完之后赋值为2
+- 先执行其他包导入的init
+- 执行本包的init
 ## golang 包
 - runtime.SetFinalizer :为变量设置析构函数，在gc回收对象时执行
 -> 不保证在程序退出时执行
