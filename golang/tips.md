@@ -1,5 +1,7 @@
 # 技巧
-
+## golang 包
+- runtime.SetFinalizer :为变量设置析构函数，在gc回收对象时执行
+- runtime.KeepAlive: 保证在该函数调用之前，gc不会回收相关变量；通过编译器嵌入代码保证gc不会回收
 ## ORM
 - ent
 ## fuzz 测试
