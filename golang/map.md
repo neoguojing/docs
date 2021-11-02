@@ -1,12 +1,17 @@
 # runtime/map.go
 ## 总结
+- map的并发写检测：  h.flags&hashWriting != 0  通过hmap的标记判断是否有并行写的情况，是则抛出异常
+- make(map[string]int)：不带大小的map在第一个写入时才创建bucket
+- 每个bucket包含8个k/v
+- 先k后v的存储法的好处: 相同类型的数据存一起，避免大量的pad
+- 针对不同的key类型：字符串，整形，编译器会调用不同的访问函数，有hash比较的优化
 - reflexive: 反射性的，k==k；在计算机里浮点数的比较是在一定范围能相等则表示相等，key类型是float32\float64\complex64\complex64\interface的或包含该类型的都是反射性key。
 - 数据存储在buckets数组中，bucket本身是一个type类型；每个bucket最多包含8对k/v
 - hash值的低2^B-1位，用于选择bucket，高8bit用于确定bucket内部k/v的位置;tophash的值需大于5
 - bucket值超过8，值放入overflow列表中
 - map增长，会新建一个2倍大小的bucket数组，动态增量的从老bucket复制过去
 - evacuated：即map大小变更
-- 装载因子：6.5*2^B，大于这个值，则需要进行两倍扩容
+- 装载因子：6.5*2^B，大于这个值，则需要进行两倍扩容；
 - 掩码： 2^B-1
 - bucket选择：偏移hash & 2^B-1 * maptype.bucketsize
 - elem选择： 选择hash的高8bit，与hmap的tophash逐一比较，相等，找到key的位置，比较key的值，相等，则偏移找到elem
@@ -19,7 +24,7 @@
 #### 触发
 - set时，即mapasign
 #### 扩容条件
-- 存储的k/v超过装载因子 : 实施2倍扩容；实际元素个数大于6.5*2^B
+- 存储的k/v超过装载因子 : 实施2倍扩容；实际元素个数大于6.5*2^B；单bucket的元素个数超过6.5
 - 溢出bucket的个数大于2^B B<=15 ： 实施等量扩容；溢出bucket的数量过多
 #### 何时扩容
 - 执行set的时候
