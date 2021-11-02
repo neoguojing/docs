@@ -145,7 +145,8 @@ for n := range pipeline(nums, sq, sum) {
 ```
 
 ## fan in/out
-
+- fan in ：一个函数处理多个输入；每个输入有一个chan，多个chan聚合在一个大的chan中
+- fan out: 多个worker从同一个chan中读取数据
 串行输出，并发计算，串行输出
 
 质数求和示例
