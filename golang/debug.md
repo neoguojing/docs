@@ -2,6 +2,9 @@
 - go tool objdump：导出汇编指令
 - GODEBUG=gctrace=1：打印gctrace
 
+## go test
+- GOSSAFUNC=run go test -cover: 执行cover： 插入指令记录分支状态（GoCover_0_313837343662366134383538[]）,插入注册指令和写入和展示指令等
+- 
 ## inline替换函数调用为函数的body，增大binary，提高了运行效率
 - inline对效率的提升在5-6%
 - -gcflags="-m"：打印inline的函数
