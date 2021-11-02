@@ -7,11 +7,17 @@
 # compiler
 - go tool compile -S -l main.go ： 查看编译时的指令地址和目标文件
 - go tool objdump main.o： 解封装
-- go tool nm main.o： 查看符号表
+- go tool nm main.o： 查看符号表 
+- go tool compile -w: 打印语法树
+- GOSSAFUNC=main go tool compile main.go && open ssa.html：打印ssa
 - -l：避免inline
 - -x：打印编译信息
 - -X：编译时设置符号表的值
 - -w： 删除debug信息
+## 编译原理
+- frontend：1.解析代码（词法和语法分析），2生成ast
+- backend：1.生成SSA;2.生成机器码
+- SSA：静态单独赋值，优化代码：1.删除不需要code 2.删除无效分支；3，常量替换等
 ## 编译器计算的值
 - len
 - cap
@@ -21,6 +27,7 @@
 - 符号以16进制fe开头
 - 
 # linker 打包外部依赖包生成
+- go tool link
 - 为所有section和指令分配虚拟地址空间
 - objdump -h 二进制文件：查看section信息
 - objdump -d：查看指令信息
@@ -42,3 +49,4 @@
 - https://pkg.go.dev/cmd/internal/objabi
 - https://pkg.go.dev/debug/dwarf
 - https://dwarfstd.org/doc/dwarf-2.0.0.pdf
+- https://medium.com/a-journey-with-go/go-overview-of-the-compiler-4e5a153ca889
