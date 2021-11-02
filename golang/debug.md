@@ -2,6 +2,8 @@
 - go tool objdump：导出汇编指令
 - GODEBUG=gctrace=1：打印gctrace
 
+## go vet
+
 ## go test
 - GOSSAFUNC=run go test -cover: 执行cover： 插入指令记录分支状态（GoCover_0_313837343662366134383538[]）,插入注册指令和写入和展示指令等
 - 
