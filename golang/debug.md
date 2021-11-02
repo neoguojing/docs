@@ -6,7 +6,9 @@
 - https://pkg.go.dev/cmd/vet ：内置的代码分析器，也可以自定义
 ## go test
 - GOSSAFUNC=run go test -cover: 执行cover： 插入指令记录分支状态（GoCover_0_313837343662366134383538[]）,插入注册指令和写入和展示指令等
-- 
+- 会缓存结果，相同内容不执行第二次：去除缓存GOCACHE=off go test math/.
+- benchtime=1x：执行一次
+- reportMetric ：执行结束时打印自定义统计值
 ## inline替换函数调用为函数的body，增大binary，提高了运行效率
 - inline对效率的提升在5-6%
 - -gcflags="-m"：打印inline的函数
