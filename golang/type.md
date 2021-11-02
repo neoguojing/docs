@@ -1,5 +1,21 @@
 # 运行时类型
 
+## interface
+- 使用空interface转换类型，有一个量级的性能开销；
+- 使用指针执行interface赋值，会提升性能，当时字符串类型比整形开销要大
+```
+<!-- 如下转换会发生panic -->
+func main() {
+	var i int8 = 1
+	read(i)
+}
+
+//go:noinline
+func read(i interface{}) {
+	n := i.(int16)
+	println(n)
+}
+```
 ## 源码
 - runtime.type.go:_type
 - reflect.type.go:rtype
@@ -12,7 +28,7 @@ type _type struct {
 	tflag      tflag
 	align      uint8
 	fieldAlign uint8
-	kind       uint8
+	kind       uint8  // int8, int16, bool, etc
 	// function for comparing objects of this type
 	// (ptr to object A, ptr to object B) -> ==?
 	equal func(unsafe.Pointer, unsafe.Pointer) bool
@@ -61,6 +77,12 @@ type structtype struct {
 	pkgPath name
 	fields  []structfield
 }
+
+<!--  用户态-->
+type emptyInterface struct {
+   typ  *rtype            // word 1 with type description
+   word unsafe.Pointer    // word 2 with the value
+}
 ```
 
 ## interface 实现
@@ -70,6 +92,7 @@ type eface struct {
 	_type *_type  //实际类型
 	data  unsafe.Pointer //指向数据
 }
+
 
 <!--  有方法的interface-->
 type iface struct {
