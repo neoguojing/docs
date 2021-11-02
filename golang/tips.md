@@ -1,6 +1,10 @@
 # 技巧
 ## golang 包
 - runtime.SetFinalizer :为变量设置析构函数，在gc回收对象时执行
+-> 不保证在程序退出时执行
+-> 会影响到系统性能
+-> finalizer在一个g中串行执行
+-> runtime.SetFinalizer(p, nil):主动移除finalizer
 - runtime.KeepAlive: 保证在该函数调用之前，gc不会回收相关变量；通过编译器嵌入代码保证gc不会回收
 
 ## 日志包 
