@@ -1,5 +1,20 @@
 # 技巧
 
+## 传指针还是copy结构体？
+- 返回指针，变量会逃逸到堆上，产生大量需要gc的内存，加大了gc压力，进一步降低了程序性能
+- 返回结构体copy,遍历在栈上被copy，不影响gc
+```
+func byCopy() S //yes
+
+func byPointer() *S 
+
+func (s S) stack(s1 S) {}  //yes
+
+func (s *S) heap(s1 *S) {}
+```
+## 数值转换
+- 大int转小int截断，然后按照值和目标类型重新解析
+- 小int转大int，执行符号扩展//c++是直接copy
 ## init函数
 - 在main函数之前执行
 - initdone：确保init只被执行一次；初始为1，所有init执行完之后赋值为2
