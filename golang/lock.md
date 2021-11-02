@@ -116,8 +116,8 @@ type Locker interface {
 }
 
   mutexLocked = 1 
-	mutexWoken = 2  //表示是否有协程已被唤醒，0：没有协程唤醒 1：已有协程唤醒，正在加锁过程中。
-	mutexStarving = 4
+	mutexWoken = 2  //表示是否有协程已被唤醒，0：没有协程唤醒 1：已有协程唤醒，正在加锁过程中；通知Unlock的g不要再唤醒其他阻塞的g
+	mutexStarving = 4  //当g等待锁超过10ms，设置该标志，告诉其他g锁进入饥饿模式，关闭自旋，直接交付
 	mutexWaiterShift = 3 //偏移位数
 	
 type semaRoot struct {
