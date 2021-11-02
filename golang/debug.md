@@ -59,6 +59,10 @@
 - 每个m一个定时器ITIMER_PROF
 - 通过信号，将收集的信息导入到buffer中
 - 专门的线程将收集信息导入文件
+### cpu profile
+- profileWriter ： 没10ms调用该函数收集cpu数据
+
+### mem profile
 
 ## gops 和进程交互，包括gc和pprof等
 ```
