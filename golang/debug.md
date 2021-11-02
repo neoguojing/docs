@@ -3,7 +3,7 @@
 - GODEBUG=gctrace=1：打印gctrace
 
 ## go vet
-
+- https://pkg.go.dev/cmd/vet ：内置的代码分析器，也可以自定义
 ## go test
 - GOSSAFUNC=run go test -cover: 执行cover： 插入指令记录分支状态（GoCover_0_313837343662366134383538[]）,插入注册指令和写入和展示指令等
 - 
