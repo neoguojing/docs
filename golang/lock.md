@@ -2,6 +2,7 @@
 ## 总结
 - 只有cpu个数大于1，才使用自旋
 - 锁不能被copy
+- 结构体内的锁需要用指针，保证状态一致性
 ### 死锁检测
 - 什么时候执行死锁检测：具体为m变空闲或退出的时候：1.sched.nmfreed增加；2.sched.nmsys增加3.sched.nmidlelocked增加，4.sched.nmidle增加
 - 系统m：sysmon；templateThread
