@@ -67,3 +67,4 @@ func f(t T1) {
 ## 引用
 - https://medium.com/a-journey-with-go/go-fuzz-testing-in-go-deb36abc971f
 - https://medium.com/a-journey-with-go/go-how-zap-package-is-optimized-dbf72ef48f2d
+- https://www.ardanlabs.com/blog/2017/06/design-philosophy-on-data-and-semantics.html
