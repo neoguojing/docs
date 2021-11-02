@@ -12,6 +12,20 @@ func (s S) stack(s1 S) {}  //yes
 
 func (s *S) heap(s1 *S) {}
 ```
+- go自有类型返回值比较好
+- 引用类型避免使用指针： slice, map, interface, function and channel types；被设计在栈上不会跑到堆上，减小压力
+- 不确定是否需要使用指针？使用指针
+- UnmarshalXX一般需要指针
+- File 包全部返回指针，因为需要共享
+- Time包指针和结构体混合
+```
+func (t Time) Add(d Duration) Time
+func Now() Time
+func (t *Time) UnmarshalBinary(data []byte) error {
+func (t *Time) GobDecode(data []byte) error {
+func (t *Time) UnmarshalJSON(data []byte) error {
+func (t *Time) UnmarshalText(data []byte) error {
+```
 ## 数值转换
 - 大int转小int截断，然后按照值和目标类型重新解析
 - 小int转大int，执行符号扩展//c++是直接copy
