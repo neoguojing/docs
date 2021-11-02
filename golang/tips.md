@@ -2,6 +2,10 @@
 ## golang 包
 - runtime.SetFinalizer :为变量设置析构函数，在gc回收对象时执行
 - runtime.KeepAlive: 保证在该函数调用之前，gc不会回收相关变量；通过编译器嵌入代码保证gc不会回收
+
+## 日志包 
+- ZAP：有点：1.避免interface，强类型；2.避免json编码
+- Zerolog：性能更强
 ## ORM
 - ent
 ## fuzz 测试
@@ -35,4 +39,5 @@ func f(t T1) {
 - 别名的转换在编译时候进行，不影响代码执行
 
 ## 引用
-- - https://medium.com/a-journey-with-go/go-fuzz-testing-in-go-deb36abc971f
+- https://medium.com/a-journey-with-go/go-fuzz-testing-in-go-deb36abc971f
+- https://medium.com/a-journey-with-go/go-how-zap-package-is-optimized-dbf72ef48f2d
