@@ -1,6 +1,8 @@
 # chan和select
 
 ## 总结
+- cap等于0或者不填，为阻塞chan
+- buffer可以改善阻塞状态
 - nil chan写入/读取永久阻塞
 - closed的chan写入 panic
 - waitq从队列头出队
