@@ -1,7 +1,8 @@
 # debug
 - go tool objdump：导出汇编指令
 - GODEBUG=gctrace=1：打印gctrace
-
+## benchmark
+-  GOGC=off go test -cpu 8 -run none -bench . -benchtime 3s
 ## go vet
 - https://pkg.go.dev/cmd/vet ：内置的代码分析器，也可以自定义
 ## go test
