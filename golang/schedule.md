@@ -56,6 +56,33 @@
 - 调用栈跟踪：level分为0，1，2，all 和crash
 - gotraceback 设置调用栈级别
 
+## 概念
+- pc：程序计数器，指向下一条待执行的指令
+```
+goroutine 1 [running]:
+   main.example(0xc000042748, 0x2, 0x4, 0x106abae, 0x5, 0xa)
+       stack_trace/example1/example1.go:13 +0x39    //0x39:pc从example函数开头到当前指令的偏移;代表即将执行的下一条指令的偏移
+   main.main()
+       stack_trace/example1/example1.go:8 +0x72     //0x72：表示从example返回后将要执行的指令的偏移
+```
+- 线程状态：等待，可执行，正在执行
+- 任务类型：
+- > cpu bound: 不会切换为等待的线程，执行纯计算任务
+- > io bound: 会引起线程进入等待状态，网络/系统调用和同步事件等
+- 上下文切换：不可预知性和不可预编码
+- > 主要负载线程在cpu上的切换
+- > 每核每纳秒平均执行12个指令，一次上下文切换执行12k-18k个指令
+- > io bound任务要让出cpu，实现相对简单；cpu bound任务则复杂很多；
+- > 频繁的上下文切换，浪费cpu计算时间
+- 寻找core核线程的平衡：使用线程池（多少个线程池，多少个线程会得到最大的tps）
+- > 数据库场景：每个core 3个线程能够得到最大输出；
+- cpu 缓存：内存延时：100-300个时钟周期；cpu缓存3-40时钟周期
+- > core i7-9xx: L3共享，L2，L1独享；
+- > 64byte cache line 为单位在内存和cpu缓存间交换数据；值copy
+- > 值拷贝，导致多线程时每个core都要copy对应的cache line到缓存中，涉及到更多的数据交换
+- > 缓存一致性问题：多线程环境下，共享数据在一个cache line中，一个core修改数据，其他core需要将cache line标记为dirty；当需要访问时，必须从内存加载数据，300个时钟周期的浪费；多核下尤为明显
+- 调度准则：
+- > 
 ## 流程：
 
 - mstart：主要是设置g0.stackguard0，g0.stackguard1。
