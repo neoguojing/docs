@@ -3,6 +3,14 @@
 - 只有cpu个数大于1，才使用自旋
 - 锁不能被copy
 - 结构体内的锁需要用指针，保证状态一致性
+
+## 锁的概念
+- 原子操作：std::atomic::compare_exchange_weak CAS = cmpxchg(x86) ldrex/strex (ar)
+- 自旋锁：循环+CAS 确定占用cpu，导致饥饿
+- 自适应锁：锁获取不到则休眠线程，直到有线程解锁再唤醒休眠线程，实现：1.锁状态；2.等待队列和休眠/唤醒机制，一般使用futex
+### 锁算法
+- 
+## go的锁
 ### 死锁检测
 - 什么时候执行死锁检测：具体为m变空闲或退出的时候：1.sched.nmfreed增加；2.sched.nmsys增加3.sched.nmidlelocked增加，4.sched.nmidle增加
 - 系统m：sysmon；templateThread
