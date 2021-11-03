@@ -77,8 +77,9 @@ func NewServer(addr string, port int, options ...func(*Server)) (*Server, error)
 https://coolshell.cn/articles/21179.html
 
 ## pipline
+- 输入是一个chan，输出也是一个chan
 
-实现shell 命令类似功能 echo $nums | sq | sum
+- 实现shell 命令类似功能 echo $nums | sq | sum
 
 元型
 ```
@@ -151,17 +152,22 @@ for n := range pipeline(nums, sq, sum) {
 
 质数求和示例
 ```
-func merge(cs []<-chan int) <-chan int {
+<!--  fan in 示例-->
+func merge(chan struct{},cs []<-chan int) <-chan int {
   var wg sync.WaitGroup
   out := make(chan int)
 
   wg.Add(len(cs))
   for _, c := range cs {
     go func(c <-chan int) {
+      defer wg.Done()
       for n := range c {
-        out <- n
+      select {
+	    case out <- n:
+	    case <-done:
+		return
+	    }
       }
-      wg.Done()
     }(c)
   }
   go func() {
@@ -172,6 +178,9 @@ func merge(cs []<-chan int) <-chan int {
 }
 
 func main() {
+ done := make(chan struct{})
+ defer close(done)   
+ 
   nums := makeRange(1, 10000)
   in := echo(nums)
 
@@ -181,7 +190,7 @@ func main() {
     chans[i] = sum(prime(in))
   }
 
-  for n := range sum(merge(chans[:])) {
+  for n := range sum(done,merge(chans[:])) {
     fmt.Println(n)
   }
 }
