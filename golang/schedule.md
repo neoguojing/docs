@@ -1,4 +1,7 @@
 # 调度
+- g准确的说是合作调度而非抢占调度：需要定义在代码中定义用户态的安全点-safe point帮助调度器做决定
+- go可以执行调度决策的时机：go关键字，系统调用，同步，gc
+- p的设计提高了单核缓存命中的概率，防止m切换带来的缓存不命中问题
 ## 总结
 - 启动流程： osinit -> scheduleinit -> newproc(runtime.main)
 - main函数： 启动sysmon，执行init，启动gc，执行main.main
@@ -81,8 +84,6 @@ goroutine 1 [running]:
 - > 64byte cache line 为单位在内存和cpu缓存间交换数据；值copy
 - > 值拷贝，导致多线程时每个core都要copy对应的cache line到缓存中，涉及到更多的数据交换
 - > 缓存一致性问题：多线程环境下，共享数据在一个cache line中，一个core修改数据，其他core需要将cache line标记为dirty；当需要访问时，必须从内存加载数据，300个时钟周期的浪费；多核下尤为明显
-- 调度准则：
-- > 
 ## 流程：
 
 - mstart：主要是设置g0.stackguard0，g0.stackguard1。
