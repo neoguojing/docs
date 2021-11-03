@@ -1,6 +1,41 @@
 # 技巧
 ## 并发设计
 - cpu bound 工作： core和g相等，过多的g造成上下文切换影响效率
+- io bound 工作： 多g对于性能会有提升
+- cpu bound 并发控制示例：
+```
+func addConcurrent(goroutines int, numbers []int) int {
+     var v int64
+     totalNumbers := len(numbers)
+     lastGoroutine := goroutines - 1
+     stride := totalNumbers / goroutines
+
+     var wg sync.WaitGroup
+     wg.Add(goroutines)
+
+     for g := 0; g < goroutines; g++ {
+         go func(g int) {
+             start := g * stride
+             end := start + stride
+             if g == lastGoroutine {
+                 end = totalNumbers
+             }
+
+             var lv int
+             for _, n := range numbers[start:end] {
+                 lv += n
+             }
+
+             atomic.AddInt64(&v, int64(lv))
+             wg.Done()
+         }(g)
+     }
+
+     wg.Wait()
+
+     return int(v)
+  }
+```
 
 ## 传指针还是copy结构体？
 - 返回指针，变量会逃逸到堆上，产生大量需要gc的内存，加大了gc压力，进一步降低了程序性能
