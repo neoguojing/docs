@@ -12,3 +12,9 @@
 - kafka
 - ElasticSearch
 - InfluxDB
+
+## 常用技术
+
+- 顺序写
+- 写时复制
+- 索引
