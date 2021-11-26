@@ -15,6 +15,13 @@ func main() {
    copy(a[2:], a)
 }
 ```
+- 遍历slice时不能修改
+- 删除元素： append(this.data[:i], this.data[i+1:]...)；不能删除最后一个元素，因此最后i要做判定
+- 插入元素：新建一个slice保存插入位置之后的元素
+```
+rear = append(rear, this.data[j+1:]...)
+this.data = append(this.data[:j], rear...)
+```
 ## 结构
 ```
 type slice struct {
