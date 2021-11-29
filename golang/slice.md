@@ -22,6 +22,8 @@ func main() {
 rear = append(rear, this.data[j+1:]...)
 this.data = append(this.data[:j], rear...)
 ```
+## 容易混淆
+- ret = ret[:j] ret = append(ret, asteroids[i]) （是覆盖原有元素吗？）
 ## 结构
 ```
 type slice struct {
