@@ -1,5 +1,8 @@
-# Pyresparser 简历解析
-## 安装
+# NLP 基本概念
+- stopwords : 指的是去掉之后对句子本意没有影响的单词；文本分类和句子分析可以去除；但是翻译不能去掉
+- 
+## Pyresparser 简历解析
+### 安装
 - pip install pyresparser
 
 ## spacy 自然语言处理工具
