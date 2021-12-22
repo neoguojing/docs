@@ -22,8 +22,22 @@ func main() {
 rear = append(rear, this.data[j+1:]...)
 this.data = append(this.data[:j], rear...)
 ```
-## 容易混淆
+## 题目
 - ret = ret[:j] ret = append(ret, asteroids[i]) （是覆盖原有元素吗？）
+- 1. 初始时，len等于cap
+```
+a := make([]int,1)
+fmt.Println(len(a),cap(a)) //1,1
+a = []int{1,2,3}
+fmt.Println(len(a),cap(a)) //3,3
+a = append(a,4)
+fmt.Println(len(a),cap(a)) //4,6
+a = a[:2]
+fmt.Println(len(a),cap(a)) //2,6
+a = append(a,5)
+fmt.Println(len(a),cap(a)) //3,6
+```
+- 2 传参：slice本身时值copy，内存里两个变量指向同一块内存
 ## 结构
 ```
 type slice struct {
