@@ -37,7 +37,21 @@ fmt.Println(len(a),cap(a)) //2,6
 a = append(a,5)
 fmt.Println(len(a),cap(a)) //3,6
 ```
-- 2 传参：slice本身时值copy，内存里两个变量指向同一块内存
+- 2 传参：slice传值是值copy，内存里两个变量指向同一块内存；len和cap的变化不会反应到外面；当append扩容时，扩容后的数组空间和外面的数组是两个空间；当append没有扩容，但是len变化，新添加的元素也不会在外面被看到，因为外面的len没有更新
+```
+func main() {
+	a := make([]int,1)
+	change(a)
+	fmt.Println("out",a,len(a),cap(a)) //[0] 1 1
+}
+
+func change(a []int) {
+	a = append(a,2)
+	fmt.Println("in",a,len(a),cap(a)) [0,2] 2,2
+	
+}
+```
+
 ## 结构
 ```
 type slice struct {
