@@ -51,6 +51,40 @@ func change(a []int) {
 	
 }
 ```
+- 3 删除末尾值的问题: 
+-> 删除末尾值，改变了slice的长度，在heap中，为了保证len的准确性，则需要通过指针赋值
+```
+func (h *IntHeap) Pop() interface{} {
+    old := *h
+    n := len(old)
+    x := old[n-1]
+    *h = old[0 : n-1]
+    return x
+}
+```
+-> 更复杂的场景: 回调中使用重复使用slice的值：因为len或者扩容导致的内存空间变化，直接使用会导致值混乱；赋值使用内存copy比较合适
+```
+func test(one []string,ret *[][]string) {
+	if len(*ret) == 5{
+	    return 
+	}
+   	*ret = append(*ret, one) //此时one的len= k
+	for i:=0;i<2;i++ {
+		one = append(one, fmt.Sprintf("%d",i))
+		test(one,ret) //此时one的len= k
+		one = one[:len(one)-1]  //此时one的len = k-1
+	}
+}
+
+// 每轮one的值
+[]
+[0]
+[0 0]
+[0 0 0]
+[0 0 0 0]
+//最终ret的值于放入ret的值不符合
+[[] [1] [0 1] [0 0 1] [0 0 1 1]]
+ ```
 
 ## 结构
 ```
