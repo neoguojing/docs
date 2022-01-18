@@ -26,4 +26,9 @@
 - 编译：将caffe，tensor模型编译为tensorRT，输出plan file
 - 部署：编写代码，加载模型，输入图片，得到结果；需要配合cuda编程完成工作
 ## ONNX 是微软和Facebook携手开发的开放式神经网络交换工具 开放神经网络交换
-- 
+- https://github.com/onnx/
+- 存储了神经网络模型的权重
+- 存储了模型的结构信息以及网络中每一层的输入输出和一些其它的辅助信息
+- protobuf存储模型信息，存储结构定义在protobuf中
+### android环境
+- NCNN 转换工具转换onnx
