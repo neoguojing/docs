@@ -18,7 +18,7 @@
 - Change Buffer：避免修改二级索引（通常不连续）引起的随机写
 - > 缓存不在buffer pool中的二级索引页
 - > 修改的二级索引页会定期与buffer pool中的索引页合并；buffer pool则会被purge到磁盘上
-- > Change Buffer 占用部分buffer pool；磁盘上页有持久化
+- > Change Buffer 占用部分buffer pool；磁盘上也有持久化
 -  Adaptive Hash Index： 自适应hash索引：加速热数据查询；在like查询时无益处；通过索引key的前缀或者b-tree的值，建立到buffer pooll中缓存页面的指针映射
 -  Log Buffer：缓存即将存盘的redo log；默认16兆
 ### 磁盘架构
@@ -26,6 +26,17 @@
 - 索引数据：
 - system tablespace：包含metadata for InnoDB-related objects， doublewrite buffer, the change buffer, and undo logs 和部分系统表和索引
 - Undo Tablespaces ： 也额可以保存undolog
-- Doublewrite Buffer
-- Redo Log：
-- Undo Logs：
+- Doublewrite Buffer：buffer pool的页会先flush到该区域，然后才刷到数据区；解决崩溃时数据丢失的问题；数据以一个巨大块的形式写磁盘，不会频繁写盘
+- Redo Log：用于崩溃恢复；记录对数据的更改：sql的执行结果和底层api调用等
+- > 事务日志的redo log 时在事务提交前写盘；会聚合所有事务的redo log一次写盘
+- Undo Logs：是一次事务的所有undo 记录构成；undo log segment包含多个事务的undo log；
+
+## 崩溃恢复
+- 有备份的情况下：恢复备份，然后从binlog读取新的修改
+### 如何做的？
+- 寻找redo log
+- 执行redo log 恢复数据
+- 回滚未提交的事务
+- Change Buffer merge
+- 删除对活跃事务不可见的记录
+- 
