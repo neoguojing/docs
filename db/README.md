@@ -15,8 +15,8 @@
 
 |       |  存储结构   | 顺序写  | copy on write |索引|锁|高可用|分布一致性|
 |  ---- |  ----  | ----  | ----  | ----  | ----  | ----  | 
-| Cassandra  | 单元格 |
-| mysql  | B+树 | change buffer使得二级索引修改不是随机写|| B+| 行锁，表锁，意向锁、间隙索| binlog/redo log|隔离级别|
+| Cassandra  |  |||||||
+| mysql  | B+树 | change buffer使得二级索引修改不是随机写| | B+| 行锁，表锁，意向锁、间隙索| binlog/redo log|隔离级别|
 | mongo  | 单元格 |
 | HDFS  | 单元格 |
 | HBASE  | 单元格 |
