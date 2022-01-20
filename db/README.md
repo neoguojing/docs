@@ -13,10 +13,19 @@
 - ElasticSearch
 - InfluxDB
 
-|       |  Cassandra   | mysql  | mongo|HDFS|HBASE|level DB|Redis|clickhose|kafka|ElasticSearch|InfluxDB|
-|  ---- |  ----  | ----  | ----  | ----  | ----  | ----  | ----  | ----  | ----  | ----  | ----  |
-| 单元格  | 单元格 |
-| 单元格  | 单元格 |
+|       |  存储结构   | 顺序写  | copy on write |索引|锁|高可用|
+|  ---- |  ----  | ----  | ----  | ----  | ----  | ----  | 
+| Cassandra  | 单元格 |
+| mysql  | 单元格 |
+| mongo  | 单元格 |
+| HDFS  | 单元格 |
+| HBASE  | 单元格 |
+| level DB  | 单元格 |
+| clickhose  | 单元格 |
+| kafka  | 单元格 |
+| ElasticSearch  | 单元格 |
+| InfluxDB  | 单元格 |
+| Redis  | 单元格 |
 ## 常用技术
 
 - 顺序写
