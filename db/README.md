@@ -12,7 +12,10 @@
 - kafka
 - ElasticSearch
 - InfluxDB
-
+|  Cassandra   | mysql  | mongo|HDFS|HBASE|level DB|Redis|clickhose|kafka|ElasticSearch|InfluxDB|
+|  ----  | ----  | ----  | ----  | ----  | ----  | ----  | ----  | ----  | ----  | ----  |
+| 单元格  | 单元格 |
+| 单元格  | 单元格 |
 ## 常用技术
 
 - 顺序写
