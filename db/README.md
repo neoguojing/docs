@@ -13,14 +13,14 @@
 - ElasticSearch
 - InfluxDB
 
-|       |  存储结构   | 顺序写  | copy on write |索引|锁|高可用|分布一致性|
+|       | 内存数据库 |  磁盘数据页  | 顺序写  | copy on write |索引|锁|高可用|分布一致性|
 |  ---- |  ----  | ----  | ----  | ----  | ----  | ----  | ----  | 
-| mysql  | B+树 | change buffer使得二级索引修改不是随机写| | B+| 行锁，表锁，意向锁、间隙索| binlog/redo log|隔离级别|
+| mysql | buffer pool LRU缓存已访问数据| B+树 | change buffer使得二级索引修改不是随机写| | B+| 行锁，表锁，意向锁、间隙索| binlog/redo log|隔离级别|
 | Cassandra  |  |||||||
 | mongo  | 单元格 |
 | HDFS  | 单元格 |
 | HBASE  | 单元格 |
-| level DB  | 单元格 |
+| level DB | 1.memtable跳跃列表 2.immutable memtable只读  || log文件顺序写||| 通过log文件记录操作用于恢复||
 | clickhose  | 单元格 |
 | kafka  | 单元格 |
 | ElasticSearch  | 单元格 |
