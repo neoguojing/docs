@@ -23,7 +23,28 @@
 - > 3.以lockorder将所有的case，通过sudog建立列表（isSelect为true），并挂到sendq/recvq，现在所有case都放在了等待队列里,可以被1处理，gopark挂起go，挂起之后会解锁
 - > 4.select g被send或者recev等操作唤醒，并会在g.param中加入对应的sudog，加锁，以lockorde遍历所有sudog出队，解锁，返回被唤醒的case的索引，
 ## channel
+```
+type hchan struct {
+	qcount   uint           // total data in the queue
+	dataqsiz uint           // size of the circular queue
+	buf      unsafe.Pointer // points to an array of dataqsiz elements
+	elemsize uint16
+	closed   uint32
+	elemtype *_type // element type
+	sendx    uint   // send index
+	recvx    uint   // receive index
+	recvq    waitq  // list of recv waiters
+	sendq    waitq  // list of send waiters
 
+	// lock protects all fields in hchan, as well as several
+	// fields in sudogs blocked on this channel.
+	//
+	// Do not change another G's status while holding this lock
+	// (in particular, do not ready a G), as this can deadlock
+	// with stack shrinking.
+	lock mutex
+}
+```
 ### 概览
 - chan中元素大小不能大于2^16()64k
 - hchanSize： 96
