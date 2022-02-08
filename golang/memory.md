@@ -100,7 +100,7 @@
 - 
 ![64bit架构虚拟地址空间示意](https://pic1.zhimg.com/v2-dc953d14b0591cc5c8ee5f754dcdf158_r.jpg?source=1940ef5c)
 
-
+![avatar](./golang-mem-static.drawio.png)
 ## 内存状态
 - None ： 未保存的，未map的
 - Reserved： runtime保有，不能访问
@@ -128,6 +128,7 @@ persistentalloc流程：
 6.返回base+off的地址
 ```
 ![avatar](./golang-malloc-mspan-stack.drawio.png)
+
 ## mspan
 s.elemsize == sys.PtrSize
 则该span分配的都是指针
@@ -324,6 +325,9 @@ type pageCache struct {
 
 ## mallocgc
 - _GCmarktermination阶段不允许分配内存
+
+![malloc](./golang-malloc-obj.drawio.png)
+
 ### nextFreeFast mspan快速重用空闲对象
 - Ctz64计算allocCache开始为0的bit数量（从左到右）theBit，表示空闲内存的偏移；0表示已分配；每个bit表示一个elem
 - 若theBit<64,从freeindex开始加上偏移量，即找到空闲对象的位置索引，s.freeindex + uintptr(theBit)=result
