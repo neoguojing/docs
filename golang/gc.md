@@ -85,9 +85,11 @@
   1.gc开始时，扫描栈，标记所有对象为黑色（解决重复扫描栈的问题）；栈上新建对象均标记为黑色（避免引入屏障）；
   2.gc开始后，堆上对象：新建对象标记为灰色；被删除对象标记为灰色；
 
-
+## 工作模式
 ![gc-static](./golang-gc-static.drawio.png)
+## 函数调用
 ![mark](./golang-gc-call.drawio.png)
+## gc流程
 ![flow](./golang-gc-flow.drawio.png)
 ## 常量
 - GOGC：环境变量，off：关闭gc，0：不断触发gc，对调试由帮助；默认100，当栈达到4MB是触发gc
