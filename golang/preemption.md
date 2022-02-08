@@ -22,6 +22,9 @@
 - 异步抢占：1.sysmon发下g运行超过10ms，向m发送SIGURG信号；2.handler被执行，修改g的程序计数器，使g暂停，并指向下一轮调度。解决没有函数调用的循环无法被抢占的问题
 - 强制抢占可以调用runtime.GoSched
 - GODEBUG=asyncpreemptoff=1 ：关闭异步抢占
+
+![signal](./golang-signal&prempt.drawio.png)
+
 ### 参数
 - gp.preempt：true为可以抢占
 - gp.stackguard0 = stackPreempt：每次g中的函数调用都会检查此标记，来检测抢占
