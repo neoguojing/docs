@@ -25,6 +25,9 @@
 - > 减少p,将runq的g移动到全局；mcache释放到mcentral，
 - g何时放入全局队列：1.本地队列满（> 256）；2.批量注入：netpoll和gc期间休眠的g
 - 系统调用阻塞时，g被放入全局runq
+
+![gmp](golang-gmp.drawio.png)
+
 ### g相关
 - g的启动newproc：创建栈，收集pc和调用者信息，更新id和状态，放入local runq的头部，下一个执行周期执行
 - g的结束：在创建g栈的时候，在g的执行函数之前插入goexit；在函数退出时执行goexit->goexit1->goexit0->schedule
@@ -95,7 +98,8 @@ goroutine 1 [running]:
 - goexit->goexit1：调用mcall(goexit0)。
 - mcall(fn func(*g))：保存当前g（也就是gp）的上下文；切换到g0及其栈，调用fn，参数为gp。
 - goexit0(gp *g)：清零gp的属性，状态_Grunning改为_Gdead；dropg解绑m和gp；gfput放入队列；schedule重新调度
-
+- 
+![schedule](./golang-schedule.drawio.png)
 ## 全局变量
 - allm ：m列表的头
 - allgs：全局g数组
@@ -158,6 +162,9 @@ gFree struct {
 - > 判断gp是否可被调度，sched.disable.user，否则放入待调度队列，重新调度
 - > gp和某个m锁定，startlockedm调度m去执行锁定的g，重新调度
 - > 调用execute
+
+![schedule](./golang-schedule-flow.drawio.png)
+
 - execute(): 调度g在当前m执行，设置g的参数，调用gogo
 - func gogo(buf *gobuf):汇编：加载newg的上下文，跳转到gobuf.pc指向的函数
 - findrunnable： 从其他p获取g，从本地和全局runq获取g，从poll获取g
