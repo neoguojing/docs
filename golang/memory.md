@@ -127,7 +127,7 @@ persistentalloc流程：
 5 否则，base+off，off+size
 6.返回base+off的地址
 ```
-
+![avatar](./golang-malloc-mspan-stack.drawio.png)
 ## mspan
 s.elemsize == sys.PtrSize
 则该span分配的都是指针
