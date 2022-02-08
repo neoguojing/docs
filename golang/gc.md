@@ -86,7 +86,7 @@
   2.gc开始后，堆上对象：新建对象标记为灰色；被删除对象标记为灰色；
 
 
-![gc-static](./golang-gc-param.drawio.png)
+![gc-static](./golang-gc-static.drawio.png)
 ![mark](./golang-gc-call.drawio.png)
 ![flow](./golang-gc-flow.drawio.png)
 ## 常量
@@ -357,6 +357,8 @@ type gcBitsArena struct {
 - reclaimChunk回收page时利用pageMark甄别空闲页
 
 ## 结构体
+
+![gc-param](./golang-gc-param.drawio.png)
 
 ```
 type gcTriggerKind int  //触发gc的类型
