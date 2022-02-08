@@ -15,7 +15,7 @@
 - 掩码： 2^B-1
 - bucket选择：偏移hash & 2^B-1 * maptype.bucketsize
 - elem选择： 选择hash的高8bit，与hmap的tophash逐一比较，相等，找到key的位置，比较key的值，相等，则偏移找到elem
-- 每次插入：都需要遍历8+overflow*8个
+- 每次插入：都需要遍历8（选定buckcet中的8个k/v）+overflow*8个（？？？）
 - map的遍历随机，是因为mapiterinit中设置了随机的起始bucket
 - map创建：若B大于4，需要创建2^(B-4)个overflow bucket
 - b.tophash[i] == emptyRest：表面后面的值都为空，无需遍历
