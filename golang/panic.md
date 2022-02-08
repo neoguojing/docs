@@ -19,7 +19,7 @@ func namedParam() (x int) {
 ## 架构
 
 panic只出现在栈上
-
+```
 type _panic struct {
 	argp      unsafe.Pointer // 指向defer参数的指针
 	arg       interface{}    //panic参数
