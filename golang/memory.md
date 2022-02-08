@@ -50,7 +50,7 @@
 - fixalloc: 用于分配非堆对象,这些对象是分配器本身要使用的内存，没有足够的空间，调用persistentalloc，分配16kb的空间；会记录当前空闲空间的起始地址，剩余的空闲空间和在使用的空闲空间；优先从空闲列表上获取
 
 ## 主要数据结构
-![avatar](https://drive.google.com/file/d/14iX0Eygn9e7qG4nw1D8fgJFjZM5xY8ts/view?usp=sharing)
+![avatar](https://drive.google.com/file/d/1XyxACjcRNPko1nCm0LevdkzJz3zqrajV/view)
 - mheap: golang的堆, 以page(8kb)为单位管理内存 
 - mspan: 堆中一系列在使用的内存
 - mcentral: 固定大小的mspan集合
