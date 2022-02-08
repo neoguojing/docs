@@ -67,6 +67,7 @@ struct epoll_event {
 - pollDesc ：大小为232字节，不在gc内存上分配，使用persistentalloc分配
 - pollCache：pollDesc的缓存，
 ### 函数
+![netpoll](./golang-netpoll.drawio.png)
 
 #### 通用接口
 - poll_runtime_pollServerInit: 调用netpollinit，并设置netpollInited=1
