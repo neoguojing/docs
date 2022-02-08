@@ -86,6 +86,9 @@
   2.gc开始后，堆上对象：新建对象标记为灰色；被删除对象标记为灰色；
 
 
+![gc-static](./golang-gc-param.drawio.png)
+![mark](./golang-gc-call.drawio.png)
+![flow](./golang-gc-flow.drawio.png)
 ## 常量
 - GOGC：环境变量，off：关闭gc，0：不断触发gc，对调试由帮助；默认100，当栈达到4MB是触发gc
 - gcpercent：=GOGC
@@ -354,6 +357,7 @@ type gcBitsArena struct {
 - reclaimChunk回收page时利用pageMark甄别空闲页
 
 ## 结构体
+
 ```
 type gcTriggerKind int  //触发gc的类型
 const (
@@ -454,7 +458,7 @@ type gcWork struct {
 
 
 ```
-  
+
 ## 函数
 - semacquire(addr): 获取信号量
 - > cansemacquire原子的设置addr的值为0.若不为0，则返回false
@@ -526,6 +530,7 @@ type gcWork struct {
 - > 设置p的gcMarkWorkerMode
 - > 设置node.gp的状态为_Grunnable，返回
 ### mark
+
 - gcBgMarkStartWorkers: 启动mark worker协程，暂时不运行，直到mark阶段
 - > 启动gomaxprocs个gcBgMarkWorker，调用notetsleepg休眠当前g在bgMarkReady
 - gcBgMarkWorker：执行mark
