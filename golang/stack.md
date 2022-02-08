@@ -26,6 +26,7 @@
 ![栈示意](https://pic2.zhimg.com/1314ce0c49d0a1e2800e23ca3d5cdd75_r.jpg?source=1940ef5c)
 
 ## 概念：
+
 - pc： 程序计数器，CPU中用于存放下一条指令地址的寄存器
 - sp: 栈帧的栈顶指针
 - getcallerpc(): 返回调用该函数的函数的调用者的pc，编译器实现，及上级的上级函数
@@ -83,6 +84,9 @@ type adjustinfo struct {
 	sghi uintptr
 }
 ```
+
+![stack](./golang-stack.drawio.png)
+
 ## 重要函数
 - stackfree: 释放栈，系统栈运行
 - > stk.hi - stk.lo 计算栈大小n
