@@ -51,6 +51,7 @@
 
 ## 主要数据结构
 ![avatar](./golang-mem.drawio.png)
+![avatar](./golang-mem-static.drawio.png)
 - mheap: golang的堆, 以page(8kb)为单位管理内存 
 - mspan: 堆中一系列在使用的内存
 - mcentral: 固定大小的mspan集合
@@ -100,7 +101,6 @@
 - 
 ![64bit架构虚拟地址空间示意](https://pic1.zhimg.com/v2-dc953d14b0591cc5c8ee5f754dcdf158_r.jpg?source=1940ef5c)
 
-![avatar](./golang-mem-static.drawio.png)
 ## 内存状态
 - None ： 未保存的，未map的
 - Reserved： runtime保有，不能访问
@@ -261,6 +261,8 @@ type heapArena struct {
 - setSpans：将新分配的span，和构成span的page做映射放入mheap.arenas，为1：n的关系，
 
 ## 页管理
+![page](./golang-pagealloc.drawio.png)
+
 ### pageAlloc 页分配器 位于mheap
 - minOffAddr ： 0xffff800000000000
 - maxOffAddr ： 2^48-1 + 0xffff800000000000 = 0x7FFFFFFFFFFF
