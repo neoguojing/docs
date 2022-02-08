@@ -146,6 +146,8 @@ type RWMutex struct {
 }
 
 ```
+
+![semaphore](./golang-semaphore.drawio.png)
 ### 函数
 - Lock:
 - > CompareAndSwapInt32设置锁状态，成功则返回
