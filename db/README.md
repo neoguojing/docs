@@ -22,7 +22,6 @@
 | HBASE  | memstore 跳跃列表数据有序；blockcache：LRU 读缓存 | HFile负责存储数据：包含索引系统，bloomfilter| memstore数据有序，写入磁盘顺序写||行锁|分布在每个region的WAL日志，用于崩溃恢复；数据文件使用HDFS，有多个副本|事务的强一致性：通过锁和MVCC实现并发控制；行锁和两阶段提交协议（获取所有行锁才写入）；|
 | Cassandra  | 单元格 |
 | mongo  | 单元格 |
-
 | clickhose  | 单元格 |
 | kafka  | 单元格 |
 | InfluxDB  | 单元格 |
