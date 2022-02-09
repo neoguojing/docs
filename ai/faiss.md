@@ -78,7 +78,7 @@ Inverted File System，简称IVF，基于kmeans
 - 对库里所有向量做kmeans聚簇
 - 向量转换为与簇心的残差
 - 流程：
-- > 为减少距离计算，先对所有向量分类，即计算簇心；
+- > 为减少距离计算，先对所有向量分类，即计算簇心；查询向量则是计算到所有簇心的距离，然后再逐一计算到簇心下每个向量的距离；
 - > 归一化，减小误差，则用向量减去簇心向量；
 - > 可以配合使用PQ算法，进一步提升性能
 ![IVF](https://github.com/neoguojing/docs/blob/main/ai/IVF-IVF.png)
