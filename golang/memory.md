@@ -20,7 +20,7 @@
 - > 结构上：提供page管理，主要是堆管理（heapArena），mcentral管理
 - > 函数： 提供分配和释放span和page的功能
 - mcentral：spanClass到mspan的映射，包含full，part，swept和unswept四种映射；提供向mcache发布和回收mspan的功能；
-- heapArena：：提供提供堆对象的bitmap，标记是否是指针；提供page到mspan的映射，已经页的bitmap
+- heapArena：：提供堆对象的bitmap，标记是否是指针；提供page到mspan的映射，以及页的bitmap
 - mcache：本地p mspan缓存，包括tiny缓冲区，所有大小的span缓冲区和空闲栈缓冲区；处理包括tiny，small、large和stack等内存分配
 - mspan：最小内存管理单元，包括起始地址和大小，已分配信息等
 - 页管理：处理页的分配、释放和快速查找等工作
