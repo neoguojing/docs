@@ -32,9 +32,13 @@
 代表：leveldb hbase Cassandra
 
 ### 磁盘存储
-- 顺序写：kafka
-
+- 顺序写：kafka，hbase，leveldb的log
+- mmap：内存和文件关联，无序copy：kafka
 ### 索引
+- B+: mysql
+- hash: Cassandra
 ### 分布式架构
 
 ### 高可用
+- binglog + redolog: mysql
+- 
