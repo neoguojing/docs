@@ -43,12 +43,15 @@
 - B+: mysql
 - hash: Cassandra
 ### 分布式架构
-
+- 一致性hash：cassandra
+- 行数据分布存储：hbase 将行拆分为不同region，分布在不同的Region Server上；行拆分为列进行存储
 ### 高可用
 #### 写操作记录
 - mysql ：redo log
 - redis ： AOF：会将写命令以某种方式放入AOF_BUF,然后由刷入磁盘；可以一秒一次或者每个命令一次；
 - > AOF重新：fork子进程，子进程有数据库信息，依据数据库信息写入心的AOF文件；父进程继续接收请求，将命令写入老的AOF和AOF重写缓存；子进程写完发送信号，父进程收到信号，阻塞写操作，将AOF缓存的内容写入新文件，然后用新文件替换旧文件；
+- level db ：WAL
+- hbase：每个region一个的WAL
 
 #### 快照
 - mysql ： binlog
