@@ -30,10 +30,15 @@
 ### 内存数据库
 #### memtable 
 代表：leveldb hbase Cassandra
+- > 达到一定大小转为不可写
+- > 一般使用跳跃列表排序；所以数据有序
 
 ### 磁盘存储
 - 顺序写：kafka，hbase，leveldb的log
 - mmap：内存和文件关联，无序copy：kafka
+- lsm-tree: leveldb cassandra 适用于nosql数据库
+- > 支持顺序写磁盘，支持文件压缩，
+- B-tree ：磁盘是随机写，效率低
 ### 索引
 - B+: mysql
 - hash: Cassandra
