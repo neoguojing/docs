@@ -43,6 +43,7 @@
 #### 写操作记录
 - mysql ：redo log
 - redis ： AOF：会将写命令以某种方式放入AOF_BUF,然后由刷入磁盘；可以一秒一次或者每个命令一次；
+- > 
 
 #### 快照
 - mysql ： binlog
