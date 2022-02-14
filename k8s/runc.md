@@ -69,7 +69,7 @@ runc delete mycontainerid
 	Capabilities *LinuxCapabilities // linux必须包含的能力
 	Rlimits []POSIXRlimit //资源限制
 	NoNewPrivileges bool 
-	ApparmorProfile string
+	ApparmorProfile string   //AppArmor是一个高效和易于使用的Linux系统安全应用程序,对容器进行保护；此处提供profile
 	OOMScoreAdj *int
 	SelinuxLabel string
 }
