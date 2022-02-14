@@ -9,7 +9,8 @@
 有两个关于资源限制的概念：
 - current limit：为系统规定的上限，也叫做"soft limit"，因为进程通常将被限制在这个范围内；
 - maxinum limit：为一个进程被允许建立current limit的最大值，也叫做"hard limit"，因为一个进程无法避开它，一个进程必须低于自己的maxinum limit，且只有超级用户可能提高它的maxinum limit。
-
+### oom
+- 内存不足之后杀死oom_score
 ## 基本使用
 ```
 # create the top most bundle directory
