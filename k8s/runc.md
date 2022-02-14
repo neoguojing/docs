@@ -108,7 +108,12 @@ runc delete mycontainerid
 - New：构建LinuxFactory，设置根、路径信息等
 - LinuxFactory ：实现Factory
 - linuxContainer：实现Container
-- > Create:创建容器：
-- 
+- > Create:创建容器：校验配置和根文件
+- > cgroup manager 创建
+- > 构建linuxContainer，
+- > NewIntelRdtManager构建RDT
+- > 设置状态为stopped
 - Factory ：接口
 - Container ： 容器
+- manager.New
+- NewIntelRdtManager:
