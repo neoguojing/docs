@@ -16,6 +16,8 @@
 cat /proc/pid/oom_score_adj
 cat /proc/pid/oom_score
 ```
+### selinux linux系统安全策略控制
+- label：[user]:[role]:[type]:[sec-level]
 ## 基本使用
 ```
 # create the top most bundle directory
@@ -76,7 +78,7 @@ runc delete mycontainerid
 	Rlimits []POSIXRlimit //资源限制
 	NoNewPrivileges bool 
 	ApparmorProfile string   //AppArmor是一个高效和易于使用的Linux系统安全应用程序,对容器进行保护；此处提供profile
-	OOMScoreAdj *int
+	OOMScoreAdj *int         //oom 配置调整
 	SelinuxLabel string
 }
  ```
