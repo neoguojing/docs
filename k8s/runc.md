@@ -33,6 +33,8 @@ cat /proc/pid/oom_score
 - 程序或容器的热迁移
 - 从/proc目录收集进程信息，并保存到磁盘；复杂
 
+### proc知识
+- /proc/self/exe： 指向当前运行进程的软链接
 ## 基本使用
 ```
 # create the top most bundle directory
@@ -103,8 +105,10 @@ runc delete mycontainerid
  ```
 
 ## libcontainer
-- New：
+- New：构建LinuxFactory，设置根、路径信息等
 - LinuxFactory ：实现Factory
 - linuxContainer：实现Container
+- > Create:创建容器：
+- 
 - Factory ：接口
 - Container ： 容器
