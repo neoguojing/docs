@@ -25,6 +25,14 @@ cat /proc/pid/oom_score
 ### seccomp 以限制进程对系统调用的访问，从系统调用号，到系统调用的参数，都可以检查和限制
 - SECCOMP_MODE_STRICT： 进程只能访问read,write,_exit,sigreturn系统调用
 - SECCOM_MODE_FILTER：通过定义规则访问；
+
+### sd_notify
+- linux 想systemd进程报告当前服务启动状态等信息的函数，runc中对应notifySocket，对应目录/run/notify/pid/notify/notify.sock
+
+### criu 在用户空间，控制进程的checkpoint和restore
+- 程序或容器的热迁移
+- 从/proc目录收集进程信息，并保存到磁盘；复杂
+
 ## 基本使用
 ```
 # create the top most bundle directory
@@ -57,8 +65,12 @@ runc delete mycontainerid
 ```
 ## 关键函数
 - startContainer：核心函数：传入context和动作：创建，启动和恢复；负责启动和运行容器
-- > 启动容器依赖根文件系统和配置文件
-- createContainer 
+- > 设置pid文件，加载config.json
+- > 初始化sd_nofity socket
+- > createContainer 创建容器
+- > runner设置和调用Run
+- createContainer 输入容器id和配置文件;调用
+- > 调用libcontainer的new和factory构建容器
 - Spec : 配置文件：
  ```
  Version string 版本
@@ -91,7 +103,7 @@ runc delete mycontainerid
  ```
 
 ## libcontainer
-- New
+- New：
 - LinuxFactory ：实现Factory
 - linuxContainer：实现Container
 - Factory ：接口
