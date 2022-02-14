@@ -18,6 +18,13 @@ cat /proc/pid/oom_score
 ```
 ### selinux linux系统安全策略控制
 - label：[user]:[role]:[type]:[sec-level]
+
+### IntelRdt
+- 资源访问技术，主要管理云环境下的L3缓存和内存带宽，防止L3缓存的不均衡访问；
+
+### seccomp 以限制进程对系统调用的访问，从系统调用号，到系统调用的参数，都可以检查和限制
+- SECCOMP_MODE_STRICT： 进程只能访问read,write,_exit,sigreturn系统调用
+- SECCOM_MODE_FILTER：通过定义规则访问；
 ## 基本使用
 ```
 # create the top most bundle directory
