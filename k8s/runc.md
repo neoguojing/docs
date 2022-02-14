@@ -1,5 +1,16 @@
 # runc
-基本使用
+
+## 概念
+### rlimit
+在Linux环境编程下，可以具体的限制一个进程对资源的使用，当进程尝试超过资源使用的限制：
+- 它可能会收到一个信号，
+- 是因资源而失败的系统调用
+每个进程最初的获得的限制来自父进程，但是后来可以更改这个限制。
+有两个关于资源限制的概念：
+- current limit：为系统规定的上限，也叫做"soft limit"，因为进程通常将被限制在这个范围内；
+- maxinum limit：为一个进程被允许建立current limit的最大值，也叫做"hard limit"，因为一个进程无法避开它，一个进程必须低于自己的maxinum limit，且只有超级用户可能提高它的maxinum limit。
+
+## 基本使用
 ```
 # create the top most bundle directory
 mkdir /mycontainer
