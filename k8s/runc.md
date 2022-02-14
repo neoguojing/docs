@@ -1,6 +1,27 @@
 # runc
 
 ## 概念
+### cgroup
+把一个cgroup目录中的资源划分给它的子目录，子目录可以把资源继续划分给它的子目录，为子目录分配的资源之和不能超过父目录，进程或者线程可以使用的资源受到它们委身的目录的限制
+- tasks目录保存线程id
+- proc文件保存进程id
+- v2：1.只能绑定到文件层级的叶子节点；2.root可以授权普通用户管理cgroup的权限；3.线程模式
+- > unifid模式：/sys/fs/cgroup/user.slice/user-1001.slice/session-1.scope
+- v1为不同的线程指定不同的memory cgroup没有意义
+-
+### cgroup driver
+- cgroupfs:cgroup接口封装，默认/sys/fs/cgroup，是一种虚拟文件系统
+```
+mkdir /sys/fs/cgroup/cpuset/demo
+echo 0 > /sys/fs/cgroup/cpuset/demo/cpuset.cpus //选择cpu号码
+echo 0 > /sys/fs/cgroup/cpuset/demo/cpuset.mems //内存号码
+echo pid >  /sys/fs/cgroup/cpuset/demo/tasks
+```
+- systemd:以pid=1运行，实现了cgroup接口，k8s默认使用
+```
+systemd-cgls 查看cgroup层级
+systemctl set-property cron.service CPUShares=100 MemoryLimit=200M
+```
 ### rlimit
 在Linux环境编程下，可以具体的限制一个进程对资源的使用，当进程尝试超过资源使用的限制：
 - 它可能会收到一个信号，
@@ -35,6 +56,8 @@ cat /proc/pid/oom_score
 
 ### proc知识
 - /proc/self/exe： 指向当前运行进程的软链接
+- /proc/cgroups： 列出系统支持的控制器
+- 
 ## 基本使用
 ```
 # create the top most bundle directory
@@ -117,3 +140,62 @@ runc delete mycontainerid
 - Container ： 容器
 - manager.New
 - NewIntelRdtManager:
+- NewUnifiedManager：unifd v2 cgourp
+- fs2.NewManager：创建v2的cgroup,构建manager对象实现Manager接口
+
+### cgroup
+```
+type Manager interface {
+	// Apply creates a cgroup, if not yet created, and adds a process
+	// with the specified pid into that cgroup.  A special value of -1
+	// can be used to merely create a cgroup.
+	Apply(pid int) error
+
+	// GetPids returns the PIDs of all processes inside the cgroup.
+	GetPids() ([]int, error)
+
+	// GetAllPids returns the PIDs of all processes inside the cgroup
+	// any all its sub-cgroups.
+	GetAllPids() ([]int, error)
+
+	// GetStats returns cgroups statistics.
+	GetStats() (*Stats, error)
+
+	// Freeze sets the freezer cgroup to the specified state.
+	Freeze(state configs.FreezerState) error
+
+	// Destroy removes cgroup.
+	Destroy() error
+
+	// Path returns a cgroup path to the specified controller/subsystem.
+	// For cgroupv2, the argument is unused and can be empty.
+	Path(string) string
+
+	// Set sets cgroup resources parameters/limits. If the argument is nil,
+	// the resources specified during Manager creation (or the previous call
+	// to Set) are used.
+	Set(r *configs.Resources) error
+
+	// GetPaths returns cgroup path(s) to save in a state file in order to
+	// restore later.
+	//
+	// For cgroup v1, a key is cgroup subsystem name, and the value is the
+	// path to the cgroup for this subsystem.
+	//
+	// For cgroup v2 unified hierarchy, a key is "", and the value is the
+	// unified path.
+	GetPaths() map[string]string
+
+	// GetCgroups returns the cgroup data as configured.
+	GetCgroups() (*configs.Cgroup, error)
+
+	// GetFreezerState retrieves the current FreezerState of the cgroup.
+	GetFreezerState() (configs.FreezerState, error)
+
+	// Exists returns whether the cgroup path exists or not.
+	Exists() bool
+
+	// OOMKillCount reports OOM kill count for the cgroup.
+	OOMKillCount() (uint64, error)
+}
+```
