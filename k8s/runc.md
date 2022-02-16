@@ -23,6 +23,8 @@ echo pid >  /sys/fs/cgroup/cpuset/demo/tasks
 ```
 #### systemd:以pid=1运行，实现了cgroup接口，k8s默认使用
 - 支持通过dbus进行进程间通信
+- sd_notify：linux 想systemd进程报告当前服务启动状态等信息的函数，runc中对应notifySocket，对应目录/run/notify/pid/notify/notify.sock
+- notifySocket：从systemd中读取同期信息转发给notifySocketHost
 ```
 systemd-cgls 查看cgroup层级
 systemctl set-property cron.service CPUShares=100 MemoryLimit=200M
@@ -52,8 +54,7 @@ cat /proc/pid/oom_score
 - SECCOMP_MODE_STRICT： 进程只能访问read,write,_exit,sigreturn系统调用
 - SECCOM_MODE_FILTER：通过定义规则访问；
 
-### sd_notify
-- linux 想systemd进程报告当前服务启动状态等信息的函数，runc中对应notifySocket，对应目录/run/notify/pid/notify/notify.sock
+
 
 ### criu 在用户空间，控制进程的checkpoint和restore
 - 程序或容器的热迁移
@@ -62,7 +63,8 @@ cat /proc/pid/oom_score
 ### proc知识
 - /proc/self/exe： 指向当前运行进程的软链接
 - /proc/cgroups： 列出系统支持的控制器
-
+### tty的创建
+- open /dev/tty
 ## 基本使用
 ```
 # create the top most bundle directory
@@ -100,9 +102,13 @@ runc delete mycontainerid
 - > createContainer 创建容器
 - > runner设置和调用Run
 - runner.Run容器的运行：入参为进程配置信息
-- > newProcess创建进程,并填充进程信息
-- > newSignalHandler:新建信号处理
-- > 
+- > newProcess创建进程,并填充进程信息： 包括cap和rlimit信息
+- > newSignalHandler:新建信号处理，处理SIGCHLD和SIGWINCH
+- > setupIO：主要是创建tty和设置管道，将os的三个管道，指向容器进程本身
+- > 依据不同状态分别调用Container的start run 和Restore
+- > createPidFile:创建pid
+- > 启动信号处理循环
+- > 销毁runner，返回容器状态
 - createContainer 输入容器id和配置文件;调用
 - > 调用libcontainer的new和factory构建容器
 - Spec : 配置文件：
@@ -151,7 +157,10 @@ runc delete mycontainerid
 - > 
 - linuxContainer：实现Container
 - Factory ：接口
-- Container ： 容器
+- Container ：容器接口
+- > Start:1.创建命名FIFO管道exec.fifo命名；2.创建父进程（父子通信socket，父子日志管道）
+- > Restore:
+- > Run:
 - manager.New
 - NewIntelRdtManager:
 - NewUnifiedManager：unifd v2 cgourp
