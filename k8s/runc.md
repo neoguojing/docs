@@ -8,16 +8,21 @@
 - v2：1.只能绑定到文件层级的叶子节点；2.root可以授权普通用户管理cgroup的权限；3.线程模式
 - > unifid模式：/sys/fs/cgroup/user.slice/user-1001.slice/session-1.scope
 - v1为不同的线程指定不同的memory cgroup没有意义
--
+#### freezer子系统 
+- 成批启动/停止任务，以达到及其资源的调度
+- 强制一组任务进入静默状态：用于读取器运行时信息
+- 父任务冻结，则子节点均冻结
+- 状态包括：冻结和解冻，以及中间状态冻结中
 ### cgroup driver
-- cgroupfs:cgroup接口封装，默认/sys/fs/cgroup，是一种虚拟文件系统
+#### cgroupfs:cgroup接口封装，默认/sys/fs/cgroup，是一种虚拟文件系统
 ```
 mkdir /sys/fs/cgroup/cpuset/demo
 echo 0 > /sys/fs/cgroup/cpuset/demo/cpuset.cpus //选择cpu号码
 echo 0 > /sys/fs/cgroup/cpuset/demo/cpuset.mems //内存号码
 echo pid >  /sys/fs/cgroup/cpuset/demo/tasks
 ```
-- systemd:以pid=1运行，实现了cgroup接口，k8s默认使用
+#### systemd:以pid=1运行，实现了cgroup接口，k8s默认使用
+- 支持通过dbus进行进程间通信
 ```
 systemd-cgls 查看cgroup层级
 systemctl set-property cron.service CPUShares=100 MemoryLimit=200M
@@ -57,7 +62,7 @@ cat /proc/pid/oom_score
 ### proc知识
 - /proc/self/exe： 指向当前运行进程的软链接
 - /proc/cgroups： 列出系统支持的控制器
-- 
+
 ## 基本使用
 ```
 # create the top most bundle directory
@@ -128,14 +133,18 @@ runc delete mycontainerid
  ```
 
 ## libcontainer
-- New：构建LinuxFactory，设置根、路径信息等
+- New：构建LinuxFactory，建立根文件夹，设置criu,初始路径和参数等
 - LinuxFactory ：实现Factory
+- > Create接口：
+```
+1.用容器id创建容器根目录，修改根路径的权限；
+2.创建cgroup manager：分为cgroup v1/v2 和是否使用systemd的组合；systemd需要dbus通信；cm：包含配置，路径或dbus；
+3.构建linuxContainer;
+4.NewIntelRdtManager构建RDT
+5.设置状态为stopped
+6.校验是否冻结状态
+```
 - linuxContainer：实现Container
-- > Create:创建容器：校验配置和根文件
-- > cgroup manager 创建
-- > 构建linuxContainer，
-- > NewIntelRdtManager构建RDT
-- > 设置状态为stopped
 - Factory ：接口
 - Container ： 容器
 - manager.New
@@ -144,6 +153,7 @@ runc delete mycontainerid
 - fs2.NewManager：创建v2的cgroup,构建manager对象实现Manager接口
 
 ### cgroup
+- systemd：模块；包含：dbus
 ```
 type Manager interface {
 	// Apply creates a cgroup, if not yet created, and adds a process
