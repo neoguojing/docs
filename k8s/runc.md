@@ -8,7 +8,21 @@
 - v2：1.只能绑定到文件层级的叶子节点；2.root可以授权普通用户管理cgroup的权限；3.线程模式
 - > unifid模式：/sys/fs/cgroup/user.slice/user-1001.slice/session-1.scope
 - v1为不同的线程指定不同的memory cgroup没有意义
-#### freezer子系统 
+- 9大子系统
+- unified：叶子节点管理task，中间节点只允许资源控制
+#### 子系统 lssubsys -a
+- blkio ：为块设备设定输入/输出限制
+- cpu ：提供对cpu调度的限制，影响调度器的参数，将进程容原调度队列解绑，发送到新的cgroup队列
+- cpuacct ：cpu使用报告
+- cpuset： cpu核和内存节点的分配
+- devices ：是否允许访问设备
+- memory ：提供内存限制和提供内存报告，oom配置等
+- net_cls ：等级识别符（classid）标记网络数据包于linux流量控制配合
+- pids：功能是限制cgroup及其所有子孙cgroup里面能创建的总的task数量
+- net_prio
+- perf_event
+- rdma：RDMA让计算机可以直接存取其他计算机的内存，而不需要经过处理器的处理
+#### freezer子系统 :这个子系统挂起或者恢复 cgroup 中的任务
 - 成批启动/停止任务，以达到及其资源的调度
 - 强制一组任务进入静默状态：用于读取器运行时信息
 - 父任务冻结，则子节点均冻结
