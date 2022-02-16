@@ -158,9 +158,10 @@ runc delete mycontainerid
 - linuxContainer：实现Container
 - Factory ：接口
 - Container ：容器接口
-- > Start:1.创建命名FIFO管道exec.fifo命名；2.创建父进程（父子通信socket，父子日志管道）
-- > Restore:
-- > Run:
+- > Start:1.创建命名FIFO管道exec.fifo命名；2.创建父进程（父子通信socket，父子日志管道，用于启动真正执行的进程）；3.启动父进程：cmd.Start启动进程；execSetns设置ns；WriteCgroupProc设置将pid写入对应cgroup的proc文件；pid写入rtd文件；setupRlimits：unix.Prlimit设置limit；
+- > Restore: 收集信息，调用criu命令执行转储
+- > Run: 相比start，多了exec函数的执行（一个死循环）：1.监听fifo队列，执行热舞；2.没100ms检查进程状态
+- > Pause/Resume:调用cgroupManager的Freeze操作
 - manager.New
 - NewIntelRdtManager:
 - NewUnifiedManager：unifd v2 cgourp
