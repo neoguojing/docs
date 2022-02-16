@@ -99,6 +99,10 @@ runc delete mycontainerid
 - > 初始化sd_nofity socket
 - > createContainer 创建容器
 - > runner设置和调用Run
+- runner.Run容器的运行：入参为进程配置信息
+- > newProcess创建进程,并填充进程信息
+- > newSignalHandler:新建信号处理
+- > 
 - createContainer 输入容器id和配置文件;调用
 - > 调用libcontainer的new和factory构建容器
 - Spec : 配置文件：
@@ -135,7 +139,7 @@ runc delete mycontainerid
 ## libcontainer
 - New：构建LinuxFactory，建立根文件夹，设置criu,初始路径和参数等
 - LinuxFactory ：实现Factory
-- > Create接口：
+- > Create接口：执行结果返回一个：linuxContainer对象
 ```
 1.用容器id创建容器根目录，修改根路径的权限；
 2.创建cgroup manager：分为cgroup v1/v2 和是否使用systemd的组合；systemd需要dbus通信；cm：包含配置，路径或dbus；
@@ -144,6 +148,7 @@ runc delete mycontainerid
 5.设置状态为stopped
 6.校验是否冻结状态
 ```
+- > 
 - linuxContainer：实现Container
 - Factory ：接口
 - Container ： 容器
