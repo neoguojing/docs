@@ -51,6 +51,7 @@ systemctl set-property cron.service CPUShares=100 MemoryLimit=200M
 有两个关于资源限制的概念：
 - current limit：为系统规定的上限，也叫做"soft limit"，因为进程通常将被限制在这个范围内；
 - maxinum limit：为一个进程被允许建立current limit的最大值，也叫做"hard limit"，因为一个进程无法避开它，一个进程必须低于自己的maxinum limit，且只有超级用户可能提高它的maxinum limit。
+- RLIMIT_NOFILE: 打开文件的限制数量
 ### oom
 - oom_score：内存不足之后杀死oom_score最大的进程；打分标准：1.占用内存；2.oom_score_adj的值
 - oom_score_adj：[-1000,1000],正数表示分数会增加；负数表示分数会相应减少；-1000则表示不杀死该进程；0为默认值
@@ -109,6 +110,9 @@ runc list
 # now delete the container
 runc delete mycontainerid
 ```
+## 默认值
+- process.root：rootfs
+- rlimit: 
 ## 关键函数
 - startContainer：核心函数：传入context和动作：创建，启动和恢复；负责启动和运行容器
 - > 设置pid文件，加载config.json
