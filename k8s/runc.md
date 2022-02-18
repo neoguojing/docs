@@ -111,8 +111,28 @@ runc list
 runc delete mycontainerid
 ```
 ## 基本流程
-- 容器进程的创建： 任何进程的创建均需要一个父进程，而runc中的父进程即自己；通过 /proc/self/exe(runc本身) 参数1：runc路径 参数2:init 启动；
+- 1. 运行命令的runc create id 创建进程
+- 2.执行startContainer：其中createContainer创建容器对象
+- 3.runner.run：调用newProcess 创建进程对象；
+- 4.linuxContainer.Start:创建父进程和启动
+- 5.newParentProcess/newInitProcess：创建初始化进程信息：包含父进程信息和子进程信息
+- 6.initProcess.start :启动父进程 runc 参数路径+init；
+- 7.执行init.go中导入的github.com/opencontainers/runc/libcontainer/nsenter，执行nsenter 注册的init，然后执行nsexec
+```
+extern void nsexec();
+void __attribute__((constructor)) init(void) {
+	nsexec();
+}
+nsexec：为一个状态机，最终状态才会退出到go runtime执行
+1. 此时为父进程，首先clone一个子进程
+2. 子进程再clone一个子进程
+3. 最终的子进程执行完，进入go runtime
+```
+- 8.init.go的init函数
+- 
 ## 默认值
+- _LIBCONTAINER_LOGPIPE：父子进程的log pipe环境变量
+- _LIBCONTAINER_INITPIPE ：初始化管道
 - process.root：rootfs
 - factory.root:由-root指定，保存容器状态,是宿主机的目录
 - Container.root: factory.root + 容器id，是宿主机的目录
