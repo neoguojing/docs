@@ -110,14 +110,20 @@ runc list
 # now delete the container
 runc delete mycontainerid
 ```
+## 基本流程
+- 容器进程的创建： 任何进程的创建均需要一个父进程，而runc中的父进程即自己；通过 /proc/self/exe(runc本身) 参数1：runc路径 参数2:init 启动；
 ## 默认值
 - process.root：rootfs
-- rlimit: 
+- factory.root:由-root指定，保存容器状态,是宿主机的目录
+- Container.root: factory.root + 容器id，是宿主机的目录
+- cgroups.Manager.Path:保存 子系统：路径的映射 如"/sys/fs/cgroup/blkio/user.slice/my1"
+- 容器父进程为：runc
+- Container.initProcess: cmd保存了父进程（信息 执行runc init），process保存了子进程信息（sleep 5）
 ## 关键函数
 - startContainer：核心函数：传入context和动作：创建，启动和恢复；负责启动和运行容器
 - > 设置pid文件，加载config.json
 - > 初始化sd_nofity socket
-- > createContainer 创建容器
+- > createContainer 创建容器：创建cgroup manager 和 rdt manager等，返回container对象
 - > runner设置和调用Run
 - runner.Run容器的运行：入参为进程配置信息
 - > newProcess创建进程,并填充进程信息： 包括cap和rlimit信息
@@ -176,7 +182,7 @@ runc delete mycontainerid
 - linuxContainer：实现Container
 - Factory ：接口
 - Container ：容器接口
-- > Start:1.创建命名FIFO管道exec.fifo命名；2.创建父进程（父子通信socket，父子日志管道，用于启动真正执行的进程）；3.启动父进程：cmd.Start启动进程；execSetns设置ns；WriteCgroupProc设置将pid写入对应cgroup的proc文件；pid写入rtd文件；setupRlimits：unix.Prlimit设置limit；
+- > Start:1.创建命名FIFO管道exec.fifo命名；2.创建父进程（父子通信socket，父子日志管道，用于启动真正执行的进程）；3.启动父进程：cmd.Start执行runc init；execSetns设置ns；WriteCgroupProc设置将pid写入对应cgroup的proc文件；pid写入rtd文件；setupRlimits：unix.Prlimit设置limit；
 - > Restore: 收集信息，调用criu命令执行转储
 - > Run: 相比start，多了exec函数的执行（一个死循环）：1.监听fifo队列，执行热舞；2.没100ms检查进程状态
 - > Pause/Resume:调用cgroupManager的Freeze操作
@@ -184,7 +190,8 @@ runc delete mycontainerid
 - NewIntelRdtManager:
 - NewUnifiedManager：unifd v2 cgourp
 - fs2.NewManager：创建v2的cgroup,构建manager对象实现Manager接口
-
+- newInitProcess： 父进程（runc）：其中会调用newInitProcess
+- newInitProcess：创建容器进程:
 ### cgroup
 - systemd：模块；包含：dbus
 ```
