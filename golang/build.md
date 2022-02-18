@@ -20,7 +20,9 @@ var version string
 
 go build -ldflags '-X main.version="dev"'
 ```
-
+- -trimpath : 删除编译路径信息
+- buildmode ： 1.archive 没有main的包编译为.a文件；2.编译为c-archive ；3.c-shared；4.default 5.shared共享库，使用时用-linkshared引用；6.pie：位置无关可执行文件；7plugin
+- 
 ## 默认条件编译
 ```
 这个将限制此源文件只能在 linux/386或者darwin/386平台下编译
