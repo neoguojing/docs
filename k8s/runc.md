@@ -1,6 +1,10 @@
 # runc
 
 ## 概念
+### 系统调用
+- execve(2):执行一个二进制文件，新的执行体将覆盖调用他的进程的堆栈和其他区域；完全取代运行
+- clone2
+- unshare(CLONE_NEWUSER)
 ### cgroup
 把一个cgroup目录中的资源划分给它的子目录，子目录可以把资源继续划分给它的子目录，为子目录分配的资源之和不能超过父目录，进程或者线程可以使用的资源受到它们委身的目录的限制
 - tasks目录保存线程id
@@ -128,7 +132,8 @@ nsexec：为一个状态机，最终状态才会退出到go runtime执行
 2. 子进程再clone一个子进程
 3. 最终的子进程执行完，进入go runtime
 ```
-- 8.init.go的init函数
+- 8.init.go的init函数：设置cpu为1，并锁死线程，进入StartInitialization
+- 9.factory.StartInitialization: 创建linuxStandardInit，调用其init函数，最终调用unix.Exec执行目标容器运行时进程，替换当前进程；
 - 
 ## 默认值
 - _LIBCONTAINER_LOGPIPE：父子进程的log pipe环境变量
