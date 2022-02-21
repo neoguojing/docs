@@ -122,11 +122,10 @@ type scase struct {
 - > 遍历lockorder，堆排序，按照hchan的地址大小排序，顺序存储于lockorder
 - > sellock对所有chan按照lockorder，加锁
 - > 遍历pollorder：
-- > 值大于nsends，表示为recv chan阻塞，尝试从sendq出队sudog，不为nil，则跳转的recv，若c.qcount > 0，则跳转到bufrecv，若 c.closed != 0 ，跳转到rclose
-- > 否则，分辨跳转到sclose，send和bufsend
-- > 非阻塞，则解锁selunlock，索引置为-1，跳转搭到retc
-- > 按照lockorder，为每个case创建sudog，分别加入sendq和recvq，并在gp.waiting 构建sudog列表
-- > gopark 挂起当前g
+- > 1.有消息读：值大于nsends，表示为recv chan阻塞，尝试从sendq出队sudog，不为nil，则跳转的recv，若c.qcount > 0，则跳转到bufrecv，若 c.closed != 0 ，跳转到rclose
+- > 2.有消息写：否则，分辨跳转到sclose，send和bufsend
+- > 3.非阻塞，则解锁selunlock，索引置为-1，跳转搭到retc
+- > 4.阻塞场景：按照lockorder，为每个case创建sudog（g为当前g），分别加入各个case的sendq或recvq，并在gp.waiting 构建sudog列表；gopark 挂起当前g；
 - > 被唤醒：sellock加锁,获取唤醒g的sudog
 - > 切断gp.waiting的sudog列表
 - > 遍历lockorder，出队所有sudog，返回唤醒的chan的case索引
