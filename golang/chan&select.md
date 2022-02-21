@@ -21,7 +21,7 @@
 - > 1.优先处理已经挂起的操作，即在recvq和sendq中挂起的sudog，每次一个，成功返回
 - > 2.若select非阻塞，可能是default，则解锁，索引为-1，执行返回动作
 - > 3.以lockorder将所有的case，通过sudog建立列表（isSelect为true，g为操作select的g），并挂到所有case的sendq/recvq，现在g放在所有case的等待队列里,可以被1处理，gopark挂起go，挂起之后会解锁
-- > 4.select g被send或者recev等操作唤醒，并会在g.param中加入对应的sudog，加锁，以lockorde遍历所有sudog出队，解锁，返回被唤醒的case的索引，
+- > 4.select g被send或者recev等操作唤醒，并会在g.param中加入对应的sudog，加锁，以lockorde遍历所有chan的sudog，出队当前g，解锁，返回被唤醒的case的索引，
 ## channel
 
 ![channel](./golang-chan.drawio.png)
