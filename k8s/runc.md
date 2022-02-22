@@ -18,6 +18,7 @@
 - clone(CLONE_NEWUSER):创建子进程，并创建user命名空间
 - setns(fd，flag)：将当前进程加入到fd对应的namespace，fd为 /proc/pid/ns/ips等对应的文件
 - unshare(flag):创建namespace，然后将当前进程加入到该命名空间
+- /proc/pid/uid_map,gid_map 设置ns内外的用户映射
 ### cgroup
 把一个cgroup目录中的资源划分给它的子目录，子目录可以把资源继续划分给它的子目录，为子目录分配的资源之和不能超过父目录，进程或者线程可以使用的资源受到它们委身的目录的限制
 - tasks目录保存线程id
