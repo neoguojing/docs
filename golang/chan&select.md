@@ -18,10 +18,14 @@
 - select允许重复的chan吗，可以因此提供某个chan被选中的几率
 - select：lockorder按照hchan的地址从小到大顺序排序
 - select流程：
-- > 1.优先处理已经挂起的操作，即在recvq和sendq中挂起的sudog，每次一个，成功返回
-- > 2.若select非阻塞，可能是default，则解锁，索引为-1，执行返回动作
-- > 3.以lockorder将所有的case，通过sudog建立列表（isSelect为true，g为操作select的g），并挂到所有case的sendq/recvq，现在g放在所有case的等待队列里,可以被1处理，gopark挂起go，挂起之后会解锁
-- > 4.select g被send或者recev等操作唤醒，并会在g.param中加入对应的sudog，加锁，以lockorde遍历所有chan的sudog，出队当前g，解锁，返回被唤醒的case的索引，
+- > 1.计算lockorder 和 pollorder，按照lockorder加锁
+- > 2.遍历pollorder，随机的选择一个可用的chan（右挂起的g，队列里有消息；或者关闭）跳转到对应的分支执行；
+- > 3.遍历完pollorder,发现没有就绪的chan；非阻塞（default），则解锁，返回索引-1
+- > 4.阻塞的select，则lockorder为顺序，遍历cases，将当前g挂到新建的sudog上，挂到每个chan的sendq/recvq，同时将sudog做为列表，挂到当前g的waiting参数上（表示当前g在这些sudog上等待）
+- > 5.设置g的参数：parkingOnChan=1，调用gopark挂起当前g
+- > 6.g被唤醒，从gp.param 获取唤醒的sudog；设置g.waiting上所有sudog的状态
+- > 7.以lockorder遍历和g.waiting列表（此处列表顺序和lockorder顺序一致）：若唤醒的sudog和列表sudog相同，则找到唤醒g的chan的索引；否则，将sudog从chan的队列出队；
+- > 8.解锁，跳转到返回分支
 ## channel
 
 ![channel](./golang-chan.drawio.png)
