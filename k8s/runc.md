@@ -4,7 +4,20 @@
 ### 系统调用
 - execve(2):执行一个二进制文件，新的执行体将覆盖调用他的进程的堆栈和其他区域；完全取代运行
 - clone2
-- unshare(CLONE_NEWUSER)
+- clone ： 提供一系列的参数，确认于父进程共享哪些资源；支持fork和vfork的所有功能；
+- unshare(CLONE_NEWUSER)：为当前进程创建新的user namespace
+- fork: 创建子进程，子进程和父进程共享页帧等信息，均为只读；当父或子改变某页，则产生page fault，复制该页；不共享虚拟地址；子进程会copy数据段和代码段等；执行顺序不确定
+- vfork： 创建线程，和父亲共享物理以及虚拟地址；且父进程被挂起；子进程优先执行
+
+### capability 非root的权限管理
+- 进程权限
+- 文件权限
+### namespace
+- 共7种：ips，pid，mount，network,uts,cgroup,users
+- /proc/pid/ns: 列出当前进程所属的命名空间
+- clone(CLONE_NEWUSER):创建子进程，并创建user命名空间
+- setns(fd，flag)：将当前进程加入到fd对应的namespace，fd为 /proc/pid/ns/ips等对应的文件
+- unshare(flag):创建namespace，然后将当前进程加入到该命名空间
 ### cgroup
 把一个cgroup目录中的资源划分给它的子目录，子目录可以把资源继续划分给它的子目录，为子目录分配的资源之和不能超过父目录，进程或者线程可以使用的资源受到它们委身的目录的限制
 - tasks目录保存线程id
