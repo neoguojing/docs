@@ -8,7 +8,8 @@
 - unshare(CLONE_NEWUSER)：为当前进程创建新的user namespace
 - fork: 创建子进程，子进程和父进程共享页帧等信息，均为只读；当父或子改变某页，则产生page fault，复制该页；不共享虚拟地址；子进程会copy数据段和代码段等；执行顺序不确定
 - vfork： 创建线程，和父亲共享物理以及虚拟地址；且父进程被挂起；子进程优先执行
-
+- prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)：设置进程不可dump，prctl系统调用用于改变进程参数
+- setjmp: 保存当前进程上下文到结构体
 ### capability 非root的权限管理
 - 进程权限
 - 文件权限
@@ -231,6 +232,36 @@ nsexec：为一个状态机，最终状态才会退出到go runtime执行
 - fs2.NewManager：创建v2的cgroup,构建manager对象实现Manager接口
 - newInitProcess： 父进程（runc）：其中会调用newInitProcess
 - newInitProcess：创建容器进程:
+
+### nsexec 启动容器进程
+#### 流程
+- 1.从_LIBCONTAINER_INITPIPE获取pipe，从pipe获取配置并解析
+- 2.clone 源二进制文件确保隔离（/proc/self/exe）
+- 3.更新oom_score_adj， /proc/self/oom_score_adj
+- 4.设置不可dump，建立和子进程和孙子进程通信的unix sock
+- 5.setjump保存当前上下文：第一次返回0；
+- 6.STAGE_PARENT： 父进程执行
+- > 设置进程名；clone子进程，子进程执行longjmp跳转到第5步，并返回值1
+- > 循环read和孩子的通信socket；
+- > 向子进程更新配置用户配置：/proc/childpid/setgroups，/proc/%d/uid_map，/proc/%d/gid_map；并发送回执
+- > 子孙进程创建通知：读取子孙进程pid，发送回执，并通过_LIBCONTAINER_INITPIPE通知runc
+- > 通知子进程挂载目录：setns(/proc/childpid/ns/mnt, CLONE_NEWNS)为子进程新建命名空间，并通过unix fd一条一条发送mount配置给子进程；为父进程新建ns；，并发送回执；
+- > 子进程操作完成，结束循环
+- > 监听孙进程状态，直到孙进程完成
+- 7.STAGE_CHILD： 子进程中：
+- > 为子进程本身设置ns；unshare(CLONE_NEWUSER)为进程创建新的user namespace；
+- > 设置进程本身可dump，等待进程父进程帮忙设置用户信息；设置步可dump；
+- > setresuid(0, 0, 0):使子进程在本user namespace中成为root
+- > unshare(config.cloneflags & ~CLONE_NEWCGROUP):创建其他ns
+- > 向父亲请求挂载路径，并接受
+- > clone 子孙进程并传递参数2,发送孙进程id给父亲；
+- > 发送结束消息，并退出进程
+- 8：STAGE_INIT
+- > 收到父进程信号，开始工作
+- > 设置本身为root：setuid(0)；setgid(0)
+- > 创建新unshare(CLONE_NEWCGROUP)cgroup
+- > 向父进程发送完成信号信号
+- > 返回
 ### cgroup
 - systemd：模块；包含：dbus
 ```
