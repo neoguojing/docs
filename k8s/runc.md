@@ -1,6 +1,8 @@
 # runc
 
 ## 概念
+### fd
+- 每个进程默认打开三个文件描述符0，1，2（in，out，err）；当某个文件描述符被关闭，则新打开的文件从最小的未被使用的文件描述符开始使用
 ### 系统调用
 - execve(2):执行一个二进制文件，新的执行体将覆盖调用他的进程的堆栈和其他区域；完全取代运行
 - clone2
@@ -152,7 +154,7 @@ nsexec：为一个状态机，最终状态才会退出到go runtime执行
 - 
 ## 默认值
 - _LIBCONTAINER_LOGPIPE：父子进程的log pipe环境变量
-- _LIBCONTAINER_INITPIPE ：初始化管道
+- _LIBCONTAINER_INITPIPE ：初始化管道：有runc进程创建，用于向容器的父进程发送配置文件和接收子进程和孙进程id
 - process.root：rootfs
 - factory.root:由-root指定，保存容器状态,是宿主机的目录
 - Container.root: factory.root + 容器id，是宿主机的目录
