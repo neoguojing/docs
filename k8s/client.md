@@ -4,10 +4,45 @@
 
 ## 关键模块
 ###  cache
+```
+type ListerWatcher interface {
+	Lister
+	Watcher
+}
+
+type ListWatch struct {
+	ListFunc  ListFunc
+	WatchFunc WatchFunc
+	// DisableChunking requests no chunking for this list watcher.
+	DisableChunking bool
+}
+type Controller interface {
+	// Run does two things.  One is to construct and run a Reflector
+	// to pump objects/notifications from the Config's ListerWatcher
+	// to the Config's Queue and possibly invoke the occasional Resync
+	// on that Queue.  The other is to repeatedly Pop from the Queue
+	// and process with the Config's ProcessFunc.  Both of these
+	// continue until `stopCh` is closed.
+	Run(stopCh <-chan struct{})
+
+	// HasSynced delegates to the Config's Queue
+	HasSynced() bool
+
+	// LastSyncResourceVersion delegates to the Reflector when there
+	// is one, otherwise returns the empty string
+	LastSyncResourceVersion() string
+}
+```
 - NewIndexerInformer
 - NewSharedIndexInformer
-- NewListWatchFromClient
-- NewInformer 
+- NewListWatchFromClient : 返回ListWatch对象；入参需要传入封装好的clientset.CoreV1().RESTClient()
+- NewInformer : 返回一个本地cache和controller
+- > NewStore
+- > newInformer：
+- threadSafeMap 一个本地缓存：使用lock和map
+- > Indexers: 分类器：在原始数据上再构建一层map，相当于三级map
+- > indices: 存储分类之后的数据
+- > updateIndices: 删除indices老数据，并为新数据建立索引
 ### listener
 ### record
 - NewBroadcaster
