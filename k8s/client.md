@@ -75,6 +75,17 @@ type Type struct {
 - AddRateLimited：调用AddAfter，并用rateLimiter计算加入时间
 - NumRequeues：
 - newQueue ： 真正的队列创建接口
-- NewNamedRateLimitingQueue
-- NewDelayingQueue
+- NewNamedRateLimitingQueue：实现将数据加入队列的功能，限制10qps的流量
+- DefaultControllerRateLimiter：1.bucketlimit：10qps:限制重试的次数 
+- BucketRateLimiter：使用golang/time限流包
+- > When :返回拿到令牌需要的时间
+- ItemExponentialFailureRateLimiter：指数限流器：完成：baseDelay * 2^元素失败的次数
+- > When: 返回baseDelay * 2^元素失败的次数的值
+- > NumRequeues: 返回failures map的长度
+- > Forget: 从failures map 删除元素
+- MaxOfRateLimiter：组合多个限流器
+-  > When: 获取多个限流器中返回的等待时间最大的
+-  > NumRequeues:同上
+-  > Forget:依次调用所有的
+- NewDelayingQueue： 实现将元素延时加入队列的功能
 - 
