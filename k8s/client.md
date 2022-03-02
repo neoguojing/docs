@@ -68,7 +68,12 @@ type Type struct {
 - ShutDown：设置shuttingDown标记，并使用cond的广播唤醒所有阻塞的线程
 - ShuttingDown： 获取ShuttingDown的标记
 - AddAfter ： 有duration；小于等于0则直接放入队列；否则发送到waitingForAddCh一个channel中等待waitingLoop处理
-- waitingLoop：
+- waitingLoop：一个大循环
+- > 监听waitingForAddCh，若时间未到，则放入到优先队列（一个小顶堆）和一个map中（循环尝试将channel里数据读完）；
+- > 遍历优先队列：堆顶超时则出队加入队列，否则跳出当前循环；
+- > 计算堆顶的超时时间，并建立定时器；使用select监听定时器，直到超时
+- AddRateLimited：调用AddAfter，并用rateLimiter计算加入时间
+- NumRequeues：
 - newQueue ： 真正的队列创建接口
 - NewNamedRateLimitingQueue
 - NewDelayingQueue
