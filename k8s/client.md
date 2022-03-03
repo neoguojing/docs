@@ -3,6 +3,11 @@
 
 
 ## 关键模块
+### 关键概念
+- DeletedFinalStateUnknown： 对象被删除，但是watch deletion时间丢失；此时对象的状态为这个
+- ExplicitKey： 只有key，没有obj
+- metav1.Object ： 对象接口，如StatefulSet和Deployment均实现了该接口
+- api/core/v1/types.go：定义了Node，Volume等对象；这些类均实现了runtime.Object接口；Informer传入这些对象用于分类
 ###  cache
 ```
 type ListerWatcher interface {
@@ -32,17 +37,87 @@ type Controller interface {
 	// is one, otherwise returns the empty string
 	LastSyncResourceVersion() string
 }
+
+type SharedInformer interface {
+	// AddEventHandler adds an event handler to the shared informer using the shared informer's resync
+	// period.  Events to a single handler are delivered sequentially, but there is no coordination
+	// between different handlers.
+	AddEventHandler(handler ResourceEventHandler)
+	// AddEventHandlerWithResyncPeriod adds an event handler to the
+	// shared informer with the requested resync period; zero means
+	// this handler does not care about resyncs.  The resync operation
+	// consists of delivering to the handler an update notification
+	// for every object in the informer's local cache; it does not add
+	// any interactions with the authoritative storage.  Some
+	// informers do no resyncs at all, not even for handlers added
+	// with a non-zero resyncPeriod.  For an informer that does
+	// resyncs, and for each handler that requests resyncs, that
+	// informer develops a nominal resync period that is no shorter
+	// than the requested period but may be longer.  The actual time
+	// between any two resyncs may be longer than the nominal period
+	// because the implementation takes time to do work and there may
+	// be competing load and scheduling noise.
+	AddEventHandlerWithResyncPeriod(handler ResourceEventHandler, resyncPeriod time.Duration)
+	// GetStore returns the informer's local cache as a Store.
+	GetStore() Store
+	// GetController is deprecated, it does nothing useful
+	GetController() Controller
+	// Run starts and runs the shared informer, returning after it stops.
+	// The informer will be stopped when stopCh is closed.
+	Run(stopCh <-chan struct{})
+	// HasSynced returns true if the shared informer's store has been
+	// informed by at least one full LIST of the authoritative state
+	// of the informer's object collection.  This is unrelated to "resync".
+	HasSynced() bool
+	// LastSyncResourceVersion is the resource version observed when last synced with the underlying
+	// store. The value returned is not synchronized with access to the underlying store and is not
+	// thread-safe.
+	LastSyncResourceVersion() string
+
+	// The WatchErrorHandler is called whenever ListAndWatch drops the
+	// connection with an error. After calling this handler, the informer
+	// will backoff and retry.
+	//
+	// The default implementation looks at the error type and tries to log
+	// the error message at an appropriate level.
+	//
+	// There's only one handler, so if you call this multiple times, last one
+	// wins; calling after the informer has been started returns an error.
+	//
+	// The handler is intended for visibility, not to e.g. pause the consumers.
+	// The handler should return quickly - any expensive processing should be
+	// offloaded.
+	SetWatchErrorHandler(handler WatchErrorHandler) error
+}
+type SharedIndexInformer interface {
+	SharedInformer
+	// AddIndexers add indexers to the informer before it starts.
+	AddIndexers(indexers Indexers) error
+	GetIndexer() Indexer
+}
+
+// 向Infomer注册自定义数据处理函数
+type ResourceEventHandlerFuncs struct {
+	AddFunc    func(obj interface{})
+	UpdateFunc func(oldObj, newObj interface{})
+	DeleteFunc func(obj interface{})
+}
 ```
 - NewIndexerInformer
+- > NewIndexer：使用threadSafeMap存储，一般使用DeletionHandlingMetaNamespaceKeyFunc索引器（获取对象的Name作为key）
+- > newInformer
 - NewSharedIndexInformer
+- > NewIndexer
+- > 
 - NewListWatchFromClient : 返回ListWatch对象；入参需要传入封装好的clientset.CoreV1().RESTClient()
 - NewInformer : 返回一个本地cache和controller
-- > NewStore
+- > NewStore ： 基于threadSafeMap实现的本地缓存
 - > newInformer：
 - threadSafeMap 一个本地缓存：使用lock和map
 - > Indexers: 分类器：在原始数据上再构建一层map，相当于三级map
 - > indices: 存储分类之后的数据
 - > updateIndices: 删除indices老数据，并为新数据建立索引
+- newInformer：需要ListerWatcher监听对象变化；objType过滤key集合；ResourceEventHandler资源处理函数；Store一个本地缓存
 ### listener
 ### record
 - NewBroadcaster
