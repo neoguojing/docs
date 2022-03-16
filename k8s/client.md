@@ -8,7 +8,8 @@
 - ExplicitKey： 只有key，没有obj
 - metav1.Object ： 对象接口，如StatefulSet和Deployment均实现了该接口
 - api/core/v1/types.go：定义了Node，Volume等对象；这些类均实现了runtime.Object接口；Informer传入这些对象用于分类
-###  cache
+### Informer
+- 包含三个部分：Reflector、DeltaFIFO、LocalStore
 ```
 type ListerWatcher interface {
 	Lister
@@ -113,11 +114,61 @@ type ResourceEventHandlerFuncs struct {
 - NewInformer : 返回一个本地cache和controller
 - > NewStore ： 基于threadSafeMap实现的本地缓存
 - > newInformer：
+- newInformer：需要ListerWatcher监听对象变化；objType过滤key集合；ResourceEventHandler资源处理函数；Store一个本地缓存
+
+#### Reflector
+
+#### DeltaFIFO  维护一个事件队列
+- 保证每个对象被处理的唯一性
+- 可以查看某个对象的上一个操作
+```
+Added   DeltaType = "Added"
+Updated DeltaType = "Updated"
+Deleted DeltaType = "Deleted"
+// Replaced is emitted when we encountered watch errors and had to do a
+// relist. We don't know if the replaced object has changed.
+//
+// NOTE: Previous versions of DeltaFIFO would use Sync for Replace events
+// as well. Hence, Replaced is only emitted when the option
+// EmitDeltaTypeReplaced is true.
+Replaced DeltaType = "Replaced"
+// Sync is for synthetic events during a periodic resync.
+Sync DeltaType = "Sync"
+
+type Delta struct {
+	Type   DeltaType
+	Object interface{}
+}
+// 聚合了一个key的所有操作，按照顺序
+type Deltas []Delta
+type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先后顺序
+	// lock/cond protects access to 'items' and 'queue'.
+	lock sync.RWMutex
+	cond sync.Cond
+	//保存key 到Deltas的映射
+	items map[string]Deltas
+
+	//保存items种的key，维持key的顺序性；
+	queue []string
+	populated bool
+	initialPopulationCount int
+	//key获取函数
+	keyFunc KeyFunc
+	//affecting Delete(), Replace(), and Resync()
+	knownObjects KeyListerGetter
+	closed bool
+	emitDeltaTypeReplaced bool
+}
+```
+- queueActionLocked ： 插入新的delta；1.items不存在才会插入queue；2.然后更新items的值；其中会调用dedupDeltas，合并两个连续的delete事件；
+- Pop： 若队列无数据；则挂起；从queue出队，从items获取Deltas；然后从items删除；若process处理失败，则重新放入队列；返回一个Deltas，包含一个key的所有事件
+
+#### LocalStore
 - threadSafeMap 一个本地缓存：使用lock和map
 - > Indexers: 分类器：在原始数据上再构建一层map，相当于三级map
 - > indices: 存储分类之后的数据
 - > updateIndices: 删除indices老数据，并为新数据建立索引
-- newInformer：需要ListerWatcher监听对象变化；objType过滤key集合；ResourceEventHandler资源处理函数；Store一个本地缓存
+
 ### listener
 ### record
 - NewBroadcaster
@@ -198,4 +249,5 @@ type Type struct {
 -  > NumRequeues:同上
 -  > Forget:依次调用所有的
 - NewDelayingQueue： 实现将元素延时加入队列的功能
-- 
+
+### worker
