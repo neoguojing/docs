@@ -149,6 +149,14 @@ type Reflector struct {
 }
 
 ```
+- ListAndWatch： 
+- > Expired 或 Gone则设置资源不可用标志，pager.List从最后的资源版本开始list
+- > 将获得的object调用Replace放入DeltaFIFO；
+- > 调用Watch监听对象，设置最后版本、超时时间和bookmark；
+- > 调用watchHandler处理watch
+- watchHandler：
+- > 将数据放入DeltaFIFO
+- > bookmark 不断更新last resource 版本
 #### DeltaFIFO  维护一个事件队列
 - 保证每个对象被处理的唯一性
 - 可以查看某个对象的上一个操作和所有操作
