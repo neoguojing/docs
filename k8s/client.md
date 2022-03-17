@@ -120,7 +120,7 @@ type ResourceEventHandlerFuncs struct {
 
 #### DeltaFIFO  维护一个事件队列
 - 保证每个对象被处理的唯一性
-- 可以查看某个对象的上一个操作
+- 可以查看某个对象的上一个操作和所有操作
 ```
 Added   DeltaType = "Added"
 Updated DeltaType = "Updated"
@@ -161,7 +161,7 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 }
 ```
 - queueActionLocked ： 插入新的delta；1.items不存在才会插入queue；2.然后更新items的值；其中会调用dedupDeltas，合并两个连续的delete事件；
-- Pop： 若队列无数据；则挂起；从queue出队，从items获取Deltas；然后从items删除；若process处理失败，则重新放入队列；返回一个Deltas，包含一个key的所有事件
+- Pop： 若队列无数据；则挂起；从queue出队，从items获取Deltas；然后从items删除；若process处理失败，则重新放入队列；返回一个Deltas，包含一个key的所有事件；process是pop的入参，由调用方指定
 
 #### LocalStore
 - threadSafeMap 一个本地缓存：使用lock和map
