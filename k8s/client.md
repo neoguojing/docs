@@ -107,7 +107,7 @@ type ResourceEventHandlerFuncs struct {
 - NewIndexerInformer
 - > NewIndexer：使用threadSafeMap存储，一般使用DeletionHandlingMetaNamespaceKeyFunc索引器（获取对象的Name作为key）
 - > newInformer
-- NewSharedIndexInformer
+- NewSharedIndexInformer ： deploy等Infomer的基本实现
 - > NewIndexer
 - > 
 - NewListWatchFromClient : 返回ListWatch对象；入参需要传入封装好的clientset.CoreV1().RESTClient()
