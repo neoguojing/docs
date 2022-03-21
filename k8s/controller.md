@@ -15,7 +15,20 @@
 - > queue: 工作队列：默认使用NewNamedRateLimitingQueue
 - > 为deploymentInformer、replicaSetInformer、podInformer 注册回调函数
 - > 注册dLister、rsLister、podLister等，并更新同步状态
-- DeploymentController.Run:执行
+- DeploymentControlle.Run:执行
 - >WaitForNamedCacheSync :等待各个controller的同步状态HasSynced()为true；
 - > 启动k个工作线程：
 - > 工作线程从queue（工作队列）获取key,并调用状态同步函数同步状态。
+- DeploymentController.worker : 工作协程
+- > processNextWorkItem
+- > queue.Get
+- > syncHandler: 处理状态变更
+- > handleErr：处理错误
+- syncHandler：状态变更函数,实际执行syncDeployment
+- > 从dLister中获取v1.Deployment对象
+- > getReplicaSetsForDeployment 获取deployment拥有的rs
+- > getPodMapForDeployment获取deployment拥有的pod
+- > DeletionTimestamp被设置，表示正在被删除；执行syncStatusOnly
+- > checkPausedConditions检查暂停状态；若暂停，则sync同步状态
+- > isScalingEvent若是扩容事件；sync更新状态
+- > depolyment更新策略：1.rolloutRecreate 2.rolloutRolling
