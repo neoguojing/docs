@@ -235,3 +235,55 @@ type hiter struct {
 - > 重置bucket bptr i等值，返回
 - > 获取overflow的起始地址，跳转到next
 - mapclear： 清空map
+
+
+## sync.Map
+```
+type Map struct {
+    // 当涉及到脏数据(dirty)操作时候，需要使用这个锁
+    mu Mutex
+    
+    // read是一个只读数据结构，包含一个map结构，
+    // 读不需要加锁，只需要通过 atomic 加载最新的指正即可
+    read atomic.Value // readOnly
+    
+    // dirty 包含部分map的键值对，如果操作需要mutex获取锁
+    // 最后dirty中的元素会被全部提升到read里的map去
+    dirty map[interface{}]*entry
+    
+    // misses是一个计数器，用于记录read中没有的数据而在dirty中有的数据的数量。
+    // 也就是说如果read不包含这个数据，会从dirty中读取，并misses+1
+    // 当misses的数量等于dirty的长度，就会将dirty中的数据迁移到read中
+    misses int
+}
+
+// readOnly is an immutable struct stored atomically in the Map.read field.
+type readOnly struct {
+    // m包含所有只读数据，不会进行任何的数据增加和删除操作 
+    // 但是可以修改entry的指针因为这个不会导致map的元素移动
+    m       map[interface{}]*entry
+    
+    // 标志位，如果为true则表明当前read只读map的数据不完整，dirty map中包含部分数据
+    amended bool // true if the dirty map contains some key not in m.
+}
+
+type entry struct {
+    p unsafe.Pointer // *interface{}
+}
+```
+
+### load ： 迁移dirty到read
+- 先从read读取数据，存在则返回
+- 否则，加锁二次读取read（两次确认）；
+- 依然不存在，则从dirty读取；
+- 无论dirty中是否存在，都更新miss值；miss值等于dirty的长度，则迁移dirty到read；迁移完dirty等于nil和miss等于0
+### store 更新dirty；同时存在的情况需要都更新
+- read中存在，则尝试直接跟新值；
+- 不存在或者更新失败，则加锁：
+- read中再检查，存在：则更新read值，若未删除则需要更新到dirty
+- read中不存在，dirty中存在，则更新dirty
+- read和dirty中都不存在，则将值更新到dirty；若dirty中数据数据没有新值，则从read复制未删除数据；
+
+### delete  在read中软删除
+- 若key在read中，则标记为expunged，软删除
+- 不在read中，加锁，再检查一次；不存在，则在dirty中直接删除；
