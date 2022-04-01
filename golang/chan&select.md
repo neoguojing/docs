@@ -21,7 +21,7 @@
 - > 1.计算lockorder 和 pollorder，按照lockorder加锁
 - > 2.遍历pollorder，随机的选择一个可用的chan（右挂起的g，队列里有消息；或者关闭）跳转到对应的分支执行；
 - > 3.遍历完pollorder,发现没有就绪的chan；非阻塞（default），则解锁，返回索引-1
-- > 4.阻塞的select，则lockorder为顺序，遍历cases，将当前g挂到新建的sudog上，挂到每个chan的sendq/recvq，同时将sudog做为列表，挂到当前g的waiting参数上（表示当前g在这些sudog上等待）
+- > 4.阻塞的select，则lockorder为顺序，遍历cases，将当前g挂到新建的sudog上，挂到每个chan的sendq/recvq，同时将sudog做为列表，挂到当前g的waiting参数上（lockorder的顺序）（表示当前g在这些sudog上等待）
 - > 5.设置g的参数：parkingOnChan=1，调用gopark挂起当前g
 - > 6.g被唤醒，从gp.param 获取唤醒的sudog；设置g.waiting上所有sudog的状态
 - > 7.以lockorder遍历和g.waiting列表（此处列表顺序和lockorder顺序一致）：若唤醒的sudog和列表sudog相同，则找到唤醒g的chan的索引；否则，将sudog从chan的队列出队；
