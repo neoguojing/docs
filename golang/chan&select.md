@@ -4,7 +4,7 @@
 - cap等于0或者不填，为阻塞chan
 - buffer可以改善阻塞状态
 - nil chan写入/读取永久阻塞,在chansend 和 chanrecv中实现
-- closed的chan写入 panic上
+- closed的chan写入 panic;读取则立刻返回；
 - waitq从队列头出队
 - 关闭nil或closed的chan会panic
 - 关闭chan：将recvq和sendq的g，放入列表，依次调用goready唤醒
