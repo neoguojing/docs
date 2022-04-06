@@ -49,3 +49,27 @@ type broadcasterWatcher struct {
 - Watch：向watchers 注册一个broadcasterWatcher，并返回
 - Action： 向incoming注册一个事件
 - loop：消费incoming，并向所有watchers，发布该消息
+
+## eventBroadcasterImpl 继承Broadcaster
+```
+type eventBroadcasterImpl struct {
+	*watch.Broadcaster
+	sleepDuration time.Duration
+	options       CorrelatorOptions
+}
+```
+- NewRecorder：构建EventRecorder
+
+## EventRecorder 构建事件放入Broadcaster做分发
+- recorderImpl：实现EventRecorder；并继承Broadcaster
+```
+type recorderImpl struct { //实现EventRecorder
+	scheme *runtime.Scheme
+	source v1.EventSource
+	*watch.Broadcaster
+	clock clock.Clock
+}
+```
+- Event
+- Eventf：
+- AnnotatedEventf ： 和Eventf一样，只是添加了注释信息
