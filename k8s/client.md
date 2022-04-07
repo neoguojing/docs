@@ -10,10 +10,15 @@
 - 创建cacheMutationDetector：NewCacheMutationDetector
 - 创建：record.NewBroadcaster()和eventBroadcaster.NewRecorder
 - 创建workQueue：workqueue.NewNamedRateLimitingQueue
-- 注册ResourceEventHandler
+- 注册ResourceEventHandler: 为sharedProcessor注册processorListener，processorListener中绑定了ResourceEventHandler
 - 注册状态处理函数：syncDeployment和监听器等
 ### 运行
-
+- informer启动：sharedIndexInformer.Run
+- cacheMutationDetector启动：cacheMutationDetector.Run
+- sharedProcessor启动：sharedProcessor.Run
+- Reflector启动：
+- > 执行list，调用syncWith，更新runtime.Object和版本号到DeltaFIFO
+- > 启动重新同步定时器，定期调用DeltaFIFO.Resync同步数据
 ## 关键模块
 ### 关键概念
 - DeletedFinalStateUnknown： 对象被删除，但是watch deletion时间丢失；此时对象的状态为这个
@@ -215,7 +220,7 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 - Pop： 若队列无数据；则挂起；从queue出队，从items获取Deltas；然后从items删除；若process处理失败，则重新放入队列；返回一个Deltas，包含一个key的所有事件；process是pop的入参，由调用方指定
 - Replace:1.使用sync或replace添加对象；2.执行删除操作
 - > 批量添加对象到队列；并从队列中删除新添加对象中不存在的对象；
-- > knownObjects 是什么
+- > knownObjects： 是本地localcache中的值
 - 
 
 #### LocalStore
