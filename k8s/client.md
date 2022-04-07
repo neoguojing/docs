@@ -3,6 +3,15 @@
 
 ## 流程
 ### 启动流程
+- 创建client：ctx.ClientBuilder.ClientOrDie("deployment-controller")
+- 创建informer：NewSharedIndexInformer
+- 创建：sharedProcessor
+- 创建indexer：NewIndexer
+- 创建cacheMutationDetector：NewCacheMutationDetector
+- 创建：record.NewBroadcaster()和eventBroadcaster.NewRecorder
+- 创建workQueue：workqueue.NewNamedRateLimitingQueue
+- 注册ResourceEventHandler
+- 注册状态处理函数：syncDeployment和监听器等
 ### 运行
 
 ## 关键模块
