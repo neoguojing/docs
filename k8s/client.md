@@ -15,7 +15,8 @@
 ### 运行
 - informer启动：sharedIndexInformer.Run
 - cacheMutationDetector启动：cacheMutationDetector.Run: 将addedObjs复制给cachedObjs，addedObjs=nil；遍历cachedObjs，比较obj和copyObj是否相等，不相等则触发错误处理
-- sharedProcessor启动：sharedProcessor.Run：遍历listeners，调用run函数使用注册的ResourceEventHandler向worker队列添加数据;调用pop将分发的事件注入nextCh
+- sharedProcessor启动：sharedProcessor.Run：遍历listeners，调用run函数使用注册的ResourceEventHandler向worker队列添加数据;仅添加key到工作队列;
+- > 调用pop将分发的事件注入nextCh
 - Reflector启动：数据类型为runtime.Object
 - > 执行list，调用syncWith，更新runtime.Object和版本号到DeltaFIFO
 - > 启动重新同步定时器，定期调用DeltaFIFO.Resync从localCache中同步数据到DeltaFIFO
@@ -23,7 +24,17 @@
 - Controller启动：[]Delta
 - > 从DeltaFIFO出队，调用HandleDeltas处理[]Delta数组；失败则放入队列重试
 - > HandleDeltas遍历所有Delta数据，更新localCache，并调用processor.distribute向所有listener分发事件；对于Sync, Replaced, Added, Updated事件，则添加到cacheMutationDetector,对对象做深copy
-- 
+- 业务启动，以deployment为例：
+- WaitForNamedCacheSync调用deltaFIFO接口判断是否同步完毕；
+- 启动n个worker线程，从work队列出对key值，调用syncDeployment处理相关
+- syncDeployment：
+- > 从localCache，根据key获取Deployment对象
+- > 获取replicate和pod对象
+- > 处理暂停条件并更新对象
+- > 处理暂停事件
+- > 处理回滚事件
+- > 处理扩容/缩容事件
+- > 根据策略处理deployment创建事件
 ## 关键模块
 ### 关键概念
 - DeletedFinalStateUnknown： 对象被删除，但是watch deletion时间丢失；此时对象的状态为这个
@@ -237,7 +248,7 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 ### listener
 ### record
 - NewBroadcaster
-### util/workqueue
+### util/workqueue 只保存key
 - 接口定义
 ```
 type Interface interface {
