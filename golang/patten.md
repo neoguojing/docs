@@ -13,6 +13,33 @@ github.com/pkg/errors
 errors.Wrap(err, "read failed")
 errors.Cause(err)
 ```
+## 工厂模式
+```
+type SharedInformerFactory interface {
+	Apps() apps.Interface
+}
+
+type sharedInformerFactory struct {
+}
+
+func (f *sharedInformerFactory) Apps() apps.Interface {
+	return apps.New(f, f.namespace, f.tweakListOptions)
+}
+
+type Interface interface {
+	V1() v1.Interface
+}
+
+func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
+	return &group{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+func (g *group) V1() v1.Interface {
+	return v1.New(g.factory, g.namespace, g.tweakListOptions)
+}
+
+
+```
 
 ## build模式&&option 
 
