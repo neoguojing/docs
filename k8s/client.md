@@ -16,9 +16,13 @@
 - informer启动：sharedIndexInformer.Run
 - cacheMutationDetector启动：cacheMutationDetector.Run
 - sharedProcessor启动：sharedProcessor.Run
-- Reflector启动：
+- Reflector启动：数据类型为runtime.Object
 - > 执行list，调用syncWith，更新runtime.Object和版本号到DeltaFIFO
-- > 启动重新同步定时器，定期调用DeltaFIFO.Resync同步数据
+- > 启动重新同步定时器，定期调用DeltaFIFO.Resync从localCache中同步数据到DeltaFIFO
+- > 启动watch循环，从指定version开始watch，调用watchHandler，调用Add/Update/Delete向DeltaFIFO写入数据；BookMark则更新数据版本
+- Controller启动：[]Delta
+- > 从DeltaFIFO出队，调用HandleDeltas处理[]Delta数组；失败则放入队列重试
+- > 
 ## 关键模块
 ### 关键概念
 - DeletedFinalStateUnknown： 对象被删除，但是watch deletion时间丢失；此时对象的状态为这个
@@ -221,7 +225,7 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 - Replace:1.使用sync或replace添加对象；2.执行删除操作
 - > 批量添加对象到队列；并从队列中删除新添加对象中不存在的对象；
 - > knownObjects： 是本地localcache中的值
-- 
+- Resync：从localCache加载所有值到DeltaFIFO中，类型为SYNC
 
 #### LocalStore
 - threadSafeMap 一个本地缓存：使用lock和map
