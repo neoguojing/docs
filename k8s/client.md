@@ -14,15 +14,16 @@
 - 注册状态处理函数：syncDeployment和监听器等
 ### 运行
 - informer启动：sharedIndexInformer.Run
-- cacheMutationDetector启动：cacheMutationDetector.Run
-- sharedProcessor启动：sharedProcessor.Run
+- cacheMutationDetector启动：cacheMutationDetector.Run: 将addedObjs复制给cachedObjs，addedObjs=nil；遍历cachedObjs，比较obj和copyObj是否相等，不相等则触发错误处理
+- sharedProcessor启动：sharedProcessor.Run：遍历listeners，调用run函数使用注册的ResourceEventHandler向worker队列添加数据;调用pop将分发的事件注入nextCh
 - Reflector启动：数据类型为runtime.Object
 - > 执行list，调用syncWith，更新runtime.Object和版本号到DeltaFIFO
 - > 启动重新同步定时器，定期调用DeltaFIFO.Resync从localCache中同步数据到DeltaFIFO
 - > 启动watch循环，从指定version开始watch，调用watchHandler，调用Add/Update/Delete向DeltaFIFO写入数据；BookMark则更新数据版本
 - Controller启动：[]Delta
 - > 从DeltaFIFO出队，调用HandleDeltas处理[]Delta数组；失败则放入队列重试
-- > 
+- > HandleDeltas遍历所有Delta数据，更新localCache，并调用processor.distribute向所有listener分发事件；对于Sync, Replaced, Added, Updated事件，则添加到cacheMutationDetector,对对象做深copy
+- 
 ## 关键模块
 ### 关键概念
 - DeletedFinalStateUnknown： 对象被删除，但是watch deletion时间丢失；此时对象的状态为这个
