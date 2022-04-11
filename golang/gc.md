@@ -13,8 +13,8 @@
 - > stw ：确保上一轮的清扫工作完成（循环sweepone），清理sudog，syncpool和deferpool,计算gc参数
 - > mark：计算markroot的个数和job个数，标记tiny对象；开启写屏障（非白对象都会被标记为黑色）
 - > start world：唤醒sysmon，调度m执行p；schedule唤醒gcBgMarkWorker，执行标记任务gcDrain，标记根对象markroot和从gcw队列获取任务执行scanobject；
-- > gcMarkDone:将所有p的写屏障缓存刷入gcw，mallocgc调用gcAssistAlloc辅助一定部分的标记任务
-- > stw： 关闭写屏障，唤醒所有辅助gc的g，计算gc的扫描结果 gcMarkTermination重新扫描所有根对象。
+- > gcMarkDone:将所有p的写屏障缓存刷入gcw
+- > stw： 关闭写屏障，mallocgc调用gcAssistAlloc辅助一定部分的标记任务，计算gc的扫描结果 gcMarkTermination重新扫描所有根对象。
 - > _GCmarktermination：在g0上标记当前g
 - > _GCoff：唤醒sweep.g（后台sweep），唤醒work.sweepWaiters(在mark term 到 sweep切换时等待的g)
 - > start world:释放栈和清理所有p的mcache
