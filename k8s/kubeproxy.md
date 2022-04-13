@@ -23,4 +23,7 @@
 - linux 命令，建立资源集合，如IP
 - iptable -m set --match-set 使用set
 ### ipvs
+- 基于lvs：linux虚拟服务器，丰富的负载均衡功能，以及直接再内核态转发数据的功能
+- 核心概念：DS-负载均衡节点，对应的IP是DIP；VIP：一般是指DS的虚拟IP，后面可以放置多个；
+- 
 ### kernelspace
