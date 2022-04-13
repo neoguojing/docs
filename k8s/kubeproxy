@@ -1,0 +1,12 @@
+# kubeproxy
+
+##  proxy mode
+- ProxyModeUserspace   ProxyMode = "userspace" ： 即将被废弃
+-	ProxyModeIPTables    ProxyMode = "iptables" ： 更快
+-	ProxyModeIPVS        ProxyMode = "ipvs" ： 更快
+-	ProxyModeKernelspace ProxyMode = "kernelspace"
+
+### userspace
+### iptables
+### ipvs
+### kernelspace
