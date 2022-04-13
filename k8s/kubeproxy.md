@@ -18,5 +18,9 @@
 - > filter ： 包过滤，防火墙的主要功能实现；input，output，FORWARD
 - 链条：PREROUTING，INPUT ， FORWARD ，OUTPUT，POSTROUTING，使用-A/-I等指定
 - 规则：-d/-s 执行ip/域名；-dport/-sport指定端口，-j指定ACCEPT/DROP，-i执行接口,-p 指定协议；规则按照从上到下的优先级，最上面规则匹配到，则下层规则失效；
+
+### ipset
+- linux 命令，建立资源集合，如IP
+- iptable -m set --match-set 使用set
 ### ipvs
 ### kernelspace
