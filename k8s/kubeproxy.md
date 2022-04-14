@@ -39,4 +39,13 @@
 - 解决问题：当snat做转发发送到公网；然后返回时，路由器如何知道发给哪个PC？
 ### kernelspace
 
+## 控制链
+- KUBE-SERVICES
+- KUBE-MARK-MASQ
+- KUBE-NODE-PORT
+- KUBE-FIREWALL
+- KUBE-POSTROUTING
+- KUBE-NODE-PORT-TCP：ipset规则
+- flannel网卡
 
+## core dns
