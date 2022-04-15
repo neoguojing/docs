@@ -3,6 +3,10 @@
 - 替代品有：cluster DNS
 - watch apiserver，当监听到pod 或service变化时，修改本地的iptables规则或ipvs规则；
 - dns使用的是：coredns
+
+## 通用
+- Netlink套接字是用以实现用户进程与内核进程通信的一种特殊的进程间通信(IPC) ,也是网络应用程序与内核通信的最常用的接口。
+- unix.Socket(unix.AF_NETLINK, unix.SOCK_RAW|unix.SOCK_CLOEXEC,unix.NETLINK_GENERIC)
 ##  proxy mode
 - ProxyModeUserspace   ProxyMode = "userspace" ： 即将被废弃
 -	ProxyModeIPTables    ProxyMode = "iptables" ： 更快
@@ -33,7 +37,7 @@
 - 三种模式：NAT：ip层的修改，流量大时损耗大；DR：修改MAC地址，二层转发，要求一个以太网，效率最高；tun：隧道在ip层嵌套一层；
 - 负载均衡算法：轮询；加权轮询；最少连接；加权最少连接；
 - 操作使用ipvsadm，用户态管理ipvs的命令行：功能包括：1.创建VIP；2.为VIP添加后端服务地址
-
+- /proc/pid/task/tid/ns/net : 网络空间文件地址
 ### conntrack
 - 连接跟踪表：记录每个连接的源ip，目的ip和端口的等信息；
 - 解决问题：当snat做转发发送到公网；然后返回时，路由器如何知道发给哪个PC？
