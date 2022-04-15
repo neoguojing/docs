@@ -46,7 +46,7 @@ type broadcasterWatcher struct {
 	m       *Broadcaster
 }
 ```
-- Watch：向watchers 注册一个broadcasterWatcher，并返回
+- Watch：向watchers 注册一个broadcasterWatcher，并返回；注册时实际向incoming发送一个注册event，等待直到注册成功才返回；
 - Action： 向incoming注册一个事件
 - loop：消费incoming，并向所有watchers，发布该消息
 
