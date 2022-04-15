@@ -38,8 +38,21 @@
 - 负载均衡算法：轮询；加权轮询；最少连接；加权最少连接；
 - 操作使用ipvsadm，用户态管理ipvs的命令行：功能包括：1.创建VIP；2.为VIP添加后端服务地址
 - /proc/pid/task/tid/ns/net : 网络空间文件地址
-### conntrack
-- 连接跟踪表：记录每个连接的源ip，目的ip和端口的等信息；
+
+#### 前置条件 /proc/sys
+- net/ipv4/conf/all/route_localnet：启动127/8地址作为源或者目的地址
+- net/bridge/bridge-nf-call-iptables：二层的网桥在转发包时也会被iptables的FORWARD（三层）规则所过滤
+- net.ipv4.vs.conntrack：开启conntrack
+- net/ipv4/vs/conn_reuse_mode= 0：设置端口可以重用 
+- net/ipv4/vs/expire_nodest_conn=1：后端服务不可用，则直接结束调连接；
+- net/ipv4/vs/expire_quiescent_template=1:调度的后端服务器权重为0会立即使持久连接过期，并被发送到新的服务器上
+- net/ipv4/ip_forward=1：允许数据包转发
+- net/ipv4/conf/all/arp_ignore=1:只响应目的IP地址为接收网卡上的本地地址的arp请求
+- net/ipv4/conf/all/arp_announce=2:忽略IP数据包的源IP地址，选择该发送网卡上最合适的本地地址作为arp请求的源IP地址
+- 
+#### ipvs的优雅关闭问题：短连接，高并发的情况下的延时问题：
+### conntrack 工作在三层网络
+- 连接跟踪表：记录每个连接的源ip，目的ip和端口的等信息；回报时匹配规则进行自动snat
 - 解决问题：当snat做转发发送到公网；然后返回时，路由器如何知道发给哪个PC？
 ### kernelspace
 
