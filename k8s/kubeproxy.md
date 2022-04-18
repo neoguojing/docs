@@ -55,6 +55,9 @@
 ### conntrack 工作在三层网络
 - 连接跟踪表：记录每个连接的源ip，目的ip和端口的等信息；回报时匹配规则进行自动snat
 - 解决问题：当snat做转发发送到公网；然后返回时，路由器如何知道发给哪个PC？
+- /proc/sys/net/netfilter/nf_conntrack_max：设置最大记录的连接数个数
+- /proc/sys/net/netfilter/nf_conntrack_tcp_timeout_established：设置建立连接的超时时间
+- /proc/sys/net/netfilter/nf_conntrack_tcp_timeout_close_wait：设置连接关闭等待时间
 ### kernelspace
 
 ## 控制链
