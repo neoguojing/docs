@@ -75,7 +75,18 @@
 - 获取本地ip地址集合
 - 统计无用的service集合
 - createAndLinkeKubeChain：创建和链接规则链
-- > 
+- > iptable -t nat -N KUBE-MARK-DROP  //创建丢弃自定义链
+- > iptable -t nat -N KUBE-SERVICES
+- > iptable -t nat -N KUBE-POSTROUTING
+- > iptable -t nat -N KUBE-FIREWALL
+- > iptable -t nat -N KUBE-NODE-PORT
+- > iptable -t nat -N KUBE-LOAD-BALANCER
+- > iptable -t nat -N KUBE-MARK-MASQ
+- > iptable -t filter -N KUBE-FORWARD
+- > iptable -t nat -I OUTPUT -j KUBE-SERVICES   -m comment --comment
+- > iptable -t nat -I PREROUTING -j KUBE-SERVICES   -m comment --comment
+- > iptable -t nat -I POSTROUTING -j KUBE-POSTROUTING   -m comment --comment
+- > iptable -t filter -I FORWARD -j KUBE-FORWARD   -m comment --comment
 - 创建和获取kube-ipvs0
 - 依据ipsetInfo所有的ipset
 - 判断是否有nodeport创建，有则找到所有nodeip
