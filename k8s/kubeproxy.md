@@ -28,6 +28,7 @@
 - DNAT：对IP报文的目的地址做转换转换公网地址为内网地址
 - MASQUERADE：地址伪装；自动读取网卡地址，实现自动化的SNAT转换
 - MARK功能可以用于标记网络数据包，用于标记数据包。在一些不同的table或者chain之间需要协同处理某一个数据包时尤其有用
+- iptables restore：回复备份的配置
 ### ipset
 - linux 命令，建立资源集合，如IP
 - iptable -m set --match-set 使用set
@@ -70,5 +71,19 @@
 - KUBE-NODE-PORT-TCP：ipset规则
 - flannel网卡
 
-### 
+### syncProxyRules
+- 获取本地ip地址集合
+- 统计无用的service集合
+- createAndLinkeKubeChain：创建和链接规则链
+- > 
+- 创建和获取kube-ipvs0
+- 依据ipsetInfo所有的ipset
+- 判断是否有nodeport创建，有则找到所有nodeip
+- 遍历proxier.serviceMap，构建service规则
+- 同步ipset配置，重新设置相关的集合
+- writeIptablesRules：刷写基于ipset的规则
+- cleanLegacyService：清理legacy服务
+- serviceHealthServer.SyncServices和serviceHealthServer.SyncEndpoints
+- conntrack.ClearEntriesForIP：清理UDP记录
+- deleteEndpointConnections
 ## core dns
