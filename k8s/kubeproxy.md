@@ -22,6 +22,7 @@
 - > nat : 网络地址转换；PREROUTING，OUTPUT，POSTROUTING
 - > filter ： 包过滤，防火墙的主要功能实现；input，output，FORWARD
 - 链条：PREROUTING，INPUT ， FORWARD ，OUTPUT，POSTROUTING，使用-A/-I等指定
+- 自定义chain进行规则分类：iptable -t nat -N KUBE-MARK-DROP
 - 规则：-d/-s 执行ip/域名；-dport/-sport指定端口，-j指定ACCEPT/DROP，-i执行接口,-p 指定协议；规则按照从上到下的优先级，最上面规则匹配到，则下层规则失效；
 - SNAT：对ip报文的源地址做转换；家里网络访问公网资源，经过路由器时，内网地址192.XXX被转换为公网地址；
 - DNAT：对IP报文的目的地址做转换转换公网地址为内网地址
@@ -69,4 +70,5 @@
 - KUBE-NODE-PORT-TCP：ipset规则
 - flannel网卡
 
+### 
 ## core dns
