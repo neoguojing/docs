@@ -28,6 +28,7 @@
 - DNAT：对IP报文的目的地址做转换转换公网地址为内网地址
 - MASQUERADE：地址伪装；自动读取网卡地址，实现自动化的SNAT转换
 - MARK功能可以用于标记网络数据包，用于标记数据包。在一些不同的table或者chain之间需要协同处理某一个数据包时尤其有用
+- return:返回上一个chain，然后执行下一条规则
 - iptables restore：回复备份的配置
 ### ipset
 - linux 命令，建立资源集合，如IP
@@ -87,6 +88,16 @@
 - > iptable -t nat -I PREROUTING -j KUBE-SERVICES   -m comment --comment
 - > iptable -t nat -I POSTROUTING -j KUBE-POSTROUTING   -m comment --comment
 - > iptable -t filter -I FORWARD -j KUBE-FORWARD   -m comment --comment
+- > iptable -A KUBE-POSTROUTING -m set --match-set KUBE-LOOP-BACK dst,dst,src -j MASQUERADE 
+- > iptable -A KUBE-SERVICES  -m set --match-set KUBE-LOAD-BALANCER dst,dst -j KUBE-LOAD-BALANCER 
+- > iptable -A KUBE-LOAD-BALANCER   -m set --match-set KUBE-LOAD-BALANCER-FW dst,dst -j KUBE-FIREWALL
+- > iptable -A KUBE-FIREWALL   -m set --match-set KUBE-LOAD-BALANCER-SOURCE-CIDR dst,dst,src -j RETURN
+- > iptable -A KUBE-FIREWALL   -m set --match-set KUBE-LOAD-BALANCER-SOURCE-IP dst,dst,src -j RETURN
+- > iptable -A KUBE-LOAD-BALANCER   -m set --match-set KUBE-LOAD-BALANCER-LOCAL dst,dst -j RETURN
+- > iptable -A KUBE-NODE-PORT -m set --match-set KUBE-NODE-PORT-LOCAL-TCP dst -p tcp -j RETURN
+- > iptable -A KUBE-NODE-PORT -m set --match-set KUBE-NODE-PORT-TCP dst -p tcp -j KUBE-MARK-MASQ
+- > iptable -A KUBE-NODE-PORT -m set --match-set KUBE-NODE-PORT-LOCAL-UDP dst -p udp -j RETURN
+- > iptable -A KUBE-NODE-PORT -m set --match-set KUBE-NODE-PORT-UDP dst -p udp -j KUBE-MARK-MASQ
 - 创建和获取kube-ipvs0
 - 依据ipsetInfo所有的ipset
 - 判断是否有nodeport创建，有则找到所有nodeip
