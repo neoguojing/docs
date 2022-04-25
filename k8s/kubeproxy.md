@@ -84,6 +84,7 @@
 - > iptable -t nat -N KUBE-LOAD-BALANCER
 - > iptable -t nat -N KUBE-MARK-MASQ
 - > iptable -t filter -N KUBE-FORWARD
+- 
 - > iptable -t nat -I OUTPUT -j KUBE-SERVICES   -m comment --comment
 - > iptable -t nat -I PREROUTING -j KUBE-SERVICES   -m comment --comment
 - > iptable -t nat -I POSTROUTING -j KUBE-POSTROUTING   -m comment --comment
@@ -98,6 +99,19 @@
 - > iptable -A KUBE-NODE-PORT -m set --match-set KUBE-NODE-PORT-TCP dst -p tcp -j KUBE-MARK-MASQ
 - > iptable -A KUBE-NODE-PORT -m set --match-set KUBE-NODE-PORT-LOCAL-UDP dst -p udp -j RETURN
 - > iptable -A KUBE-NODE-PORT -m set --match-set KUBE-NODE-PORT-UDP dst -p udp -j KUBE-MARK-MASQ
+- > iptable -A KUBE-SERVICES  -m set --match-set KUBE-CLUSTER-IP dst,dst -j KUBE-MARK-MASQ
+- > iptable -A KUBE-SERVICES  -m set --match-set KUBE-EXTERNAL-IP dst,dst -j KUBE-MARK-MASQ
+- > iptable -A KUBE-SERVICES  -m addrtype  --dst-type LOCAL -j KUBE-NODE-PORT //addrtype地址类型匹配模块
+- > iptable -A KUBE-LOAD-BALANCER  -j KUBE-MARK-MASQ
+- > iptable -A KUBE-FIREWALL  -j KUBE-MARK-DROP
+- > iptable -A KUBE-SERVICES -m set --match-set KUBE-CLUSTER-IP dst -j ACCEPT
+- > iptable -A KUBE-SERVICES -m set --match-set KUBE-LOAD-BALANCER dst -j ACCEPT
+- > iptable -A KUBE-FORWARD -m mark --mark masqueradeMark/masqueradeMark -j ACCEPT
+- > iptable -A KUBE-FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+- > iptable -A KUBE-POSTROUTING -m mark !--mark masqueradeMark/masqueradeMark -j RETURN 
+- > iptable -A KUBE-POSTROUTING -j MARK --xor-mark masqueradeMark
+- > iptable -A KUBE-POSTROUTING -j MASQUERADE --random-fully
+- > iptable -A KUBE-MARK-MASQ -j MARK --or-mark masqueradeMark
 - 创建和获取kube-ipvs0
 - 依据ipsetInfo所有的ipset
 - 判断是否有nodeport创建，有则找到所有nodeip
