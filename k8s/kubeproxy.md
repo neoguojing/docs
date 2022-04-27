@@ -5,7 +5,7 @@
 - dns使用的是：coredns
 - dummy网卡：ip link add kube-ipvs0 type dummy 类似loopback 接口，但是可以创建任意多个
 - DefaultDummyDevice = "kube-ipvs0"：1.主机内通信；2.将service ip绑定到该设备，防止物理接口变动影响服务；
-
+- hairpin mode：bridge不允许包从收到包的端口发出，比如bridge从一个端口收到一个广播报文后，会将其广播到所有其他端口。bridge的某个端口打开hairpin mode后允许从这个端口收到的包仍然从这个端口发出；brctl hairpin <bridge> <port> {on|off} turn hairpin on/off
 ## 通用
 - Netlink套接字是用以实现用户进程与内核进程通信的一种特殊的进程间通信(IPC) ,也是网络应用程序与内核通信的最常用的接口。
 - unix.Socket(unix.AF_NETLINK, unix.SOCK_RAW|unix.SOCK_CLOEXEC,unix.NETLINK_GENERIC)
