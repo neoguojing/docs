@@ -89,8 +89,14 @@
 - 创建和获取kube-ipvs0
 - 依据ipsetInfo所有的ipset
 - 判断是否有nodeport创建，有则找到所有nodeip
-- 遍历proxier.serviceMap，构建service规则
-- 同步ipset配置，重新设置相关的集合
+- 遍历proxier.serviceMap(svcName,svc)，构建service规则
+- > 遍历endpointsMap[svcName]，将endpoint放入KUBE-LOOP-BACK ipset
+- > 将svc信息放入KUBE-CLUSTER-IP
+- > 调用syncService构建虚拟服务,成功则调用syncEndpoint构建真实服务
+- > 遍历svcInfo.ExternalIPStrings，若只是本地endpoint，则放入KUBE-EXTERNAL-IP-LOCAL集合，否则放入KUBE-EXTERNAL-IP（需要经过filter链做转发）,调用syncService和syncEndpoint构建ipvs服务
+- > 遍历svcInfo.LoadBalancerIPStrings，同上，放入KUBE-LOAD-BALANCER或者KUBE-LOAD-BALANCER-LOCAL或者KUBE-LOAD-BALANCER-FW或者KUBE-LOAD-BALANCER-SOURCE-CIDR集合并构建ipvs服务
+- > 遍历nodepoint集合，添加到nodeport相关ipset，并构建ipvs服务
+- 调用ipset命令同步ipset配置，重新设置相关的集合
 - writeIptablesRules：刷写基于ipset的规则
 - > iptable -t nat -I OUTPUT -j KUBE-SERVICES   -m comment --comment
 - > iptable -t nat -I PREROUTING -j KUBE-SERVICES   -m comment --comment
@@ -123,4 +129,10 @@
 - serviceHealthServer.SyncServices和serviceHealthServer.SyncEndpoints
 - conntrack.ClearEntriesForIP：清理UDP记录
 - deleteEndpointConnections
+### Proxier.syncService
+- 调用ipvs,添加或者更新虚拟服务
+- 绑定service ip到kube-ipvs0设备
+### Proxier.syncEndpoint
+- 调用ipvs添加新的endpoint到realserver
+- 将待删除的endpoint放入gracefuldeleteManager优雅删除
 ## core dns
