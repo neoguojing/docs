@@ -84,7 +84,12 @@
 - > iptable -t nat -N KUBE-LOAD-BALANCER
 - > iptable -t nat -N KUBE-MARK-MASQ
 - > iptable -t filter -N KUBE-FORWARD
-- 
+- 创建和获取kube-ipvs0
+- 依据ipsetInfo所有的ipset
+- 判断是否有nodeport创建，有则找到所有nodeip
+- 遍历proxier.serviceMap，构建service规则
+- 同步ipset配置，重新设置相关的集合
+- writeIptablesRules：刷写基于ipset的规则
 - > iptable -t nat -I OUTPUT -j KUBE-SERVICES   -m comment --comment
 - > iptable -t nat -I PREROUTING -j KUBE-SERVICES   -m comment --comment
 - > iptable -t nat -I POSTROUTING -j KUBE-POSTROUTING   -m comment --comment
@@ -112,12 +117,6 @@
 - > iptable -A KUBE-POSTROUTING -j MARK --xor-mark masqueradeMark
 - > iptable -A KUBE-POSTROUTING -j MASQUERADE --random-fully
 - > iptable -A KUBE-MARK-MASQ -j MARK --or-mark masqueradeMark
-- 创建和获取kube-ipvs0
-- 依据ipsetInfo所有的ipset
-- 判断是否有nodeport创建，有则找到所有nodeip
-- 遍历proxier.serviceMap，构建service规则
-- 同步ipset配置，重新设置相关的集合
-- writeIptablesRules：刷写基于ipset的规则
 - cleanLegacyService：清理legacy服务
 - serviceHealthServer.SyncServices和serviceHealthServer.SyncEndpoints
 - conntrack.ClearEntriesForIP：清理UDP记录
