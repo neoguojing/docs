@@ -3,6 +3,8 @@
 - 替代品有：cluster DNS
 - watch apiserver，当监听到pod 或service变化时，修改本地的iptables规则或ipvs规则；
 - dns使用的是：coredns
+- dummy网卡：ip link add kube-ipvs0 type dummy 类似loopback 接口，但是可以创建任意多个
+- DefaultDummyDevice = "kube-ipvs0"：1.主机内通信；2.将service ip绑定到该设备，防止物理接口变动影响服务；
 
 ## 通用
 - Netlink套接字是用以实现用户进程与内核进程通信的一种特殊的进程间通信(IPC) ,也是网络应用程序与内核通信的最常用的接口。
