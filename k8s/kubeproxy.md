@@ -45,7 +45,7 @@
 
 #### 前置条件 /proc/sys
 - net/ipv4/conf/all/route_localnet：启动127/8地址作为源或者目的地址
-- net/bridge/bridge-nf-call-iptables：二层的网桥在转发包时也会被iptables的FORWARD（三层）规则所过滤
+- net/bridge/bridge-nf-call-iptables：二层的网桥在转发包时也会被iptables的FORWARD（三层）规则所过滤,解决linux网桥（二层）回包无法使用conntrack（三层）的问题
 - net.ipv4.vs.conntrack：开启conntrack
 - net/ipv4/vs/conn_reuse_mode= 0：设置端口可以重用 
 - net/ipv4/vs/expire_nodest_conn=1：后端服务不可用，则直接结束调连接；
