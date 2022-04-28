@@ -13,5 +13,11 @@
 - DockerOptions
 
 
+## 容器创建
+- Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
+- 请求发送给Docker Daemon
+- 请求发送给containerd 
+- 调用OCI接口创建一个 containerd-shim进程负责创建容器，并成为容器进程的父进程，负责采集容器状态等上报给containerd 
+- 调用runC负责创建容器，runc在容器创建完成之后退出；
 ## PodSandbox
-
+- RunPodSandbox 
