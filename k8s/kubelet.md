@@ -7,6 +7,9 @@
 
 - kube-controller-manager/app/plugins.go 
 
+## 问题
+- featureGate ：是什么？ k8s.io/component-base/featuregate/feature_gate.go
+- 
 ## depend
 - VolumePlugins
 - DynamicPluginProber
