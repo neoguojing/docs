@@ -19,7 +19,7 @@
 - 构建kubeclient:从apiserver获取pod信息
 - 构建EventClient
 - 构建HeartbeatClient
-- 获取cgroup：1.
+- 获取cgroup：1.pod使用的cgroup，2.kubelet的cgroup，3.runtime使用的cgroup,4.系统cgroup
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
