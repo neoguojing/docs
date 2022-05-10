@@ -62,7 +62,7 @@
 - > 监听pleg chan，处理pod状态的同步和删除
 - > 每秒中检查pod同步状态
 - > 没2s检查处理pod的cleanup
-- > 
+- > 监听livenessManager的chan，执行pod状态同步
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
