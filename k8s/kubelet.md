@@ -57,6 +57,11 @@
 - > admitHandlers
 - > softAdmitHandlers
 - > shutdownManager
+- syncLoop 主循环：
+- > 监听pod配置变化（来源于NewSourceApiserver）：处理pod的add/update/delete/RECONCILE等
+- > 监听pleg chan，处理pod状态的同步和删除
+- > 每秒中检查pod同步状态
+- > 没2s检查处理pod的cleanup
 - > 
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
