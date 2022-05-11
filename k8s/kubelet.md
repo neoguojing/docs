@@ -52,7 +52,7 @@
 - > VolumePluginMgr
 - > pluginManager
 - > volumeManager
-- > podWorkers: ；实现podWorkers，维护pod对象集合，工作队列和pod状态缓存等；由syncloop调用dispatchWork调用UpdatePod接口，为每个新建的pod启动一个managePodLoop协程，用于监听UpdatePodOptions管道执行相关状态同步；
+- > podWorkers: ；实现podWorkers，每个pod一个协程，维护pod对象集合，工作队列和pod状态缓存等；由syncloop调用dispatchWork调用UpdatePod接口，为每个新建的pod启动一个managePodLoop协程，用于监听UpdatePodOptions管道执行相关状态同步；
 - > nodeLeaseController
 - > admitHandlers
 - > softAdmitHandlers
@@ -68,6 +68,7 @@
 - 提供：/pods /metrics /stat 等接口
 - 提供debug接口
 ### pod管理
+- 操作：SyncPodSync，SyncPodUpdate，SyncPodCreate，SyncPodKill
 - 状态： Pending，Running，Succeeded（所有容器正常退出），Failed（所有容器退出，但是退出时有异常），Unknown（pod状态无法获取）
 - mirrorpod：非apiserver来源的pod（static pod），需要做一个镜像和原本staticpod一样，mirror pod的状态回上报apiserver
 ```
@@ -79,7 +80,8 @@ type Pod struct {
 }
 ```
 - HandlePodAdditions
-- > 
+- > 启动podworker协程，读取UpdatePodOptions管道的内容，调用syncPod做状态同步
+- HandlePodSyncs: 从podmanager获取所有pod，调用podWorkers.UpdatePod，将操作信息写入对应podworker的UpdatePodOptions管道，处理同上
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
