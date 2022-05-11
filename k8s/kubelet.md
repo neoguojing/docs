@@ -63,6 +63,10 @@
 - > 每秒中检查pod同步状态
 - > 没2s检查处理pod的cleanup
 - > 监听livenessManager的chan，执行pod状态同步
+
+### ListenAndServe
+- 提供：/pods /metrics /stat 等接口
+- 提供debug接口
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
