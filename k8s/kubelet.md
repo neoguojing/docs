@@ -40,7 +40,7 @@
 - > livenessManager
 - > startupManager
 - > podManager：实现：basicManager:维护内存pod集合，以及提供secret，configmap的manager；实现pod的增删改查；
-- > statusManager
+- > statusManager： 维护kubeclient、pod状态集合；Start启动之后，监听podStatusChannel，向apiserver同步状态；
 - > runtimeClassManager
 - > kubeGenericRuntimeManager
 - > CRIStatsProvider
@@ -52,7 +52,7 @@
 - > VolumePluginMgr
 - > pluginManager
 - > volumeManager
-- > podWorkers
+- > podWorkers: ；实现podWorkers，维护pod对象集合，工作队列和pod状态缓存等；由syncloop调用dispatchWork调用UpdatePod接口，为每个新建的pod启动一个managePodLoop协程，用于监听UpdatePodOptions管道执行相关状态同步；
 - > nodeLeaseController
 - > admitHandlers
 - > softAdmitHandlers
