@@ -39,7 +39,7 @@
 - > configMapManager
 - > livenessManager
 - > startupManager
-- > podManager
+- > podManager：实现：basicManager:维护内存pod集合，以及提供secret，configmap的manager；实现pod的增删改查；
 - > statusManager
 - > runtimeClassManager
 - > kubeGenericRuntimeManager
@@ -69,6 +69,7 @@
 - 提供debug接口
 ### pod管理
 - 状态： Pending，Running，Succeeded（所有容器正常退出），Failed（所有容器退出，但是退出时有异常），Unknown（pod状态无法获取）
+- mirrorpod：非apiserver来源的pod（static pod），需要做一个镜像和原本staticpod一样，mirror pod的状态回上报apiserver
 ```
 type Pod struct {
 	metav1.TypeMeta `json:",inline"` //kind和apiversion
