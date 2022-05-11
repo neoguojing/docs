@@ -67,11 +67,24 @@
 ### ListenAndServe
 - 提供：/pods /metrics /stat 等接口
 - 提供debug接口
+### pod管理
+- 状态： Pending，Running，Succeeded（所有容器正常退出），Failed（所有容器退出，但是退出时有异常），Unknown（pod状态无法获取）
+```
+type Pod struct {
+	metav1.TypeMeta `json:",inline"` //kind和apiversion
+	metav1.ObjectMeta //对象元信息：name/namespace/uid/lables等信息
+	Spec PodSpec //期望状态的描述：数据卷/容器/node信息/调度策略信息等
+	Status PodStatus //状态信息：pod状态/ip信息/容器状态信息等
+}
+```
+- HandlePodAdditions
+- > 
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
 - 请求发送给containerd 
 - 调用OCI接口创建一个 containerd-shim进程负责创建容器，并成为容器进程的父进程，负责采集容器状态等上报给containerd 
 - 调用runC负责创建容器，runc在容器创建完成之后退出；
+
 ## PodSandbox
 - RunPodSandbox 
