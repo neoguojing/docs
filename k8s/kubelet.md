@@ -82,6 +82,14 @@ type Pod struct {
 - HandlePodAdditions
 - > 启动podworker协程，读取UpdatePodOptions管道的内容，调用syncPod做状态同步
 - HandlePodSyncs: 从podmanager获取所有pod，调用podWorkers.UpdatePod，将操作信息写入对应podworker的UpdatePodOptions管道，处理同上
+### syncPod pod状态同步主逻辑：
+#### SyncPodKill状态处理：
+- statusManager.SetPodStatus 设置状态
+- Kublete.killPod:kubeGenericRuntimeManager.KillPod依次此执行: 
+- > internalLifecycle.PreStopContainer
+- > runtimeService.StopContainer
+- > runtimeService.StopPodSandbox
+- 
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
