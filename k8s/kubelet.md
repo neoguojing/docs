@@ -7,6 +7,10 @@
 - CNI : 容器网络接口：内置插件如p2p，bridge,负责创建pause容器网络设备eth0，并绑定IP，第三方插件flannel,calico，解决容器跨主机通信问题
 - Network Namespace的网络栈包括：网卡（Network interface）、回环设备（Loopback Device）、路由表（Routing Table）和iptables规则。
 - kube-controller-manager/app/plugins.go 
+- init container：在app容器运行前运行的容器，用于装备工具或者启动脚本等不在app容器运行的容器；只能一个一个的运行，运行失败整个pod失败；运行需要退出
+- > 主要用于访问secret和进行一些不安全的操作
+- > deploy中申明initContainers
+- > 重启需要重新执行
 ## CNI 原理
 - CNIBinDir:   "/opt/cni/bin",
 - CNIConfDir:  "/etc/cni/net.d",
@@ -89,7 +93,7 @@ type Pod struct {
 - > internalLifecycle.PreStopContainer
 - > runtimeService.StopContainer
 - > runtimeService.StopPodSandbox
-- 
+#### 
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
