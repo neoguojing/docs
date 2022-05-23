@@ -12,6 +12,10 @@
 - > deploy中申明initContainers
 - > 重启需要重新执行
 - readiness：用户自定义状态：通过spec的readinessGates注入
+- probe：
+- > livenessProbe: 容器是否运行，false则kill pod
+- > readinessProbe : 容器是否可以响应请求，false则从service移除改pod
+- > startupProbe: 容器内的进程是否启动，false则kill pod
 - 
 ## CNI 原理
 - CNIBinDir:   "/opt/cni/bin",
