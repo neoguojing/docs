@@ -11,6 +11,8 @@
 - > 主要用于访问secret和进行一些不安全的操作
 - > deploy中申明initContainers
 - > 重启需要重新执行
+- readiness：用户自定义状态：通过spec的readinessGates注入
+- 
 ## CNI 原理
 - CNIBinDir:   "/opt/cni/bin",
 - CNIConfDir:  "/etc/cni/net.d",
