@@ -105,6 +105,8 @@ type Pod struct {
 - makePodDataDirs： 创建pod目录：pod目录，卷目录和插件目录
 - volumeManager.WaitForAttachAndMount： 等待卷挂载完成
 - containerRuntime.SyncPod：同步pod状态
+
+### 卷管理
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
