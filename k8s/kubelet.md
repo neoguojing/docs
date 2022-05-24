@@ -107,6 +107,8 @@ type Pod struct {
 - containerRuntime.SyncPod：同步pod状态
 
 ### 卷管理
+
+- Mounter
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
