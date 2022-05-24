@@ -107,7 +107,9 @@ type Pod struct {
 - containerRuntime.SyncPod：同步pod状态
 
 ### 卷管理
-
+- pkg/volume/ ： 实现了各种存储包括：rdb,nfs等插件，均实现了VolumePlugin接口
+- VolumePlugin：卷插件接口，定义Init，NewMounter（返回Mounter接口）
+- OperationExecutor： 定义一系列卷attach/mount操作，底层依赖plugin的实现；
 - Mounter: 定义Mount/UnMount等接口，底层使用mount命令或者systemd-run --description=... --scope -- mount -t 实现挂载
 - operationExecutor
 ## 容器创建
