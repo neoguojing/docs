@@ -108,10 +108,13 @@ type Pod struct {
 
 ### 卷管理
 - pkg/volume/ ： 实现了各种存储包括：rdb,nfs等插件，均实现了VolumePlugin接口
-- VolumePlugin：卷插件接口，定义Init，NewMounter（返回Mounter接口）
-- OperationExecutor： 定义一系列卷attach/mount操作，底层依赖plugin的实现；
+- VolumePlugin：卷插件接口，定义Init，NewMounter（返回Mounter接口）；
+- VolumePluginMgr：负责管理插件，提供依据名称等查找VolumePlugin的函数
+- OperationExecutor： 定义一系列卷attach/mount操作，底层依赖pkg/volume/的实现；
 - Mounter: 定义Mount/UnMount等接口，底层使用mount命令或者systemd-run --description=... --scope -- mount -t 实现挂载
-- operationExecutor
+- operationExecutor：定义AttachVolume/MountVolume等接口，依赖NestedPendingOperations和OperationGenerator实现
+- NestedPendingOperations：处理pending的op，防止多个相同的操作执行，主要包含operation数组；定义Run和Wait等接口
+- OperationGenerator：生成处理函数，和operationExecutor解绑；依据Volume名称和Node等生成操作函数，作为NestedPendingOperations函数的入参，被调用
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
