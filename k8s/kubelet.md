@@ -107,6 +107,8 @@ type Pod struct {
 - containerRuntime.SyncPod：同步pod状态
 
 ### 卷管理
+- VolumeManager：负责管理一系列的loop，异步实现Volume状态同步
+- reconciler： 实现Volume状态同步
 - pkg/volume/ ： 实现了各种存储包括：rdb,nfs等插件，均实现了VolumePlugin接口
 - VolumePlugin：卷插件接口，定义Init，NewMounter（返回Mounter接口）；
 - VolumePluginMgr：负责管理插件，提供依据名称等查找VolumePlugin的函数
