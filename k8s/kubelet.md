@@ -108,7 +108,8 @@ type Pod struct {
 
 ### 卷管理
 
-- Mounter
+- Mounter: 定义Mount/UnMount等接口，底层使用mount命令或者systemd-run --description=... --scope -- mount -t 实现挂载
+- operationExecutor
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
