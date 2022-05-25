@@ -119,7 +119,21 @@ type Pod struct {
 - OperationGenerator：生成处理函数，和operationExecutor解绑；依据Volume名称和Node等生成操作函数，作为NestedPendingOperations函数的入参，被调用
 
 #### 卷管理流程：
-- 启动kublet时启动：reconciler，
+- 启动kublet时启动：VolumeManager
+- VolumeManager启动：reconciler ，DesiredStateOfWorldPopulator，volumePluginMgr三个loop
+- DesiredStateOfWorldPopulator：定期执行findAndAddNewPods和findAndRemoveDeletedPods，同步pod中的volume信息
+- reconciler： 定期的处理unmountVolumes，mountAttachVolumes和unmountDetachDevices
+- > 以上操作均调用operationExecutor的对应接口
+- operationExecutor：
+- > 调用operationGenerator生成generatedOperations（为了解耦）
+- > 调用pendingOperations.Run方法，
+- operationGenerator： 
+- > 调用volumePluginMgr，寻找对应插件；
+- > 调用volumePlugin的New方法创建插件，
+- > 返回OperationFunc：调用plugin执行TearDown等操作
+- nestedPendingOperations：启动go程，调用generatedOperations.Run
+- GeneratedOperations.run:会执行OperationFunc
+- 
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
