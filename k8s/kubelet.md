@@ -117,6 +117,9 @@ type Pod struct {
 - operationExecutor：定义AttachVolume/MountVolume等接口，依赖NestedPendingOperations和OperationGenerator实现
 - NestedPendingOperations：处理pending的op，防止多个相同的操作执行，主要包含operation数组；定义Run和Wait等接口
 - OperationGenerator：生成处理函数，和operationExecutor解绑；依据Volume名称和Node等生成操作函数，作为NestedPendingOperations函数的入参，被调用
+
+#### 卷管理流程：
+- 启动kublet时启动：reconciler，
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
