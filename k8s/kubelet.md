@@ -108,8 +108,16 @@ type Pod struct {
 - containerRuntime.SyncPod：同步pod状态
 #### pod管理
 - kubeGenericRuntimeManager： 即containerRuntime，集成了image，gc，健康检查等功能,实现了Runtime接口，包含同步和killpod，和image管理等接口
-- > SyncPod：检查状态变更，kill sanbox和其他容器；创建sandbox（需要的话），瞬息容器，初始化容器和正常容器
-- 
+- > SyncPod：检查状态变更，kill sanbox和其他容器；创建sandbox（需要的话），瞬息容器，初始化容器和正常容器;
+- 停止sandBox：runtimeClient.StopPodSandbox等接口执行动作；
+- 停止容器：同SyncPodKill
+- 创建sandBox：调用runtimeClient.RunPodSandbox
+- 启动容器: 
+- > 1.pull镜像；
+- > 2.runtimeClient.CreateContainer 
+- > 3.internalLifecycle.PreStartContainer；
+- > 4.runtimeService.StartContainer
+- > 5.执行post hook
 ### 卷管理
 - VolumeManager：负责管理一系列的loop，异步实现Volume状态同步
 - reconciler： 实现Volume状态同步
