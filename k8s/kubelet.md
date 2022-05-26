@@ -121,6 +121,7 @@ type Pod struct {
 #### 卷管理流程：
 - 启动kublet时启动：VolumeManager
 - VolumeManager启动：reconciler ，DesiredStateOfWorldPopulator，volumePluginMgr三个loop
+- volumePluginMgr：插件管理，启动CSIInformer，并执行等待同步
 - DesiredStateOfWorldPopulator：定期执行findAndAddNewPods和findAndRemoveDeletedPods，同步pod中的volume信息；依赖podManager
 - reconciler： 定期的处理unmountVolumes，mountAttachVolumes和unmountDetachDevices
 - > 以上操作均调用operationExecutor的对应接口
