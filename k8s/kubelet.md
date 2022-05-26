@@ -93,8 +93,10 @@ type Pod struct {
 - > 启动podworker协程，读取UpdatePodOptions管道的内容，调用syncPod做状态同步
 - HandlePodSyncs: 从podmanager获取所有pod，调用podWorkers.UpdatePod，将操作信息写入对应podworker的UpdatePodOptions管道，处理同上
 #### ContainerManager：管理机器上的容器
-- 
+- InternalContainerLifecycle：负责在容器启动或停止后执行动作，主要包括添加和删除CPU和维护pod拓扑
+- > PreStartContainer: 
 ### syncPod pod状态同步主逻辑：
+
 #### SyncPodKill状态处理：
 - statusManager.SetPodStatus 设置状态
 - Kublete.killPod:kubeGenericRuntimeManager.KillPod依次此执行: 
