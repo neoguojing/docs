@@ -92,6 +92,7 @@ type Pod struct {
 - HandlePodAdditions
 - > 启动podworker协程，读取UpdatePodOptions管道的内容，调用syncPod做状态同步
 - HandlePodSyncs: 从podmanager获取所有pod，调用podWorkers.UpdatePod，将操作信息写入对应podworker的UpdatePodOptions管道，处理同上
+
 ### syncPod pod状态同步主逻辑：
 #### SyncPodKill状态处理：
 - statusManager.SetPodStatus 设置状态
@@ -105,7 +106,10 @@ type Pod struct {
 - makePodDataDirs： 创建pod目录：pod目录，卷目录和插件目录
 - volumeManager.WaitForAttachAndMount： 等待卷挂载完成
 - containerRuntime.SyncPod：同步pod状态
-
+#### pod管理
+- kubeGenericRuntimeManager： 即containerRuntime，集成了image，gc，健康检查等功能,实现了Runtime接口，包含同步和killpod，和image管理等接口
+- > SyncPod：检查状态变更，kill sanbox和其他容器；创建sandbox（需要的话），瞬息容器，初始化容器和正常容器
+- 
 ### 卷管理
 - VolumeManager：负责管理一系列的loop，异步实现Volume状态同步
 - reconciler： 实现Volume状态同步
