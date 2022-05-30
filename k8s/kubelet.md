@@ -101,8 +101,12 @@ type Pod struct {
 - cpuManager： 启动循环，根据policy协调容器的资源状态
 - > 调用runtimeClient.UpdateContainerResources为容器添加cpu资源
 - topologyManager：通过map记录容器和pod的映射关系，实现是在scope类中实现的；
-- cgroupManager
-- qosContainerManager
+- cgroupManager：提供Create和Update等接口，负责创建和更新cgroup;
+- > 资源类型包括：内存/cpu相对份额/cpu在某个时间段内的可用时间/数据页映射限制/进程数限制
+- > 底层使用runc/libcontainer/cgroups管理cgroup的创建和更新等操作
+- qosContainerManager：控制服务质量
+- > 分为：Guaranteed/Burstable/BestEffort
+- > 调用cgroupManager，完成qos cgroup的创建和更新
 ### syncPod pod状态同步主逻辑：
 
 #### SyncPodKill状态处理：
