@@ -61,13 +61,13 @@
 - > probeManager：管理liveness，readness和startUp；监听readness和startup，将事件写入statusManager
 - > tokenManager：从APiserver获取token，并缓存
 - > VolumePluginMgr： 参见卷管理
-- > pluginManager：插件（网络）管理，监听文件夹变化，并启动协调器，协调状态
+- > pluginManager：插件管理，监听文件夹变化，并启动协调器，协调状态
 - > volumeManager ：参见卷管理
 - > podWorkers: ；实现podWorkers，每个pod一个协程，维护pod对象集合，工作队列和pod状态缓存等；由syncloop调用dispatchWork调用UpdatePod接口，为每个新建的pod启动一个managePodLoop协程，用于监听UpdatePodOptions管道执行相关状态同步；
 - > nodeLeaseController
-- > admitHandlers
-- > softAdmitHandlers
-- > shutdownManager
+- > admitHandlers： 监听node是否关闭，关闭的话拒接所有pod
+- > softAdmitHandlers ： 注册的一系列软handler，在启动pod的时候调用
+- > shutdownManager： 处理节点关闭事件
 - syncLoop 主循环：
 - > 监听pod配置变化（来源于NewSourceApiserver）：处理pod的add/update/delete/RECONCILE等
 - > 监听pleg chan，处理pod状态的同步和删除
@@ -134,6 +134,12 @@ type Pod struct {
 - > 3.internalLifecycle.PreStartContainer；
 - > 4.runtimeService.StartContainer
 - > 5.执行post hook
+
+### 插件管理：
+- pluginManager：CSI和Device
+- > 在kubelet启动时，注册CSIPlugin和DevicePlugin回调
+- > 1.监听文件系统通知，处理创建和删除事件，并缓存相关目录
+- > 2. reconcile,注册或者去注册相关的插件，最终调用注册的函数处理：分别为RegistrationHandler和deviceManager
 ### 卷管理
 - VolumeManager：负责管理一系列的loop，异步实现Volume状态同步
 - reconciler： 实现Volume状态同步
