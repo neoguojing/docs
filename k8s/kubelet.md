@@ -45,10 +45,10 @@
 - > 构建nodeInformer
 - > serviceInformer
 - > Kubelet对象创建
-- > secretManager
-- > configMapManager
-- > livenessManager
-- > startupManager
+- > secretManager：使用kubeClient从apiserver获取对应的secret
+- > configMapManager：使用kubeClient从apiserver获取
+- > livenessManager：在worker中使用，根据worker中的状态为livenessManager设置值（赋值给resultsManager）
+- > startupManager：在worker中使用，根据worker中的状态为livenessManager设置值（赋值给resultsManager）
 - > podManager：实现：basicManager:维护内存pod集合，以及提供secret，configmap的manager；实现pod的增删改查；
 - > statusManager： 维护kubeclient、pod状态集合；Start启动之后，监听podStatusChannel，向apiserver同步状态；
 - > runtimeClassManager
