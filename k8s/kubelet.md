@@ -53,16 +53,16 @@
 - > podManager：实现：basicManager:维护内存pod集合，以及提供secret，configmap的manager；实现pod的增删改查；
 - > statusManager： 维护kubeclient、pod状态集合；Start启动之后，监听podStatusChannel，向apiserver同步状态；
 - > runtimeClassManager：启动infomer，监听runtimeClass，并返回Handler
-- > kubeGenericRuntimeManager
-- > CRIStatsProvider
-- > GenericPLEG
-- > realContainerGC
-- > ImageGCManager
-- > probeManager
-- > tokenManager
-- > VolumePluginMgr
-- > pluginManager
-- > volumeManager
+- > kubeGenericRuntimeManager: 参加容器运行时
+- > CRIStatsProvider ： 从cadvisor获取node状态和CRI获取容器状态
+- > GenericPLEG： pleg pod生命周期管理
+- > realContainerGC：封装容器GC，底层调用kubeGenericRuntimeManager实现
+- > ImageGCManager：负责清理image
+- > probeManager：管理liveness，readness和startUp；监听readness和startup，将事件写入statusManager
+- > tokenManager：从APiserver获取token，并缓存
+- > VolumePluginMgr： 参见卷管理
+- > pluginManager：插件（网络）管理，监听文件夹变化，并启动协调器，协调状态
+- > volumeManager ：参见卷管理
 - > podWorkers: ；实现podWorkers，每个pod一个协程，维护pod对象集合，工作队列和pod状态缓存等；由syncloop调用dispatchWork调用UpdatePod接口，为每个新建的pod启动一个managePodLoop协程，用于监听UpdatePodOptions管道执行相关状态同步；
 - > nodeLeaseController
 - > admitHandlers
@@ -162,7 +162,14 @@ type Pod struct {
 - > 返回OperationFunc：调用plugin执行TearDown等操作
 - nestedPendingOperations：启动go程，调用generatedOperations.Run
 - GeneratedOperations.run:会执行OperationFunc
-- 
+
+### GC
+- containerGC ： pod垃圾回收
+- > 依次：驱逐容器，驱逐sandbox，删除日志目录
+- realImageGCManager：image清理
+- > 每5分钟，更新内存记录的使用种的image，每30s更新缓存
+- > GarbageCollect: 统计磁盘用量，当达到阈值，则清理一定量的image
+- > 真正的清理动作有kubeGenericRuntimeManager调用CRI完成
 ## 容器创建
 - Kubelet 通过 CRI 接口(gRPC) 调用 dockershim（内嵌在kubelet代码中）
 - 请求发送给Docker Daemon
