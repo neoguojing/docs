@@ -16,7 +16,8 @@
 - > livenessProbe: 容器是否运行，false则kill pod
 - > readinessProbe : 容器是否可以响应请求，false则从service移除改pod
 - > startupProbe: 容器内的进程是否启动，false则kill pod
-- 
+- runtimeClass：主要用来解决多个容器运行时混用的问题
+- > http://dockerone.com/article/9990
 ## CNI 原理
 - CNIBinDir:   "/opt/cni/bin",
 - CNIConfDir:  "/etc/cni/net.d",
@@ -51,7 +52,7 @@
 - > startupManager：在worker中使用，根据worker中的状态为livenessManager设置值（赋值给resultsManager）
 - > podManager：实现：basicManager:维护内存pod集合，以及提供secret，configmap的manager；实现pod的增删改查；
 - > statusManager： 维护kubeclient、pod状态集合；Start启动之后，监听podStatusChannel，向apiserver同步状态；
-- > runtimeClassManager
+- > runtimeClassManager：启动infomer，监听runtimeClass，并返回Handler
 - > kubeGenericRuntimeManager
 - > CRIStatsProvider
 - > GenericPLEG
