@@ -139,9 +139,10 @@ type Pod struct {
 - unix:///var/run/dockershim.sock: RemoteRuntimeService连接地址
 - PreInitRuntimeService: 根据配置决定选用容器运行时：
 - > 若为docker，则启动runDockershim
-- > 
+- > 创建remoteRuntimeService，和server通信
 - runDockershim： 启动dockershim
-- > 
+- > NewDockerService：创建docker服务，初始化网络插件，并启动网络插件管理服务
+- > NewDockerServer: 创建docker服务端，启动grpc和http服务
 ### 插件管理：
 - pluginManager：CSI和Device
 - > 在kubelet启动时，注册CSIPlugin和DevicePlugin回调
