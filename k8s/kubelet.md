@@ -134,7 +134,14 @@ type Pod struct {
 - > 3.internalLifecycle.PreStartContainer；
 - > 4.runtimeService.StartContainer
 - > 5.执行post hook
-
+#### docker客户端和dockershim
+- unix:///var/run/docker.sock ： runtimeClient连接地址
+- unix:///var/run/dockershim.sock: RemoteRuntimeService连接地址
+- PreInitRuntimeService: 根据配置决定选用容器运行时：
+- > 若为docker，则启动runDockershim
+- > 
+- runDockershim： 启动dockershim
+- > 
 ### 插件管理：
 - pluginManager：CSI和Device
 - > 在kubelet启动时，注册CSIPlugin和DevicePlugin回调
