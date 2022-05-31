@@ -143,6 +143,8 @@ type Pod struct {
 - runDockershim： 启动dockershim
 - > NewDockerService：创建docker服务，初始化网络插件，并启动网络插件管理服务
 - > NewDockerServer: 创建docker服务端，启动grpc和http服务
+#### 网络插件管理
+- ProbeNetworkPlugins：依据cni的配置文件和bin设置网络
 ### 插件管理：
 - pluginManager：CSI和Device
 - > 在kubelet启动时，注册CSIPlugin和DevicePlugin回调
