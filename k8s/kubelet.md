@@ -134,7 +134,7 @@ type Pod struct {
 - > 3.internalLifecycle.PreStartContainer；
 - > 4.runtimeService.StartContainer
 - > 5.执行post hook
-#### docker客户端和dockershim
+#### docker客户端和dockershim（仅支持CNI插件）
 - unix:///var/run/docker.sock ： runtimeClient连接地址
 - unix:///var/run/dockershim.sock: RemoteRuntimeService连接地址
 - PreInitRuntimeService: 根据配置决定选用容器运行时：
@@ -144,7 +144,9 @@ type Pod struct {
 - > NewDockerService：创建docker服务，初始化网络插件，并启动网络插件管理服务
 - > NewDockerServer: 创建docker服务端，启动grpc和http服务
 #### 网络插件管理
-- ProbeNetworkPlugins：依据cni的配置文件和bin设置网络
+- ProbeNetworkPlugins：依据cni的配置文件和bin构建CNI插件对象
+- InitNetworkPlugin：调用CNI插件的Init接口，初始化选中的一个插件
+- PluginManager： 保证NetworkPlugin，加锁控制
 ### 插件管理：
 - pluginManager：CSI和Device
 - > 在kubelet启动时，注册CSIPlugin和DevicePlugin回调
