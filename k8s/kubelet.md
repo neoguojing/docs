@@ -135,15 +135,15 @@ type Pod struct {
 - > 4.runtimeService.StartContainer
 - > 5.执行post hook
 #### docker客户端和dockershim（仅支持CNI插件）
-- unix:///var/run/docker.sock ： runtimeClient连接地址
-- unix:///var/run/dockershim.sock: RemoteRuntimeService连接地址
+- unix:///var/run/docker.sock ： dockerClient连接地址，和docker进程通信的地址
+- unix:///var/run/dockershim.sock: RemoteRuntimeService连接地址,和dockershim通信的地址
 - PreInitRuntimeService: 根据配置决定选用容器运行时：
 - > 若为docker，则启动runDockershim
 - > 创建remoteRuntimeService，和server通信
 - runDockershim： 启动dockershim
 - > NewDockerService：创建docker服务，初始化网络插件，并启动网络插件管理服务
 - > NewDockerServer: 创建docker服务端，启动grpc和http服务
-- RunPodSandbox：
+- RunPodSandbox：调dockerClient完成具体操作
 - > 
 #### 网络插件管理
 - ProbeNetworkPlugins：依据cni的配置文件和bin构建CNI插件对象
