@@ -143,6 +143,8 @@ type Pod struct {
 - runDockershim： 启动dockershim
 - > NewDockerService：创建docker服务，初始化网络插件，并启动网络插件管理服务
 - > NewDockerServer: 创建docker服务端，启动grpc和http服务
+- RunPodSandbox：
+- > 
 #### 网络插件管理
 - ProbeNetworkPlugins：依据cni的配置文件和bin构建CNI插件对象
 - InitNetworkPlugin：调用CNI插件的Init接口，初始化选中的一个插件
