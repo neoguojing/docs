@@ -155,6 +155,8 @@ type Pod struct {
 - StartContainer：
 - > 调用StartContainer启动容器
 - > 创建日志
+- CheckpointManager：检查点管理，创建目录写入pod相关信息
+- PodSandboxCheckpoint：保存和序列化pod的版本，ns，名称和端口等数据
 #### 网络插件管理
 - ProbeNetworkPlugins：依据cni的配置文件和bin构建CNI插件对象
 - InitNetworkPlugin：调用CNI插件的Init接口，初始化选中的一个插件
