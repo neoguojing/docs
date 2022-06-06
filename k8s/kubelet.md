@@ -144,7 +144,17 @@ type Pod struct {
 - > NewDockerService：创建docker服务，初始化网络插件，并启动网络插件管理服务
 - > NewDockerServer: 创建docker服务端，启动grpc和http服务
 - RunPodSandbox：调dockerClient完成具体操作
-- > 
+- > 拉取pause镜像
+- > 调用CreateContainer创建沙箱容器
+- > 使用checkpointManager创建检查点
+- > 调用StartContainer启动容器
+- > 调用PluginManager.SetUpPod设置pod网络（host模式不需要启动插件）
+- CreateContainer: 创建容器
+- > 设置label，命令行环境变量，标准输入输出，健康检查，cgroup等
+- > 调用CreateContainer创建容器
+- StartContainer：
+- > 调用StartContainer启动容器
+- > 创建日志
 #### 网络插件管理
 - ProbeNetworkPlugins：依据cni的配置文件和bin构建CNI插件对象
 - InitNetworkPlugin：调用CNI插件的Init接口，初始化选中的一个插件
