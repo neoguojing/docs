@@ -17,7 +17,13 @@
 - > ABAC: --authorization-policy-file=
 - > webhook授权：-authorization-webhook-config-file
 - > Node 授权:--authorization-mode=Node,RBAC --admission-control=...,NodeRestriction,...
-- Admission Control：资源管理
+- Admission Control：资源管理，对授权后的请求进一步验证，添加参数，对写操作有效
+- > 准入控制插件：ServiceAccount，ResourceQuota，EventRateLimit
+- > Initializers: 给资源执行策略或者配置默认选项，包括 Initializers 控制器和用户定义的 Initializer 任务，控制器负责执行用户提交的任务，并完成后将任务从 metadata.initializers 列表中删除。
+- > 开发参考：https://github.com/kelseyhightower/kubernetes-initializer-tutorial
+- > GenericAdmissionWebhook :种 Webhook 方式的准入控制机制，它不会改变请求对象，但可以用来验证用户的请求
+- > PodNodeSelector : 用来限制一个 Namespace 中 Pod 所允许运行的 Node
+- 
 
 ### RBAC授权
 - 启动 kube-apiserver 时配置 --authorization-mode=RBAC
