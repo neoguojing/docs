@@ -18,6 +18,15 @@
 - > webhook授权：-authorization-webhook-config-file
 - > Node 授权:--authorization-mode=Node,RBAC --admission-control=...,NodeRestriction,...
 - Admission Control：资源管理
+
+### RBAC授权
+- 启动 kube-apiserver 时配置 --authorization-mode=RBAC
+- ROLE：角色，一系列权限的集合，负责namespace下的权限管理
+- ClusterRole：对namespace和集群以及非资源类api使用；使用aggregationRule 可以与其他Role聚合
+- RoleBinding ：把角色（Role 或 ClusterRole）的权限映射到用户或者用户组
+- ClusterRoleBinding ：让用户继承 ClusterRole 在整个集群中的权限
+- 用户类型保存：User，Group和ServiceAccount
+- 在kube-system下默认配置了许多系统Role
 ## 流程
 - NewAPIServerCommand
 - Run
