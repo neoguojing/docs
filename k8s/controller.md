@@ -1,6 +1,26 @@
 # controller
 - sharedInformerFactory 实现SharedInformerFactory接口
 - ControllerClientBuilder接口：实现方式：1.SimpleControllerClientBuilder 2.NewDynamicClientBuilder 用于构建client的集合访问不同的url
+- kube-controller-manager
+- cloud-controller-manager：云服务商的manager
+- Controller manager metrics 默认监听在 kube-controller-manager 的 10252 端口
+- 控制器分为：必须启用，默认启动和默认未启动
+
+## 高可用
+- --leader-elect=true
+- 主节点调用StartControllers()
+- 其他节点只运行选主算法
+- 实现了两种资源锁（Endpoint 或 ConfigMap
+- 通过更新资源的 Annotation（control-plane.alpha.kubernetes.io/leader），来确定主从关系
+
+## 高性能
+- Informer 提供了基于事件通知的只读缓存机制，可以注册资源变化的回调函数，并可以极大减少 API 的调用
+- 使用方法
+## 节点驱逐：
+- --node-eviction-rate=0.1：每10s一个节点
+- Normal：所有节点都 Ready，默认速率驱逐
+- PartialDisruption：即超过33% 的节点 NotReady 的状态，则减慢速率
+- FullDisruption：所有节点都 NotReady，返回使用默认速率驱逐。但当所有 Zone 都处在 FullDisruption 时，停止驱逐。
 ## manager 启动流程 cmd/kube-controller-manager/app/controllermanager.go
 - NewControllerManagerCommand 
 - Run：创建ControllerContext
