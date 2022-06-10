@@ -1,4 +1,6 @@
 # kubeproxy
+> 因为kube-proxy是以daemonSet的形式部署在所有节点上的，所以每个节点都会有相同的iptable规则，当任何一个节点上的pod访问service时，其实都是可以在该pod所在的node的的iptable中找到对应的service规则从而找到service所代理的pod的，而对于node而言，寄宿在自己上的pod的发出的流量就是从本机的某进程出去的流量。
+
 - 目前仅支持 TCP 和 UDP，不支持 HTTP 路由，并且也没有健康检查机制。这些可以通过自定义 Ingress Controller 的方法来解决。
 - 负责转发流量给service对应的ip：port，并实现部分负载均衡的作用
 - 它监听 API server 中 service 和 endpoint 的变化情况，并通过 iptables 等来为服务配置负载均衡
