@@ -1,5 +1,7 @@
 # kubeproxy
 - 负责转发流量给service对应的ip：port，并实现部分负载均衡的作用
+- 它监听 API server 中 service 和 endpoint 的变化情况，并通过 iptables 等来为服务配置负载均衡
+- kube-proxy 可以直接运行在物理机上，也可以以 static pod 或者 daemonset 的方式运行
 - 替代品有：cluster DNS
 - watch apiserver，当监听到pod 或service变化时，修改本地的iptables规则或ipvs规则；
 - dns使用的是：coredns
@@ -15,8 +17,10 @@
 -	ProxyModeIPTables    ProxyMode = "iptables" ： 更快
 -	ProxyModeIPVS        ProxyMode = "ipvs" ： 更快
 -	ProxyModeKernelspace ProxyMode = "kernelspace"
-
+### winuserspace：
+- 仅在windows使用
 ### userspace
+- 最早的负载均衡方案，它在用户空间监听一个端口，所有服务通过 iptables 转发到这个端口，然后在其内部负载均衡到实际的 Pod。该方式最主要的问题是效率低，有明显的性能瓶颈
 ### iptables
 - 表：承载链条，实现不同功能,按照优先级排列如下,通过-t参数指定
 - > security表：为包指定SELinux 标记
@@ -34,6 +38,7 @@
 - return:返回上一个chain，然后执行下一条规则
 - iptables restore：回复备份的配置
 ### ipset
+- 采用增量式更新，并可以保证 service 更新期间连接保持不断开
 - linux 命令，建立资源集合，如IP
 - iptable -m set --match-set 使用set
 - -m 也可以指定为ipvs，
