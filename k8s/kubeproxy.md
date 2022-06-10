@@ -27,9 +27,10 @@
 - > security表：为包指定SELinux 标记
 - > raw：实现数据跟踪；只有两个链条PREROUTING，OUTPUT
 - > mangle: 包修改;5个链条均有
-- > nat : 网络地址转换；PREROUTING，OUTPUT，POSTROUTING
+- > nat : 网络地址转换；除了除了foward的其他链均可
 - > filter ： 包过滤，防火墙的主要功能实现；input，output，FORWARD
-- 链条：PREROUTING，INPUT ， FORWARD ，OUTPUT，POSTROUTING，使用-A/-I等指定
+- 用-t 执行表，不指定默认使用filter表
+- 链条：PREROUTING，INPUT ， FORWARD ，OUTPUT，POSTROUTING，使用-A（末尾）/-I（在最开始）等指定
 - 自定义chain进行规则分类：iptable -t nat -N KUBE-MARK-DROP
 - 规则：-d/-s 执行ip/域名；-dport/-sport指定端口，-j指定ACCEPT/DROP，-i执行接口,-p 指定协议；规则按照从上到下的优先级，最上面规则匹配到，则下层规则失效；
 - SNAT：对ip报文的源地址做转换；家里网络访问公网资源，经过路由器时，内网地址192.XXX被转换为公网地址；
@@ -85,16 +86,8 @@
 - /proc/sys/net/netfilter/nf_conntrack_tcp_timeout_close_wait：设置连接关闭等待时间
 ### kernelspace
 
-## 控制链
+## kube控制链
 ![来源于cilium](https://github.com/cilium/k8s-iptables-diagram/blob/master/kubernetes_iptables.svg)
-- KUBE-SERVICES
-- KUBE-MARK-MASQ
-- KUBE-NODE-PORT
-- KUBE-FIREWALL
-- KUBE-POSTROUTING
-- KUBE-NODE-PORT-TCP：ipset规则
-- flannel网卡
-
 ### syncProxyRules
 - 获取本地ip地址集合
 - 统计无用的service集合
@@ -106,12 +99,12 @@
 - > iptable -t nat -N KUBE-NODE-PORT
 - > iptable -t nat -N KUBE-LOAD-BALANCER
 - > iptable -t nat -N KUBE-MARK-MASQ
-- > iptable -t filter -N KUBE-FORWARD
+- > iptable -t filter -N KUBE-FORWARD 
 - 创建和获取kube-ipvs0
 - 依据ipsetInfo所有的ipset
 - 判断是否有nodeport创建，有则找到所有nodeip
 - 遍历proxier.serviceMap(svcName,svc)，构建service规则
-- > 遍历endpointsMap[svcName]，将endpoint放入KUBE-LOOP-BACK ipset
+- > 遍历endpointsMap[svcName]，将endpoint放入KUBE-LOOP-BACK的ipset
 - > 将svc信息放入KUBE-CLUSTER-IP
 - > 调用syncService构建虚拟服务,成功则调用syncEndpoint构建真实服务
 - > 遍历svcInfo.ExternalIPStrings，若只是本地endpoint，则放入KUBE-EXTERNAL-IP-LOCAL集合，否则放入KUBE-EXTERNAL-IP（需要经过filter链做转发）,调用syncService和syncEndpoint构建ipvs服务
@@ -119,7 +112,7 @@
 - > 遍历nodepoint集合，添加到nodeport相关ipset，并构建ipvs服务
 - 调用ipset命令同步ipset配置，重新设置相关的集合
 - writeIptablesRules：刷写基于ipset的规则
-- > iptable -t nat -I OUTPUT -j KUBE-SERVICES   -m comment --comment
+- > iptable -t nat -I OUTPUT -j KUBE-SERVICES   -m comment --comment  //
 - > iptable -t nat -I PREROUTING -j KUBE-SERVICES   -m comment --comment
 - > iptable -t nat -I POSTROUTING -j KUBE-POSTROUTING   -m comment --comment
 - > iptable -t filter -I FORWARD -j KUBE-FORWARD   -m comment --comment
