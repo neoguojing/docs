@@ -42,6 +42,23 @@
 - accept：
 - MASQUERADE：地址伪装；自动读取网卡地址，实现自动化的SNAT转换
 ### ipset
+- 集合类型：hash-可自动扩容（最大65535）；bitmap，list固定大小
+- 数据类型：ip-支持ip地址和地址段，net：网络地址；ip,port
+  
+  ```
+bitmap:ip
+bitmap:ip,mac
+bitmap:port
+hash:mac
+hash:ip,mac
+hash:net,net
+hash:net,port
+hash:ip,port,ip
+hash:ip,mark
+hash:net,port,net
+hash:net,iface
+list:set
+  ```
 - 采用增量式更新，并可以保证 service 更新期间连接保持不断开
 - linux 命令，建立资源集合，如IP
 - iptable -m set --match-set 使用set
@@ -93,7 +110,29 @@
 ![ipvs rules]( https://github.com/neoguojing/docs/blob/main/k8s/controller-kubelet-iptable-rule.drawio.png) 
 
 ### 规则解释
-- 转发规则：匹配到%#08x/%#08x标记，则接受
+- 转发规则：匹配到%#08x/%#08x标记，则接受；否则匹配conn，存储连接状态则接受
+- PREROUTINGG和OUTPUT会启用KUBE-SERVICE规则链：
+- > 匹配到KUBE-LOAD-BALANCER集合(dst,dst)则转到KUBE-LOAD-BALANCER链
+- > 匹配到KUBE-CLUSTER-IP集合(dst,dst)则转到标记链打标
+- > 匹配到KUBE-EXTERNAL-IP集合则转到标记链打标
+- > 目的地址是本地主机地址的，跳转到KUBE-NODE-PORT链
+- POSTROUTING启用KUBE-POSTROUTING规则：
+- > 匹配到KUBE-LOOP-BACK集合（dst，dst，src）则执行MASQ
+- > 未打标的包返回上一个链条处理
+- > 对标记进行xor操作
+- > 进行snat，且端口随机化
+- KUBE-LOAD-BALANCER：
+- > 匹配到KUBE-LOAD-BALANCER-FW集合则跳转到KUBE-FIREWALL链条
+- > 匹配到KUBE-LOAD-BALANCER-LOCAL集合则返回到KUBE-SERVICE链处理
+- > 跳转到打标链
+- KUBE-FIREWALL：
+- > 匹配KUBE-LOAD-BALANCER-SOURCE-CIDR则返回KUBE-LOAD-BALANCER链；
+- > 匹配KUBE-LOAD-BALANCER-SOURCE-IP则返回KUBE-LOAD-BALANCER链；
+- > 跳转到标记drop链条
+- KUBE-NODE-PORT:
+- > 匹配到KUBE-NODE-PORT-LOCAL-TCP集合则返回KUBE-SERVICE继续处理
+- > 匹配到KUBE-NODE-PORT-TCP集合则跳转到标记链
+- > UDP同上
 ### syncProxyRules
 - 获取本地ip地址集合
 - 统计无用的service集合
