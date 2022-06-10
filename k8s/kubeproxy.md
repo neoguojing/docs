@@ -35,10 +35,12 @@
 - 规则：-d/-s 执行ip/域名；-dport/-sport指定端口，-j指定ACCEPT/DROP，-i执行接口,-p 指定协议；规则按照从上到下的优先级，最上面规则匹配到，则下层规则失效；
 - SNAT：对ip报文的源地址做转换；家里网络访问公网资源，经过路由器时，内网地址192.XXX被转换为公网地址；
 - DNAT：对IP报文的目的地址做转换转换公网地址为内网地址
-- MASQUERADE：地址伪装；自动读取网卡地址，实现自动化的SNAT转换
 - MARK功能可以用于标记网络数据包，用于标记数据包。在一些不同的table或者chain之间需要协同处理某一个数据包时尤其有用
-- return:返回上一个chain，然后执行下一条规则
 - iptables restore：回复备份的配置
+#### 操作
+- return:返回上一个chain，然后执行下一条规则
+- accept：
+- MASQUERADE：地址伪装；自动读取网卡地址，实现自动化的SNAT转换
 ### ipset
 - 采用增量式更新，并可以保证 service 更新期间连接保持不断开
 - linux 命令，建立资源集合，如IP
@@ -89,6 +91,9 @@
 ## kube控制链
 ![来源于cilium](https://github.com/cilium/k8s-iptables-diagram/blob/master/kubernetes_iptables.svg)
 ![ipvs rules]( https://github.com/neoguojing/docs/blob/main/k8s/controller-kubelet-iptable-rule.drawio.png) 
+
+### 规则解释
+- 转发规则：匹配到%#08x/%#08x标记，则接受
 ### syncProxyRules
 - 获取本地ip地址集合
 - 统计无用的service集合
