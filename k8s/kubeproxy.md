@@ -1,4 +1,5 @@
 # kubeproxy
+- 目前仅支持 TCP 和 UDP，不支持 HTTP 路由，并且也没有健康检查机制。这些可以通过自定义 Ingress Controller 的方法来解决。
 - 负责转发流量给service对应的ip：port，并实现部分负载均衡的作用
 - 它监听 API server 中 service 和 endpoint 的变化情况，并通过 iptables 等来为服务配置负载均衡
 - kube-proxy 可以直接运行在物理机上，也可以以 static pod 或者 daemonset 的方式运行
@@ -43,6 +44,7 @@
 - iptable -m set --match-set 使用set
 - -m 也可以指定为ipvs，
 ### ipvs 工作在INPUT，只做DNAT
+- IPVS 模式也会使用 iptables 来执行 SNAT 和 IP 伪装（MASQUERADE），并使用 ipset 来简化 iptables 规则的管理
 - https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/README.md 
 - 基于lvs：linux虚拟服务器，丰富的负载均衡功能，以及直接再内核态转发数据的功能
 - 核心概念：DS-负载均衡节点，对应的IP是DIP；VIP：一般是指DS的虚拟IP；
