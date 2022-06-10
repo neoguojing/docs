@@ -42,9 +42,20 @@
 - 采用增量式更新，并可以保证 service 更新期间连接保持不断开
 - linux 命令，建立资源集合，如IP
 - iptable -m set --match-set 使用set
-- -m 也可以指定为ipvs，
+- -m 也可以指定为ipvs
+- KUBE-CLUSTER-IP All service IP + port Mark-Masq for cases that masquerade-all=true or clusterCIDR specified
+- KUBE-LOOP-BACK All service IP + port + IP masquerade for solving hairpin purpose
+- KUBE-EXTERNAL-IP service external IP + port masquerade for packages to external IPs
+- KUBE-LOAD-BALANCER load balancer ingress IP + port masquerade for packages to load balancer type service
+- KUBE-LOAD-BALANCER-LOCAL LB ingress IP + port with externalTrafficPolicy=local accept packages to load balancer with externalTrafficPolicy=local
+- KUBE-LOAD-BALANCER-FW load balancer ingress IP + port with loadBalancerSourceRanges package filter for load balancer with loadBalancerSourceRanges specified
+- KUBE-LOAD-BALANCER-SOURCE-CIDR load balancer ingress IP + port + source CIDR package filter for load balancer with loadBalancerSourceRanges specified
+- KUBE-NODE-PORT-TCP nodeport type service TCP port masquerade for packets to nodePort(TCP)
+- KUBE-NODE-PORT-LOCAL-TCP nodeport type service TCP port with externalTrafficPolicy=local accept packages to nodeport service with externalTrafficPolicy=local
+- KUBE-NODE-PORT-UDP nodeport type service UDP port masquerade for packets to nodePort(UDP) 
+- KUBE-NODE-PORT-LOCAL-UDP nodeport type service UDP port withexternalTrafficPolicy=local accept packages to nodeport service withexternalTrafficPolicy=local
 ### ipvs 工作在INPUT，只做DNAT
-- IPVS 模式也会使用 iptables 来执行 SNAT 和 IP 伪装（MASQUERADE），并使用 ipset 来简化 iptables 规则的管理
+- IPVS 模式也会使用 iptables 来执行 SNAT 和 IP 伪装（MASQUERADE）以及包过滤，并使用 ipset 来简化 iptables 规则的管理
 - https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/README.md 
 - 基于lvs：linux虚拟服务器，丰富的负载均衡功能，以及直接再内核态转发数据的功能
 - 核心概念：DS-负载均衡节点，对应的IP是DIP；VIP：一般是指DS的虚拟IP；
