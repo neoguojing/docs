@@ -52,3 +52,29 @@
 - > checkPausedConditions检查暂停状态；若暂停，则sync同步状态
 - > isScalingEvent若是扩容事件；sync更新状态
 - > depolyment更新策略：1.rolloutRecreate 2.rolloutRolling
+
+- EndpointController
+- ReplicationController
+- PodGCController
+- ResourceQuotaController
+- NamespaceController
+- ServiceAccountController
+- GarbageCollectorController
+- DaemonSetController
+- JobController
+- DeploymentController
+- ReplicaSetController
+- HPAController
+- DisruptionController
+- StatefulSetController
+- CronJobController
+- CSRSigningController
+- CSRApprovingController
+- TTLController
+默认启动的可选控制器，可通过选项设置是否开启
+- TokenController
+- NodeController
+- erviceController
+- RouteController
+- PVBinderController
+- AttachDetachController
