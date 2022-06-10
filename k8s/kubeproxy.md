@@ -47,7 +47,7 @@
 - 集合类型：hash-可自动扩容（最大65535）；bitmap，list固定大小
 - 数据类型：ip-支持ip地址和地址段，net：网络地址；ip,port
   
-  ```
+```
 bitmap:ip
 bitmap:ip,mac
 bitmap:port
@@ -60,7 +60,8 @@ hash:ip,mark
 hash:net,port,net
 hash:net,iface
 list:set
-  ```
+```
+  
 - 采用增量式更新，并可以保证 service 更新期间连接保持不断开
 - linux 命令，建立资源集合，如IP
 - iptable -m set --match-set 使用set
