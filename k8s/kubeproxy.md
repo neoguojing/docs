@@ -88,6 +88,7 @@
 
 ## kube控制链
 ![来源于cilium](https://github.com/cilium/k8s-iptables-diagram/blob/master/kubernetes_iptables.svg)
+![ipvs rules]( https://github.com/neoguojing/docs/blob/main/k8s/controller-kubelet-iptable-rule.drawio.png) 
 ### syncProxyRules
 - 获取本地ip地址集合
 - 统计无用的service集合
