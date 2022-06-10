@@ -72,6 +72,7 @@
 ### kernelspace
 
 ## 控制链
+![来源于cilium](https://github.com/cilium/k8s-iptables-diagram/blob/master/kubernetes_iptables.svg)
 - KUBE-SERVICES
 - KUBE-MARK-MASQ
 - KUBE-NODE-PORT
