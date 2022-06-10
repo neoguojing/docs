@@ -25,6 +25,7 @@
 ### userspace
 - 最早的负载均衡方案，它在用户空间监听一个端口，所有服务通过 iptables 转发到这个端口，然后在其内部负载均衡到实际的 Pod。该方式最主要的问题是效率低，有明显的性能瓶颈
 ### iptables
+- https://zhuanlan.zhihu.com/p/196393839
 - 表：承载链条，实现不同功能,按照优先级排列如下,通过-t参数指定
 - > security表：为包指定SELinux 标记
 - > raw：实现数据跟踪；只有两个链条PREROUTING，OUTPUT
@@ -78,6 +79,7 @@ list:set
 - KUBE-NODE-PORT-UDP nodeport type service UDP port masquerade for packets to nodePort(UDP) 
 - KUBE-NODE-PORT-LOCAL-UDP nodeport type service UDP port withexternalTrafficPolicy=local accept packages to nodeport service withexternalTrafficPolicy=local
 ### ipvs 工作在INPUT，只做DNAT
+- https://zhuanlan.zhihu.com/p/94418251
 - IPVS 模式也会使用 iptables 来执行 SNAT 和 IP 伪装（MASQUERADE）以及包过滤，并使用 ipset 来简化 iptables 规则的管理
 - https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/README.md 
 - 基于lvs：linux虚拟服务器，丰富的负载均衡功能，以及直接再内核态转发数据的功能
@@ -109,7 +111,7 @@ list:set
 ### kernelspace
 
 ## kube控制链
-![来源于cilium](https://github.com/cilium/k8s-iptables-diagram/blob/master/kubernetes_iptables.svg)
+![来源于cilium iptable规则](https://github.com/cilium/k8s-iptables-diagram/blob/master/kubernetes_iptables.svg)
 ![ipvs rules]( https://github.com/neoguojing/docs/blob/main/k8s/controller-kubelet-iptable-rule.drawio.png) 
 
 ### 规则解释
@@ -121,7 +123,7 @@ list:set
 - > 目的地址是本地主机地址的，跳转到KUBE-NODE-PORT链
 - POSTROUTING启用KUBE-POSTROUTING规则：
 - > 匹配到KUBE-LOOP-BACK集合（dst，dst，src）则执行MASQ
-- > 未打标的包返回上一个链条处理
+- > 未打标的包返回上一个链条处理,标记了0x4000/0x4000的数据包继续向下执行标记和snat
 - > 对标记进行xor操作
 - > 进行snat，且端口随机化
 - KUBE-LOAD-BALANCER：
