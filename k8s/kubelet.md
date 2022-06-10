@@ -18,6 +18,16 @@
 - > startupProbe: 容器内的进程是否启动，false则kill pod
 - runtimeClass：主要用来解决多个容器运行时混用的问题
 - > http://dockerone.com/article/9990
+- 非 API Server 方式创建的 Pod 都叫 Static Pod，。Kubelet 将 Static Pod 的状态汇报给 API Server，API Server 为该 Static Pod 创建一个 Mirror Pod 和其相匹配
+- 包括 10250 端口的认证 API、4194 端口的 cAdvisor API、10255 端口的只读 API 以及 10248 端口的健康检查 AP
+- http://<node-name>:10255/stats/summary： node指标汇总
+## 节点管理
+-  --register-node 来确定是否向 API Server 注册自己
+-  Kubelet 在启动时通过 API Server 注册节点信息，并定时向 API Server 发送节点新消息，API Server 在接收到新消息后，将信息写入 etcd
+
+## 内存控制策略
+- --memory-manager-policy 用于配置内存控制策略
+- static 策略：为 Pod 分配 NUMA 内存并确保 Guaranteed Pod 预留足够的内存
 ## CNI 原理
 - CNIBinDir:   "/opt/cni/bin",
 - CNIConfDir:  "/etc/cni/net.d",
@@ -196,6 +206,8 @@ type Pod struct {
 - GeneratedOperations.run:会执行OperationFunc
 
 ### GC
+- 软驱逐：系统资源达到软驱逐阈值并在超过宽限期之后才会执行驱逐动作
+- 硬驱逐（Hard Eviction ）：系统资源达到硬驱逐阈值时立即执行驱逐动作
 - containerGC ： pod垃圾回收
 - > 依次：驱逐容器，驱逐sandbox，删除日志目录
 - realImageGCManager：image清理
