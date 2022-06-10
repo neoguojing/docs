@@ -43,6 +43,7 @@
 - iptable -m set --match-set 使用set
 - -m 也可以指定为ipvs，
 ### ipvs 工作在INPUT，只做DNAT
+- https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/README.md 
 - 基于lvs：linux虚拟服务器，丰富的负载均衡功能，以及直接再内核态转发数据的功能
 - 核心概念：DS-负载均衡节点，对应的IP是DIP；VIP：一般是指DS的虚拟IP；
 - 核心流程：流量进入DS，经过PREROUTING，因为是本机的VIP，所以到达INPUT；在INPUT中，使用负载均衡技术选择一个IP，修改目的地址为后端服务IP和端口；经过POSTROUTING转发到后端服务；后端服务处理完后会经过POSTROUTING->FORWARD->PREROUTING转发给client；
