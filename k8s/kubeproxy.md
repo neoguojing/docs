@@ -135,6 +135,8 @@ list:set
 - > 匹配到KUBE-NODE-PORT-LOCAL-TCP集合则返回KUBE-SERVICE继续处理
 - > 匹配到KUBE-NODE-PORT-TCP集合则跳转到标记链
 - > UDP同上
+- KUBE-MARK-DROP
+- > 被标记了0x8000/0x8000的数据包都会被直接DROP
 ### syncProxyRules
 - 获取本地ip地址集合
 - 统计无用的service集合
