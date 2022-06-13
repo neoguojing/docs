@@ -26,7 +26,7 @@
 - 应用发往Service的请求会通过iptable规则转发给kube-proxy，
 - kube-proxy再转发到Service所代理的后端Pod
 - 发往Service的请求会先进入内核空间的iptable，再回到用户空间由kube-proxy代理转发。内核空间和用户空间来回地切换成为了该模式的主要性能问题。但由于发往后端Pod的请求是由kube-proxy代理转发的，请求失败时，是可以让kube-proxy重试的
-### iptables
+### iptables 只支持概率轮询的负载均衡
 - https://www.zsythink.net/archives/1199
 - 整个过程全部发生在内核空间，提高了转发性能
 - ptable的规则是基于链表实现的，规则数量随着Service数量的增加线性增加，查找时间复杂度为O(n)。当Service数量到达一定量级时，CPU消耗和延迟增加显著。
