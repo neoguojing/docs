@@ -84,17 +84,26 @@ list:set
 - KUBE-NODE-PORT-UDP nodeport type service UDP port masquerade for packets to nodePort(UDP) 
 - KUBE-NODE-PORT-LOCAL-UDP nodeport type service UDP port withexternalTrafficPolicy=local accept packages to nodeport service withexternalTrafficPolicy=local
 ### ipvs 工作在INPUT，只做DNAT，4层负载均衡，ingress负责7层转发
+- ipvsadm用户态命令行
+- ipvs工作在内核态
 - https://zhuanlan.zhihu.com/p/94418251
 - IPVS 模式也会使用 iptables 来执行 SNAT 和 IP 伪装（MASQUERADE）以及包过滤，并使用 ipset 来简化 iptables 规则的管理
 - https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/README.md 
 - 基于lvs：linux虚拟服务器，丰富的负载均衡功能，以及直接再内核态转发数据的功能
 - 核心概念：DS-负载均衡节点，对应的IP是DIP；VIP：一般是指DS的虚拟IP；
 - 核心流程：流量进入DS，经过PREROUTING，因为是本机的VIP，所以到达INPUT；在INPUT中，使用负载均衡技术选择一个IP，修改目的地址为后端服务IP和端口；经过POSTROUTING转发到后端服务；后端服务处理完后会经过POSTROUTING->FORWARD->PREROUTING转发给client；
-- 三种模式：NAT：ip层的修改，流量大时损耗大；DR：修改MAC地址，二层转发，要求一个以太网，效率最高；tun：隧道在ip层嵌套一层；
+- 三种模式：
+- > NAT：ip层的修改，流量大时损耗大；入口流量和出口流量都要经过负载均衡节点；k8s需要使用这个模式做端口映射
+- > DR：修改MAC地址，二层转发，要求一个以太网，效率最高；LB端口和RS端口要一致；无法做端口映射
+- > tun：隧道在ip层嵌套一层；
 - 负载均衡算法：轮询；加权轮询；最少连接；加权最少连接；
 - 操作使用ipvsadm，用户态管理ipvs的命令行：功能包括：1.创建VIP；2.为VIP添加后端服务地址
+- Service就是一个负载均衡实例，而server就是后端member,ipvs术语中叫做real server，简称RS
 - /proc/pid/task/tid/ns/net : 网络空间文件地址
-
+- ipvs的负载是直接运行在内核态的，因此不会出现监听端口
+#### 工作流程
+- 首先创建kube-ipvs0虚拟网卡，将所有的service ip（cluster ip）绑定道该网卡，是虚拟ip
+- 
 #### 前置条件 /proc/sys
 - net/ipv4/conf/all/route_localnet：启动127/8地址作为源或者目的地址
 - net/bridge/bridge-nf-call-iptables：二层的网桥在转发包时也会被iptables的FORWARD（三层）规则所过滤,解决linux网桥（二层）回包无法使用conntrack（三层）的问题
@@ -102,11 +111,13 @@ list:set
 - net/ipv4/vs/conn_reuse_mode= 0：设置端口可以重用 
 - net/ipv4/vs/expire_nodest_conn=1：后端服务不可用，则直接结束调连接；
 - net/ipv4/vs/expire_quiescent_template=1:调度的后端服务器权重为0会立即使持久连接过期，并被发送到新的服务器上
-- net/ipv4/ip_forward=1：允许数据包转发
+- net/ipv4/ip_forward=1：
+- 如下规则：ipvsDR模式，需要在lo上设置虚拟ip，此时需要隐藏网卡，因此设置如下规则
 - net/ipv4/conf/all/arp_ignore=1:只响应目的IP地址为接收网卡上的本地地址的arp请求
 - net/ipv4/conf/all/arp_announce=2:忽略IP数据包的源IP地址，选择该发送网卡上最合适的本地地址作为arp请求的源IP地址
 - 
 #### ipvs的优雅关闭问题：短连接，高并发的情况下的延时问题：
+
 ### conntrack 工作在三层网络
 - 连接跟踪表：记录每个连接的源ip，目的ip和端口的等信息；回报时匹配规则进行自动snat
 - 解决问题：当snat做转发发送到公网；然后返回时，路由器如何知道发给哪个PC？
