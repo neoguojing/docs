@@ -23,7 +23,9 @@
 ### winuserspace：
 - 仅在windows使用
 ### userspace
-- 最早的负载均衡方案，它在用户空间监听一个端口，所有服务通过 iptables 转发到这个端口，然后在其内部负载均衡到实际的 Pod。该方式最主要的问题是效率低，有明显的性能瓶颈
+- 应用发往Service的请求会通过iptable规则转发给kube-proxy，
+- kube-proxy再转发到Service所代理的后端Pod
+- 发往Service的请求会先进入内核空间的iptable，再回到用户空间由kube-proxy代理转发。内核空间和用户空间来回地切换成为了该模式的主要性能问题。但由于发往后端Pod的请求是由kube-proxy代理转发的，请求失败时，是可以让kube-proxy重试的
 ### iptables
 - https://zhuanlan.zhihu.com/p/196393839
 - 表：承载链条，实现不同功能,按照优先级排列如下,通过-t参数指定
