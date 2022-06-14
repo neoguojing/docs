@@ -1,5 +1,6 @@
 # 存储&&数据库
-
+- OLTP（on-line transaction processing）翻译为联机事务处理；主要用来记录某类业务事件的发生，如ERP，OA等系统；OLTP是数据库的应用
+- OLAP（On-Line Analytical Processing）翻译为联机分析处理；依赖于OLTP；OLAP是数据仓库应用
 ## 统计
 - Cassandra
 - mysql
