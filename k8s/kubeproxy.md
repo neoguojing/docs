@@ -217,4 +217,8 @@ list:set
 ### Proxier.syncEndpoint
 - 调用ipvs添加新的endpoint到realserver
 - 将待删除的endpoint放入gracefuldeleteManager优雅删除
+## Service
+- externalTrafficPolicy：外部流量策略
+- > Cluster（默认）: Kubeproxy流量可以转发到其他Node的Pod,但会经过snat，回包需要从原路径返回；负载均衡会好，性能有损耗
+- > Local: Kubeproxy流量只转发到本地，负载均衡差，效率高；可以通过外层的负载均衡，配合pod的反亲和性来达到目的
 ## core dns
