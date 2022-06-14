@@ -133,25 +133,25 @@ list:set
 ### 规则解释
 - 转发规则：匹配到%#08x/%#08x标记，则接受；否则匹配conn，存储连接状态则接受
 - PREROUTINGG和OUTPUT会启用KUBE-SERVICE规则链：
-- > 匹配到KUBE-LOAD-BALANCER集合(dst,dst)则转到KUBE-LOAD-BALANCER链
+- > 匹配到KUBE-LOAD-BALANCER集合(dst,dst)则转到KUBE-LOAD-BALANCER链 // 对于load balancer type service
 - > 匹配到KUBE-CLUSTER-IP集合(dst,dst)则转到标记链打标
-- > 匹配到KUBE-EXTERNAL-IP集合则转到标记链打标
+- > 匹配到KUBE-EXTERNAL-IP集合则转到标记链打标   //指定external IPs的service才有
 - > 目的地址是本地主机地址的，跳转到KUBE-NODE-PORT链
 - POSTROUTING启用KUBE-POSTROUTING规则：
-- > 匹配到KUBE-LOOP-BACK集合（dst，dst，src）则执行MASQ
+- > 匹配到KUBE-LOOP-BACK集合（dst，dst，src）则执行MASQ //处理hairpin模式
 - > 未打标的包返回上一个链条处理,标记了0x4000/0x4000的数据包继续向下执行标记和snat
 - > 对标记进行xor操作
 - > 进行snat，且端口随机化
-- KUBE-LOAD-BALANCER：
+- KUBE-LOAD-BALANCER：仅对于load balancer type service
 - > 匹配到KUBE-LOAD-BALANCER-FW集合则跳转到KUBE-FIREWALL链条
-- > 匹配到KUBE-LOAD-BALANCER-LOCAL集合则返回到KUBE-SERVICE链处理
+- > 匹配到KUBE-LOAD-BALANCER-LOCAL集合则返回到KUBE-SERVICE链处理  //仅externalTrafficPolicy=local才出现
 - > 跳转到打标链
 - KUBE-FIREWALL：
-- > 匹配KUBE-LOAD-BALANCER-SOURCE-CIDR则返回KUBE-LOAD-BALANCER链；
+- > 匹配KUBE-LOAD-BALANCER-SOURCE-CIDR则返回KUBE-LOAD-BALANCER链； //指定了loadBalancerSourceRanges 的服务
 - > 匹配KUBE-LOAD-BALANCER-SOURCE-IP则返回KUBE-LOAD-BALANCER链；
 - > 跳转到标记drop链条
 - KUBE-NODE-PORT:
-- > 匹配到KUBE-NODE-PORT-LOCAL-TCP集合则返回KUBE-SERVICE继续处理
+- > 匹配到KUBE-NODE-PORT-LOCAL-TCP集合则返回KUBE-SERVICE继续处理 //仅externalTrafficPolicy=local才出现
 - > 匹配到KUBE-NODE-PORT-TCP集合则跳转到标记链
 - > UDP同上
 - KUBE-MARK-DROP
