@@ -28,6 +28,7 @@
 | InfluxDB  | 单元格 |
 | Redis  | 单元格 |
 ## 常用技术
+### 数据分片
 ### 内存数据库
 #### memtable 
 代表：leveldb hbase Cassandra
