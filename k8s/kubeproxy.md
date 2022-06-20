@@ -10,6 +10,9 @@
 - dns使用的是：coredns
 - dummy网卡：ip link add kube-ipvs0 type dummy 类似loopback 接口，但是可以创建任意多个
 - DefaultDummyDevice = "kube-ipvs0"：1.主机内通信；2.将service ip绑定到该设备，防止物理接口变动影响服务；
+- > 实际不会接收报文，可以看到它的网卡状态是 DOWN，主要用于绑 ipvs 规则的 VIP
+- > kube-ipvs0 这个网卡将 Service 相关的 VIP 绑在上面以便让报文进入 INPUT 进而被 ipvs 转发
+- > 当 IP 被绑到 kube-ipvs0 上，内核会自动将上面的 IP 写入 local 路由
 - hairpin mode：bridge不允许包从收到包的端口发出，比如bridge从一个端口收到一个广播报文后，会将其广播到所有其他端口。bridge的某个端口打开hairpin mode后允许从这个端口收到的包仍然从这个端口发出；brctl hairpin <bridge> <port> {on|off} turn hairpin on/off
 - > 解决网络同一个网络命名空间内的通信问题，从同一个端口进入，同一个端口出去
 ## 通用
