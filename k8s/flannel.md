@@ -1,6 +1,34 @@
 
 # network plugin
-
+## 网络概念：
+- bridge：同一个网段的interface组织起来通信
+- 转发表（fdp）：二层网络转发，匹配mac地址，并记录对应mac地址的出口
+- > 保存mac地址，物理接口，老化时间和vlanid等信息
+- 
+- arp缓存表：保持ip和mac地址的对应关系
+- 路由表：保持三层网络的转发规则
+- > 分为RIB（路由表维护网络拓扑信息），FIB（转发表）
+- > 使用 route 或route -F 查看
+- > 保存目的网络地址，网络掩码，网关/下一跳，跳数和接口等信息
+- > 匹配规则为最长前缀匹配和精确匹配
+- 
+- veth：连接两个命名空间
+- > 内核实现：net_device，私有定义：veth_priv
+- > 虚拟设备对
+- 
+- network namespace：
+- > 网络设备、端口、套接字、网络协议栈、路由表、防火墙规则等都是独立的
+- > 创建ns ：ip netns add xx 
+- > ip netns exec xx yy 在新 namespace xx 中执行 yy 命令
+- > 默认有一个lo接口，需要手动up
+- Virtual Routing and Forwarding:
+- > 一种创建虚拟路由与转发域地能力
+- > 可以解决多租户问题
+- > 只影响L3层及以上
+- > 网络命名空间提供VRF虚拟网络接口层的隔离，命名空间内接口上的vlan提供L2隔离，VRF提供L3隔离
+- ip monitor监听内核网络事件
+- l2miss：如果设备找不到 MAC 地址需要的接口的 地址，就发送通知事件，fdb（转发表）确实接口地址
+- l3miss：如果设备找不到需要 IP 对应的 MAC 地址，就发送通知事件；
 ## 路由协议
 - IGP：自治系统内部的网关协议：RIP，OSFP
 - EGP：边界网关协议：OSP
@@ -40,7 +68,8 @@
 - eth0检测到是vxLan包，则发送到flannel0网卡
 - flannel0-docker0：查询路由表
 - docker0-pod：通过arp查看ip对应的mac，进行二层转发
-
+### vxlan kernel 3.7.0+
+- 
 ## calico
 - Felix运行在每一台Host的agent进程，主要负责网络接口管理和监听、路由、ARP管理、ACL管理和同步、状态上报等。Felix会监听Etcd中心的存储，从它获取事件，比如说用户在这台机器上加了一个IP，或者是创建了一个容器等，用户创建Pod后，Felix负责将其网卡、IP、MAC都设置好，然后在内核的路由表里面写一条，注明这个IP应该到这张网卡。同样，用户如果制定了隔离策略，Felix同样会将该策略创建到ACL中，以实现隔离。
 - Confd是负责存储集群etcd生成的Calico配置信息，提供给BIRD层运行时使用。
