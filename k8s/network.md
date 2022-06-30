@@ -29,6 +29,7 @@
 - ip monitor监听内核网络事件
 - l2miss：如果设备找不到 MAC 地址需要的接口的 地址，就发送通知事件，fdb（转发表）确实接口地址
 - l3miss：如果设备找不到需要 IP 对应的 MAC 地址，就发送通知事件；
+- Overlay ：网络上的虚拟化，体框架是对基础网络不进行大规模修改的条件下，实现应用在网络上的承载，并能与其它网络业务分离，并且以基于 IP 的基础网络技术为主
 ## 路由协议
 - IGP：自治系统内部的网关协议：RIP，OSFP
 - EGP：边界网关协议：OSP
@@ -69,7 +70,22 @@
 - flannel0-docker0：查询路由表
 - docker0-pod：通过arp查看ip对应的mac，进行二层转发
 ### vxlan kernel 3.7.0+
-- 
+- 虚拟可扩展网络区域，要求网络三层可达
+- 使用MAC in UDP的方式进行封装；原始二层报文+Vxlan头（主要是VNI）+UDP头（默认目的端口4798）+ IP头（目的IP为vtep）+mac头（目的mac为vtep）
+- VLAN Type被設置為0x8100
+- VTEP(Vxlan Tunnel End Point): VXLAN 网络的边缘设备，来进行 VXLAN 报文的处理（封包和解包）
+- > 同一个物理机只需要一个，所有虚拟机和容器可以共享
+- > 解决虚拟化技术带来的mac转发表膨胀的问题，VM+容器都会有自己的mac地址
+- > VTEP实际处理UDP报文的转发
+- > 通过1.洪泛发送ARP报文学习MAC，VNI和VTEP；2.使用flannel等组件
+- vlan id用来表示不同的二层网络，实现多租户，每个 VNI 对应一个租户，支持1000多万的租户
+- 在三层网络上构建二层网络
+- 发送流程：原始报文经过 VTEP，被 Linux 内核添加上 VXLAN 头部以及外层的 UDP 头部，再发送出去，对端 VTEP 接收到 VXLAN 报文后拆除外层 UDP 头部，并根据 VXLAN 头部的 VNI 把原始报文发送到目的服务器
+```
+1.创建vxlan接口
+ip link add vxlan0 type vxlan id 4100 remote 192.168.1.101 local 192.168.1.100 dstport 4789 dev eth0
+其中 id 为 VNI，remote 为远端主机的 IP，local 为你本地主机的 IP，dev 代表 VXLAN 数据从哪个接口传输
+```
 ## calico
 - Felix运行在每一台Host的agent进程，主要负责网络接口管理和监听、路由、ARP管理、ACL管理和同步、状态上报等。Felix会监听Etcd中心的存储，从它获取事件，比如说用户在这台机器上加了一个IP，或者是创建了一个容器等，用户创建Pod后，Felix负责将其网卡、IP、MAC都设置好，然后在内核的路由表里面写一条，注明这个IP应该到这张网卡。同样，用户如果制定了隔离策略，Felix同样会将该策略创建到ACL中，以实现隔离。
 - Confd是负责存储集群etcd生成的Calico配置信息，提供给BIRD层运行时使用。
