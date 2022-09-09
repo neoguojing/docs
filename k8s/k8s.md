@@ -20,7 +20,7 @@
 - spec： 记录期望状态
 - status： 当前状态，由系统提供
 - 详细文档：https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md
-####必要字段
+#### 必要字段
 - apiVersion
 - kind ： 对象类型
 - metadata： 帮助唯一区分对象；name ，UID 和 namespace
@@ -29,6 +29,60 @@
 #### 如何区分对象
 - 命名方式：name-uuid
 - uuid由系统产生，全局唯一： ISO/IEC 9834-8  ITU-T X.667
+#### namespace
+- namespace：用于区分不同用户：
+- kube-system ： 系统创建的对象
+- kube-public ： 所有公用的对象
+- kube-node-lease： 维护lease 对象为每个节点
+- 不在namespace下的资源：node，storageClass等
+- kubernetes.io/metadata.name： label标记namespace的名称
+#### 标签和选择器
+- https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/： 推荐的label
+- 用于组织和选择对象的子集
+- 由prefix/key: value 构成prefix可以省略
+- kubernetes.io/ ，k8s.io/ 前缀保留核心组件使用
+- 选择起类型：1.等价；2.集合； 
+- 选择多个标签用“,”分割
+- 
+```
+metadata:
+  name: label-demo
+  labels:
+    environment: production
+    app: nginx
+    
+selector:
+    component: redis
+    matchLabels:
+      component: redis
+    matchExpressions:
+      - {key: tier, operator: In, values: [cache]}
+      - {key: environment, operator: NotIn, values: [dev]}
+```
+#### Annotations 注解
+- 用于在对象的metadata，添加自定义的属性
+```
+metadata:
+  name: annotations-demo
+  annotations:
+    imageregistry: "https://hub.docker.com/"
+```
+#### 字段选择器
+- kubectl get pods --field-selector status.phase=Running
+- 通用字段：metadata.name=my-service，metadata.namespace!=default
+
+#### Finalizers
+- 通知k8s等待知道一定条件，才销毁对象；此时对象处于terminating状态
+- 用于进行垃圾回收
+- k8s有内置finalizers，用户可自定义
+- kubernetes.io/pv-protection： 阻止PersistentVolume被删除
+
+#### 父对象和子对象
+- ReplicaSet  是pod的父对象
+- metadata.ownerReferences： 指向父对象
+- ownerReferences.blockOwnerDeletion： 阻止删除父对象，默认true
+- 
+
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
