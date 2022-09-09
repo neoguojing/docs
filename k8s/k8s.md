@@ -81,7 +81,8 @@ metadata:
 - ReplicaSet  是pod的父对象
 - metadata.ownerReferences： 指向父对象
 - ownerReferences.blockOwnerDeletion： 阻止删除父对象，默认true
-- 
+
+### 集群
 
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
