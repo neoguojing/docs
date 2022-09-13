@@ -87,6 +87,30 @@ metadata:
 - 通过"kind": "Node"的yml手动注册，metadata.name为ip地址
 - 通过kubelet 的--register-node 来实现自动注册
 - kubectl cordon 使得node不可被调度
+- 节点状态包括：地址，状态，容量和是否可分配
+##### 心跳： 
+- 1.kubelet更新节点的.status 文件，5分钟更新一次；
+- 2. 每个节点维护一个lease，10s更新一次
+##### node controler
+- 分配CIDR地址
+- 保持内部node列表的更新
+- 监听节点健康状态：1.更新状态；2.若5分钟不在线，则启动eviction驱逐pod
+- --node-eviction-rate : 默认0.1/s,每10s不会驱逐超过1个node上的pod
+##### Graceful node shutdown
+-  v1.21引入
+-  shutdownGracePeriod和shutdownGracePeriodCriticalPods，控制关闭pod的时间
+-  依赖于systemd inhibitor locks 
+-  PriorityClass：控制 graceful node shutdown的优先级
+##### swap
+- cgv1支持swap
+```
+memorySwap:
+  swapBehavior: LimitedSwap
+```
+
+
+
+
 
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
