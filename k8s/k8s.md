@@ -82,7 +82,11 @@ metadata:
 - metadata.ownerReferences： 指向父对象
 - ownerReferences.blockOwnerDeletion： 阻止删除父对象，默认true
 
-### 集群
+### 集群概念
+#### node
+- 通过"kind": "Node"的yml手动注册，metadata.name为ip地址
+- 通过kubelet 的--register-node 来实现自动注册
+- kubectl cordon 使得node不可被调度
 
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
