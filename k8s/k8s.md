@@ -107,6 +107,15 @@ metadata:
 memorySwap:
   swapBehavior: LimitedSwap
 ```
+#### 垃圾回收
+- 包含：pod终止，job完成，没有owner的对象，未使用的image和镜像，声明了storageclass的pv，和node lease等
+##### 瀑布删除
+- 前台： 设置deletionTimestamp，设置finalizers=foregroundDeletion，删除依赖，删除owner
+- 后台： 删除owner，k8s后台删除依赖
+##### 容器和镜像删除
+- 镜像： 磁盘使用高于HighThresholdPercent，通过 image manager，删除最早未使用的镜像，知道磁盘利用率达到LowThresholdPercent
+- 容器： 删除最早的
+- 
 
 
 
