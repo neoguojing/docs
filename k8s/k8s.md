@@ -115,12 +115,38 @@ memorySwap:
 ##### 容器和镜像删除
 - 镜像： 磁盘使用高于HighThresholdPercent，通过 image manager，删除最早未使用的镜像，知道磁盘利用率达到LowThresholdPercent
 - 容器： 删除最早的
-- 
+### 容器
+#### 镜像
+- pull策略： IfNotPresent，Always，Never
+- ImagePullBackOff： 容器pull失败，5分钟后重试
+- 多镜像索引： pause-amd64，加上arch后缀，实现不同架构获取不同镜像
+#### 运行时类
+- 用于选择容器的运行时配置；运行时配置用于启动pod容器
+- 1. 配置运行时实现；2.配置对应的runtimeclass资源
+```
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: myclass 
+handler: myconfiguration 
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  runtimeClassName: myclass
+```
+#### 生命周期钩子
+- PostStart ： 钩子在镜像创建后立马执行
+- PreStop： 在容器terminated后立即执行
 
-
-
-
-
+### 工作负载 workload
+#### pod
+- 阶段：pending，running，failed，Succeeded，Unknown
+- status： Waiting，Running，Terminated
+- condition： PodScheduled，PodHasNetwork，ContainersReady，Initialized，Ready
+- readiness： 用于向pod注入自定的condition；由pod的status.condition字段获取；该字段不影响pod的condition
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
