@@ -147,6 +147,17 @@ spec:
 - status： Waiting，Running，Terminated
 - condition： PodScheduled，PodHasNetwork，ContainersReady，Initialized，Ready
 - readiness： 用于向pod注入自定的condition；由pod的status.condition字段获取；该字段不影响pod的condition
+- probe：
+- > livenessProbe: 报告容器是否在运行;失败会kill 容器执行重启；默认为成功； 容器内应用会自动崩溃，则不需要
+- > readinessProbe： 容器是否准备回应请求，失败则从service移除对应endpppoint的ip，默认成功；可以用来帮助检测依赖服务是否正常
+- > startupProbe: 容器内应用是否启动；失败则kill并重启；默认为成功；适用于初始化占用较长时间的应用；
+- 终结流程
+- > kubectl 删除pod，grace period 30s
+- > api server 更新pod状态为Terminating；kubelet启动pod终结流程：1.执行prestop hook；2.发送TERM信号给容器的1号进程；
+- > 同时控制平面删除endpoint中的pod对象，从Servic，Replicaset移除pod
+- > grace period 超时，开始执行强制关闭；CRI发送SIGKILL，关闭容器里所有的进程；kubelet关闭pause容器
+- > kubelet触发api server移除pod对象，并设置grace period为0
+- > api server 删除pod对象
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
