@@ -160,6 +160,30 @@ spec:
 - > api server 删除pod对象
 - 强制终结： --force + --grace-period=0 ，api pod对象首先被删除；
 - 终结pod的垃圾回收：terminated-pod-gc-threshold 超越时， 执行pod清理
+#### init container
+- 在app容器运行之前运行
+- 多个容器串行执行，且必须是一个任务
+- 和正常容器的区别是：不支持probe，资源配置也有区别
+- pod重启，init 容器重新执行
+- 修改init配置，会重启pod
+- 
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp-pod
+  labels:
+    app.kubernetes.io/name: MyApp
+spec:
+  containers:
+  - name: myapp-container
+    image: busybox:1.28
+    command: ['sh', '-c', 'echo The app is running! && sleep 3600']
+  initContainers:
+  - name: init-myservice
+    image: busybox:1.28
+    command: []
+```
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
