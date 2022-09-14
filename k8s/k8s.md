@@ -158,6 +158,8 @@ spec:
 - > grace period 超时，开始执行强制关闭；CRI发送SIGKILL，关闭容器里所有的进程；kubelet关闭pause容器
 - > kubelet触发api server移除pod对象，并设置grace period为0
 - > api server 删除pod对象
+- 强制终结： --force + --grace-period=0 ，api pod对象首先被删除；
+- 终结pod的垃圾回收：terminated-pod-gc-threshold 超越时， 执行pod清理
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
