@@ -233,6 +233,49 @@ spec:
 - 自动在所有节点部署该pod
 - 用于每个节点的日志，监控和存储等
 - 必要字段：.spec.template .spec.selector
+#### job
+- job类型：非并行job，并行job.spec.completions，并行job+工作队列.spec.parallelism
+#### CronJob
+- 时间由controller manage决定
+- startingDeadlineSeconds： 在此时间段内统计到了时间未执行的job
+#### ReplicationController
+- 用于保证指定数量的pod运行和可用，类似一个supervisor
+- 可以保证多个node上的多个pod
+```
+apiVersion: v1
+kind: ReplicationController
+```
+### 服务/网络
+#### 服务
+- 解耦调用者和对应的pod
+- 虚拟ip，cluaster ip
+- targetPort： 用于绑定pod的port
+···
+ targetPort: http-web-svc
+···
+- 没有选择器的service：1.用于抽象集群外的资源；2.抽象其他service；
+- 通过自定义Endpoints对象，绑定无选择器serivec：数量不能超过1000
+```
+apiVersion: v1
+kind: Endpoints
+metadata:
+  # the name here should match the name of the Service
+  name: my-service
+subsets:
+  - addresses:
+      - ip: 192.0.2.42   //不能是虚拟ip
+    ports:
+      - port: 9376
+```
+- proxy: 不适用DNS的原因是：DNS不支持ttl
+- service.spec.sessionAffinity： 设置session保持
+- spec.externalTrafficPolicy： 设置外部流量转发规则,cluster:向集群中可用的endpoint转发；local：只向本机转发
+- pec.internalTrafficPolicy：设置内部流量转发规则，同上
+- 服务发现：1.环境变量{SVCNAME}_SERVICE_HOST + {SVCNAME}_SERVICE_PORT（服务需要先于pod建立）；2.DNS
+- ExternalName：
+- headless： .spec.clusterIP = None；proxy和负责均衡不会处理这类service；
+- > 有选择器的： endpoints controller 创建Endpoints，并修改DNS配置使得A记录指向pod
+- > 无选择器：DNS会记录 ExternalName-type Services，或A记录记录和service同名的endpoint对象
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
