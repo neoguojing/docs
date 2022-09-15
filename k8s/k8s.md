@@ -166,7 +166,7 @@ spec:
 - 和正常容器的区别是：不支持probe，资源配置也有区别
 - pod重启，init 容器重新执行
 - 修改init配置，会重启pod
-- 
+- 修改init镜像不会重启pod
 ```
 apiVersion: v1
 kind: Pod
@@ -184,6 +184,27 @@ spec:
     image: busybox:1.28
     command: []
 ```
+#### 干扰项
+- 非主动干扰： 硬件和操作系统错误等
+- 主动干扰： 删除deploy或pod等
+##### 解决干扰
+- PodDisruptionBudget：pdb,用于限制同时down的应用副本的数量，解决主动干扰问题
+- kubectl drain : 标记node失联，驱逐该node上的所有pod，周期性的删除pod
+- 区分集群关联员和应用管理员
+#### 临时的容器
+- 没有端无需设置资源
+- 口和probe
+- ephemeralcontainers声明该容器
+#### 用户空间
+- 用于将容器中的用户和主机用户做映射，即容器以root用户运行，映射到主机上是非root用户（容器在主机上没有root权限）
+- 保证pod仅在该用户空间有效
+- pod.spec.hostUsers
+- kubelet选择pod将要映射的UID/GID，并抱枕唯一性
+- runAsUser，runAsGroup，fsGroup使用容器内的user
+#### downward API
+- 用于暴露pod和容器的字段
+### 工作负载资源
+- 
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
