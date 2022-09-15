@@ -216,6 +216,23 @@ spec:
 #### ReplicaSet
 - 用于确保pod的数量
 - 通过metadata.ownerReferences，关联相关pod
+#### StatefulSets
+- 保证pod的顺序性和唯一性，每个pod都有唯一的标识
+- 唯一的网络标识，持久化存储
+- 删除pod，不会删除volume,需要手动删除
+- 需要一个headless service
+- 优先scale而非删除
+- volumeClaimTemplates ：申明pvc
+- pod标签组成
+- > Ordinal Index：0-N
+- > Stable Network ID:$(statefulset name)-$(ordinal)
+- >Stable Storage:
+- > statefulset.kubernetes.io/pod-name : controler 标签
+- .spec.podManagementPolicy： OrderedReady 或者 Parallel
+#### DaemonSet
+- 自动在所有节点部署该pod
+- 用于每个节点的日志，监控和存储等
+- 必要字段：.spec.template .spec.selector
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
