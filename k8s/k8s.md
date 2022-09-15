@@ -204,7 +204,18 @@ spec:
 #### downward API
 - 用于暴露pod和容器的字段
 ### 工作负载资源
-- 
+#### Deployments
+- 负责更新和配置pod和 ReplicaSets
+- 重要组成部分
+- > .spec.replicas 
+- > .spec.selector: deploy 如何选帧pod进行管理
+- > template: 包含.metadata.labels.app,.template.spec(容器描述)，.spec.template.spec.containers[0].name
+- pod-template-hash： 内部标签，确保deploy的ReplicaSets不会重复
+- 确保最少75%的pod是up的
+- deployment创建后，直接创建一个ReplicaSet负责启动期望数量的pod
+#### ReplicaSet
+- 用于确保pod的数量
+- 通过metadata.ownerReferences，关联相关pod
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
