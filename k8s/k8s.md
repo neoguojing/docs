@@ -160,6 +160,7 @@ spec:
 - > api server 删除pod对象
 - 强制终结： --force + --grace-period=0 ，api pod对象首先被删除；
 - 终结pod的垃圾回收：terminated-pod-gc-threshold 超越时， 执行pod清理
+- hostname是pod的 metadata.name
 #### init container
 - 在app容器运行之前运行
 - 多个容器串行执行，且必须是一个任务
@@ -301,8 +302,59 @@ topologyKeys:
 - 为service和pod创建dns记录，每个service在dns中都有一条记录
 - 包含DNS pod和service
 - 服务名称存储于pod的/etc/resolv.conf
-- Service（除去headless）
-## opporator开发
+- Service（除去headless）： 在DNS里会分配一条A 或者 AAAA记录，解析服务名获取到的是cluster ip
+- Headless（没有clusterip）：同样有一条A 或者 AAAA记录，解析服务名，获取到的是pod ip集合，客户端自己做负载均衡
+- SRV 记录： 服务于service或者headless
+- > my-port-name._my-port-protocol.my-svc.my-namespace.svc.cluster-domain.example
+- 每个pod都会有一条记录：od-ip-address.my-namespace.pod.cluster-domain.example
+- pod就绪时必须包含一条dns记录
+- pod dns策略
+- > Default: pod遵循node的dns策略
+- > ClusterFirst: 优先遵循cluster的dns策略
+- > ClusterFirstWithHostNet
+- > None: 必须在dnsConfig 申明策略
+- pod dns配置 dnsConfig,记录在pod的/etc/resolv.conf中
+- > nameservers : 一系列的ip地址
+- > searches: 一系列dns域名
+```
+ dnsConfig:
+    nameservers:
+      - 1.2.3.4
+    searches:
+      - ns1.svc.cluster-domain.example
+      - my.dns.search.suffix
+    options:
+      - name: ndots
+        value: "2"
+      - name: edns0
+```
+#### ingress
+- 一个API对象，管理外部访问内部Service
+- 流量路由由ingress规则控制
+- .spec.defaultBackend 默认路由
+- Resource backend ：是对k8s资源的引用，必须在同一个命名空间
+```
+- path: /icons
+            pathType: ImplementationSpecific
+            backend:
+              resource:
+                apiGroup: k8s.example.com
+                kind: StorageBucket
+                name: icon-assets
+```
+- Ingress class: 包含ingress controller的配置，用于区分不同的controller；scope: Cluster用于控制ingree的作用空间
+- defaultBackend： 设置默认后端
+#### ingress controller
+- 用于执行ingree，提供负载均衡，边界路由等
+- .spec.defaultBackend ## opporator开发
+#### EndpointSlices
+- 用于跟踪network endpoints，不能超过100个
+- 用于应对规模巨大的endpoint
+- k8s为有选择器的service自动创建一个对象；
+- EndpointSlices中的对象必须有一个合法的dns 子域名，
+- 里面的对象，可以包含node和zone信息
+- endpointslice.kubernetes.io/managed-by： 标签，指定slice的管理者
+- 拥有者是Service
 https://zhuanlan.zhihu.com/p/246550722
 
 ## nodeport
