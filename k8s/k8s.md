@@ -298,7 +298,10 @@ topologyKeys:
     - "kubernetes.io/hostname"
 ```
 #### DNS
-- 
+- 为service和pod创建dns记录，每个service在dns中都有一条记录
+- 包含DNS pod和service
+- 服务名称存储于pod的/etc/resolv.conf
+- Service（除去headless）
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
