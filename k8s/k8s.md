@@ -287,6 +287,18 @@ spec:
 ```
 - externalIPs: 声明外部ip,通过externalIP:port从外部访问服务；不归k8s管理
 - 虚拟ip实现：
+
+#### 流量拓扑
+- 让流量转发依照node的网络拓扑进行
+- 默认情况下转发到ClusterIP/NodePort服务的流量会转发到任意的endpoint
+- topologyKeys： 配置node lable，让流量转发优先跑到相关node；kubernetes.io/hostname  topology.kubernetes.io/zone
+- 依赖ServiceTopology特性
+```
+topologyKeys:
+    - "kubernetes.io/hostname"
+```
+#### DNS
+- 
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
