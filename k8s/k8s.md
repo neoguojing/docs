@@ -272,10 +272,21 @@ subsets:
 - spec.externalTrafficPolicy： 设置外部流量转发规则,cluster:向集群中可用的endpoint转发；local：只向本机转发
 - pec.internalTrafficPolicy：设置内部流量转发规则，同上
 - 服务发现：1.环境变量{SVCNAME}_SERVICE_HOST + {SVCNAME}_SERVICE_PORT（服务需要先于pod建立）；2.DNS
-- ExternalName：
 - headless： .spec.clusterIP = None；proxy和负责均衡不会处理这类service；
 - > 有选择器的： endpoints controller 创建Endpoints，并修改DNS配置使得A记录指向pod
 - > 无选择器：DNS会记录 ExternalName-type Services，或A记录记录和service同名的endpoint对象
+- 类型
+- > ClusterIP 默认类型，只支持集群内访问
+- > NodePort: 通过nodeip+nodeport 可以在集群外部访问；--nodeport-addresses指定特定ip；
+- > LoadBalancer:  云提供的负载均衡器；spec.loadBalancerClass设置自定义负载均衡器
+- > ExternalName: 将service映射到externalName（dns记录），使用一个CNAME记录该值，需要DNS
+```
+spec:
+  type: ExternalName
+  externalName: my.database.example.com
+```
+- externalIPs: 声明外部ip,通过externalIP:port从外部访问服务；不归k8s管理
+- 虚拟ip实现：
 ## opporator开发
 https://zhuanlan.zhihu.com/p/246550722
 
