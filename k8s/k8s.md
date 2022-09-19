@@ -355,6 +355,9 @@ topologyKeys:
 - 里面的对象，可以包含node和zone信息
 - endpointslice.kubernetes.io/managed-by： 标签，指定slice的管理者
 - 拥有者是Service
+#### 服务内部网络策略
+- .spec.internalTrafficPolicy
+- > Local: 
 https://zhuanlan.zhihu.com/p/246550722
 
 ## nodeport
