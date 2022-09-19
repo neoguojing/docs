@@ -358,7 +358,24 @@ topologyKeys:
 #### 服务内部网络策略
 - .spec.internalTrafficPolicy
 - > Local: 告诉kubeproxy只使用node本地的endpoint
-- > 
+#### 基于网络拓扑的路由
+- 在计算service的endpoint时，会注入对应的zone和region信息
+- kubeproxy消费对应信息，影响路由
+- service.kubernetes.io/topology-aware-hints设置为auto
+
+#### 网络策略
+- 用于控制3-4层的流量，告诉一个pod要如何和其他网络实体通信
+- 依赖于网络插件，提供一个controller；NetworkPolicy本身是一种资源
+- policyTypes: 
+- > ingress定义入口策略，允许进入的CIDR范围，命名空间选择器和pod选择器，进入的端口
+- > egress : 定义出口策略，CIDR和端口
+
+####ipv4/v6 双栈
+
+### 存储
+
+#### 卷
+
 https://zhuanlan.zhihu.com/p/246550722
 
 ## nodeport
