@@ -357,7 +357,8 @@ topologyKeys:
 - 拥有者是Service
 #### 服务内部网络策略
 - .spec.internalTrafficPolicy
-- > Local: 
+- > Local: 告诉kubeproxy只使用node本地的endpoint
+- > 
 https://zhuanlan.zhihu.com/p/246550722
 
 ## nodeport
