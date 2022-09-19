@@ -375,6 +375,14 @@ topologyKeys:
 ### 存储
 
 #### 卷
+- 解决持久化和文件共享的问题
+- 瞬间卷的生命周期和pod一致
+- 卷：是一个目录，可以被pod中的容器访问
+- .spec.volumes： 卷定义
+- .spec.containers[*].volumeMounts：卷绑定在容器的什么目录
+- 卷类型：cephfs，configMap，emptyDir（生命周期同pod）
+- > hostPath: 绑定宿主机的文件或文件夹到容器里；可以是dev，socket等等文件或者文件夹，最好是readonly，DirectoryOrCreate/FileOrCreate
+- > local: 仅支持静态持久卷；与hostpath类似；node不健康的情况下，相关volume不可用；数据容易丢失；必须设置nodeAffinity
 
 https://zhuanlan.zhihu.com/p/246550722
 
