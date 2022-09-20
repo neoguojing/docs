@@ -383,7 +383,38 @@ topologyKeys:
 - 卷类型：cephfs，configMap，emptyDir（生命周期同pod）
 - > hostPath: 绑定宿主机的文件或文件夹到容器里；可以是dev，socket等等文件或者文件夹，最好是readonly，DirectoryOrCreate/FileOrCreate
 - > local: 仅支持静态持久卷；与hostpath类似；node不健康的情况下，相关volume不可用；数据容易丢失；必须设置nodeAffinity
-
+- > gitRepo: 
+```
+ gitRepo:
+      repository: "git@somewhere:me/my-git-repository.git"
+      revision: "22f1d8406d464b0c0874075539c1f2e96c253775"
+```
+- > secret : 基于tmpfs实现，不会落盘
+- subPath： 在一个pod内共享一个卷给多个用户，不推荐生产使用
+- > volumeMounts.subPath
+```
+ volumeMounts:
+      - mountPath: /var/www/html
+        name: site-data
+        subPath: html
+```
+- 根目录：/var/lib/kubelet
+- emptyDir/hostPath 在不同的容器之间隔离
+- 绑定传播： 在不同的容器之间共享数据卷
+- > .volumeMounts.mountPropagation
+- > none： 不接受子目录重新挂载，容器卷对于host不可见
+- > HostToContainer: 宿主机的目录中挂载新的子目录，则容器内可见；参见linux rslave
+- > Bidirectional: 同上，同时容器内创建的目录对宿主机可见；参见linux rshare
+- > 开启该特性，需要在docker的systemctl中设置MountFlags=shared
+#### 持久卷 抽象存储是如何提供和被消费的
+- PersistentVolume： 
+- > 一块存储，已经被管理员或者storage class提供；和node资源类似；生命周期独立于pod
+- > 静态分配: 管理员手动分配
+- > 动态分配：基于StorageClasses；需要启动--enable-admission-plugins；默认DefaultStorageClass
+- PersistentVolumeClaim： 
+- > 是一个用户的存储请求；等价于pod的角色定位；允许用户消费抽象的存储资源
+- > controller 根据pvc请求，去pv寻找合适的资源，做绑定，失败则处于unbound状态
+- 
 https://zhuanlan.zhihu.com/p/246550722
 
 ## nodeport
