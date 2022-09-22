@@ -411,10 +411,32 @@ topologyKeys:
 - > 一块存储，已经被管理员或者storage class提供；和node资源类似；生命周期独立于pod
 - > 静态分配: 管理员手动分配
 - > 动态分配：基于StorageClasses；需要启动--enable-admission-plugins；默认DefaultStorageClass
+- > pv被删除时也不会立刻删除，直到没有任何pvc绑定
+- > kubernetes.io/pvc-protection : finalizer
 - PersistentVolumeClaim： 
 - > 是一个用户的存储请求；等价于pod的角色定位；允许用户消费抽象的存储资源
 - > controller 根据pvc请求，去pv寻找合适的资源，做绑定，失败则处于unbound状态
-- 
+- > pvc被用户删除时，不会立即删除，直到没有任何pod使用
+- > kubernetes.io/pv-protection: finalizer
+- 回收策略：
+- > 保留： 只支持手动改造资源
+- > Delete ： 删除pv对下以及相关的外部存储资产
+- > Recycle: 降级
+- 预定PV
+```
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: foo-pv
+spec:
+  storageClassName: ""
+  claimRef:
+    name: foo-pvc
+    namespace: foo
+  ...
+```
+- PV扩容
+- > storage class 中的allowVolumeExpansion为true
 https://zhuanlan.zhihu.com/p/246550722
 
 ## nodeport
