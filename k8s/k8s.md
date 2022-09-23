@@ -462,7 +462,40 @@ dataSource:
     apiGroup: snapshot.storage.k8s.io
 ```
 - dataSourceRef: 指定卷寄居者
+#### 投影卷
+- secret
+- downwardAPI
+- configMap
+- serviceAccountToken
+
+#### 臨時卷
+- emptyDir
+- configMap, downwardAPI, secret
+- CSI ephemeral volumes:
+- generic ephemeral volumes
+
+#### storage class
+- 用於描述存儲的類
+- 包含： provisioner，parameters，reclaimPolicy
+- 名字很重要，一經創建不能修改
+- kubernetes-sigs/sig-storage-lib-external-provisioner/ kubernetes-sigs/sig-storage-lib-external-provisioner ：外部提供者的代碼目錄
+- storage.k8s.io： 提供相關api
+#### 動態卷提供者
+- 提供按需的存儲分配
+- 需要實現storage class接口
+- 創建：1.創建StorageClass；2.
+- 使用：在PVC中指定或者PV中指定
+#### 快照卷
+#### 快照卷類
+#### CSI
+#### 存儲容量
+- 調度：pod未創建，聲明了使用CSI驅動的storage class；StorageCapacity爲true，這種情況下，調度器考慮卷的大小來選擇容器
+#### 卷健康監控
+- CSI volume health monitoring ，是CSI的一部分
+- 依賴於：1.外部的外部的健康健康controller；2.kublete
 https://zhuanlan.zhihu.com/p/246550722
+
+### 調度、搶佔和驅逐
 
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
