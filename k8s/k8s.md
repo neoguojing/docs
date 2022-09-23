@@ -413,11 +413,22 @@ topologyKeys:
 - > 动态分配：基于StorageClasses；需要启动--enable-admission-plugins；默认DefaultStorageClass
 - > pv被删除时也不会立刻删除，直到没有任何pvc绑定
 - > kubernetes.io/pvc-protection : finalizer
+- > spec:capacity,volumeMode,accessModes，storageClassName，nodeAffinity
+- > volumeMode: Filesystem(后台是块设备，k8s会创建一个文件系统)，Block（直接使用，速度块，但是需要自定义如何操作和管理存储）
+- accessModes: 
+- > ReadWriteOnce : 仅被一个node挂载，可读写，允许同node的pod共享
+- > ReadOnlyMany: 被多个node挂载，只读
+- > ReadWriteMany: 被多个node挂载，读写
+- > ReadWriteOncePod: 只能被一个pod挂载和读写，只要csi支持，
 - PersistentVolumeClaim： 
 - > 是一个用户的存储请求；等价于pod的角色定位；允许用户消费抽象的存储资源
 - > controller 根据pvc请求，去pv寻找合适的资源，做绑定，失败则处于unbound状态
 - > pvc被用户删除时，不会立即删除，直到没有任何pod使用
 - > kubernetes.io/pv-protection: finalizer
+- > spec:capacity,volumeMode,accessModes，storageClassName，matchLabels
+- > 沒有storageClassName的使用默認的class；默認class未開啓，則使用PV中申明的class
+- > 需要和使用者在同一個命名空間
+- 
 - 回收策略：
 - > 保留： 只支持手动改造资源
 - > Delete ： 删除pv对下以及相关的外部存储资产
@@ -437,6 +448,20 @@ spec:
 ```
 - PV扩容
 - > storage class 中的allowVolumeExpansion为true
+- > csi默认支持扩容；仅支持XFS，Ext3和ext4
+- > 就绪的pvc支持扩容
+- > 扩容失败，controller会不断重试，直到管理员介入；
+- > 失败恢复：1.设置pv为Retain；2.删除PVC（不会丢失数据）；3.删除pv的claimRef；4.重建更小的PVC；5.重置PV的reclaim
+#### 快照生成和恢復
+- 僅樹外的CSI插件支持
+- 在pvc中指定數據源爲snapshot
+```
+dataSource:
+    name: new-snapshot-test
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
+```
+- dataSourceRef: 指定卷寄居者
 https://zhuanlan.zhihu.com/p/246550722
 
 ## nodeport
