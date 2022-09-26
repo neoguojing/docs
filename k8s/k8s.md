@@ -499,6 +499,7 @@ https://zhuanlan.zhihu.com/p/246550722
 #### k8s调度
 - 默认调度器
 - 选取可用nodes，执行一系列函数，打分排序，挑选分数最高的运行pod
+- 影响调度的因素有：资源需求，硬件、软件、策略，亲和性和反亲和性，数据本地化，内部流量引用等
 - 
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
