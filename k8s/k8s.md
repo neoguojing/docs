@@ -496,7 +496,10 @@ dataSource:
 https://zhuanlan.zhihu.com/p/246550722
 
 ### 調度、搶佔和驅逐
-
+#### k8s调度
+- 默认调度器
+- 选取可用nodes，执行一系列函数，打分排序，挑选分数最高的运行pod
+- 
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
