@@ -500,7 +500,28 @@ https://zhuanlan.zhihu.com/p/246550722
 - 默认调度器
 - 选取可用nodes，执行一系列函数，打分排序，挑选分数最高的运行pod
 - 影响调度的因素有：资源需求，硬件、软件、策略，亲和性和反亲和性，数据本地化，内部流量引用等
-- 
+- 过滤，打分
+- 调度策略： KubeSchedulerConfiguration 对象指定策略配置文件 /etc/srv/kubernetes/kube-scheduler/kubeconfig
+- 调度profile：用于配置不同阶段的插件，queueSort，preFilter，filter，postFilter，preScore，score，reserve，permit，preBind，bind，postBind，multiPoint
+#### 过滤手段
+- nodeSelector(pod)/node lable: 
+- 亲和性和反亲和性：1.节点亲和性，用于选择节点；2.pod直接的亲和性和反亲和性：用于设置pod之间的限制
+- 节点亲和性： 
+```
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution://硬性要求
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: topology.kubernetes.io/zone
+            operator: In
+            values:
+            - antarctica-east1
+            - antarctica-west1
+      preferredDuringSchedulingIgnoredDuringExecution: //soft
+
+```
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
