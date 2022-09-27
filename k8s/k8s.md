@@ -565,6 +565,21 @@ spec:
 - Taints ： 运行node驱逐一个集合的pod，应用于node
 - Tolerations ： 应用的pod，使得调度器调度满足Taints的pod到对应node，不保证成功
 - 一起工作，保证相关pod不被调度到非法的node
+- operator: Exists Equal
+- effect: NoSchedule PreferNoSchedule NoExecute
+- 策略：
+- > 至少一个taint不满足，对于NoSchedule，则不会调度
+- > 至少一个PreferNoSchedule，则尝试不调度
+- > 至少一个NoExecute每满足，则立即驱逐pod
+- tolerationSeconds：不定义则永远和node绑定
+```
+kubectl taint nodes node1 key1=value1:NoSchedule
+tolerations:
+- key: "key1"
+  operator: "Equal"
+  value: "value1"
+  effect: "NoSchedule"
+```
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
