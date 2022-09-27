@@ -506,7 +506,7 @@ https://zhuanlan.zhihu.com/p/246550722
 #### 过滤手段
 - nodeSelector(pod)/node lable: 
 - 亲和性和反亲和性：1.节点亲和性，用于选择节点；2.pod直接的亲和性和反亲和性：用于设置pod之间的限制
-- 节点亲和性： 
+- 节点亲和性： 可以在pod和KubeSchedulerConfiguration对象中指定
 ```
 spec:
   affinity:
@@ -522,6 +522,31 @@ spec:
       preferredDuringSchedulingIgnoredDuringExecution: //soft
 
 ```
+- pod内部亲和性和反亲和性：
+- > 在大于n00的集群中会显著拖慢调度的速度
+- > operator: 包含：In NotIn Exists DoesNotExist
+```
+spec:
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: security
+              operator: In
+              values:
+              - S2
+          topologyKey: topology.kubernetes.io/zone //用于标记域
+```
+- namespaceSelector: 命名空间选择器
+- nodeName： 直接通过nodename 选择
+- pod调度的额外资源：即runtime消耗的资源，一般在RuntimeClass中使用overhead定义；调度器需要将overhead资源+pod本身请求的资源，来综合考虑调度
+- pod拓扑扩展限制：限制pod在失败的域：zone，regions，nodes等中的传播
+- 
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
