@@ -546,7 +546,7 @@ spec:
 - nodeName： 直接通过nodename 选择
 - pod调度的额外资源：即runtime消耗的资源，一般在RuntimeClass中使用overhead定义；调度器需要将overhead资源+pod本身请求的资源，来综合考虑调度
 - pod拓扑扩展限制：限制pod在失败的域：zone，regions，nodes等中的传播
-- 
+- > 
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
