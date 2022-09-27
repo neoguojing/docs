@@ -546,7 +546,25 @@ spec:
 - nodeName： 直接通过nodename 选择
 - pod调度的额外资源：即runtime消耗的资源，一般在RuntimeClass中使用overhead定义；调度器需要将overhead资源+pod本身请求的资源，来综合考虑调度
 - pod拓扑扩展限制：限制pod在失败的域：zone，regions，nodes等中的传播
-- > 
+- > pod中配置topologySpreadConstraints，告诉调度器如何扩充
+- > maxSkew: pod不平均分布的度
+- > minDomains:定义最小的可用域
+- > topologyKey: node 标签的key，拥有相同key的nodes被视为
+- > whenUnsatisfiable
+```
+    topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          matchLabelKeys:
+            - app
+            - pod-template-hash
+```
+- > 所有的pod需要使用相同的限制策略
+#### 污点和容忍度 一起工作
+- Taints ： 运行node驱逐一个集合的pod，应用于node
+- Tolerations ： 应用的pod，使得调度器调度满足Taints的pod到对应node，不保证成功
+- 一起工作，保证相关pod不被调度到非法的node
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
