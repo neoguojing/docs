@@ -588,12 +588,23 @@ tolerations:
   effect: "NoSchedule"
 ```
 #### pod优先级和抢占
-- 调度器尝试使用高优先级的pod抢占低优先级
+- 调度器尝试使用高优先级的pod抢占低优先级，将pod依据优先级顺序排序；若高优先级不满足，则调度低优先级的pod
 - 需要定义 PriorityClasses，创建pod时指定priorityClassName
 - PriorityClass 非namespace对象
 - > 优先级取值小于100w
 - > globalDefault: 指定无需使用名称，对于集群所有pod生效
 - > 只对之后创建的pod有效
+- > preemptionPolicy: 设置为Never，则不抢占
+- > 可以定义多个
+- 抢占：高优先级的pod找不到合适node时候，抢占逻辑启动；低优先级的pod会被驱逐
+- > 被抢占的pod启动优雅关闭流程，在限定时间内执行关闭动作，若未执行完，则被kill
+- > 被抢占pod关闭成功后放入调度队列
+- > nominatedNodeName: 关联抢占信息
+- > 关键策略：若node上所有pod被驱逐，是否能满足需求？
+- PodDisruptionBudget：限制同时关闭的rc的个数
+- 跨node抢占：因为亲和性的关系，会影响到高优先级pod的调度，TODO
+- 副作用：
+- > 
 
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
