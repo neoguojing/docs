@@ -573,7 +573,7 @@ spec:
 - > 至少一个PreferNoSchedule，则尝试不调度
 - > 至少一个NoExecute每满足，则立即驱逐pod
 - tolerationSeconds：不定义则永远和node绑定; 用于控制不可忍受的污点生效是的绑定市场
-- DaemonSet: 对于unreachable和not-ready，tolerationSeconds为空，防止被驱逐
+- DaemonSet: 对于unreachable和not-ready，tolerationSeconds为空，防止被驱逐；默认添加tolerance：内存，磁盘，pid，unschedulable和network-unavailable
 - 内置taint，由控制平面在条件达成是自动添加相关taint，添加时不可调度新的pod到
 - > node.kubernetes.io/not-ready ：tolerationSeconds 默认300s
 - > node.kubernetes.io/unreachable : tolerationSeconds 默认300s
@@ -587,6 +587,14 @@ tolerations:
   value: "value1"
   effect: "NoSchedule"
 ```
+#### pod优先级和抢占
+- 调度器尝试使用高优先级的pod抢占低优先级
+- 需要定义 PriorityClasses，创建pod时指定priorityClassName
+- PriorityClass 非namespace对象
+- > 优先级取值小于100w
+- > globalDefault: 指定无需使用名称，对于集群所有pod生效
+- > 只对之后创建的pod有效
+
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
