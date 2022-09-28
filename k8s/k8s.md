@@ -562,6 +562,7 @@ spec:
 ```
 - > 所有的pod需要使用相同的限制策略
 #### 污点和容忍度 一起工作
+- 调度器会检查taints，在调度时
 - Taints ： 运行node驱逐一个集合的pod，应用于node
 - Tolerations ： 应用的pod，使得调度器调度满足Taints的pod到对应node，不保证成功
 - 一起工作，保证相关pod不被调度到非法的node
@@ -571,7 +572,13 @@ spec:
 - > 至少一个taint不满足，对于NoSchedule，则不会调度
 - > 至少一个PreferNoSchedule，则尝试不调度
 - > 至少一个NoExecute每满足，则立即驱逐pod
-- tolerationSeconds：不定义则永远和node绑定
+- tolerationSeconds：不定义则永远和node绑定; 用于控制不可忍受的污点生效是的绑定市场
+- DaemonSet: 对于unreachable和not-ready，tolerationSeconds为空，防止被驱逐
+- 内置taint，由控制平面在条件达成是自动添加相关taint，添加时不可调度新的pod到
+- > node.kubernetes.io/not-ready ：tolerationSeconds 默认300s
+- > node.kubernetes.io/unreachable : tolerationSeconds 默认300s
+- > node.kubernetes.io/memory-pressure disk-pressure pid-pressure network-unavailable unschedulable
+- > node.cloudprovider.kubernetes.io/uninitialize
 ```
 kubectl taint nodes node1 key1=value1:NoSchedule
 tolerations:
