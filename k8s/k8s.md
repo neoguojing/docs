@@ -603,13 +603,19 @@ tolerations:
 - > 关键策略：若node上所有pod被驱逐，是否能满足需求？
 - PodDisruptionBudget：限制同时关闭的rc的个数
 - 跨node抢占：因为亲和性的关系，会影响到高优先级pod的调度，TODO
-- 副作用：
-- > 
-
+#### 节点压力驱逐
+- 由kubelete触发；kubelete监控内存，磁盘和文件系统等，发现资源消耗达到一定level，则回收资源
+- 设置驱逐的pod状态为Failed，终结pod；被终结的pod会在其他节点被重新创建
+- 和api初始驱逐不一样，不遵守podPodDisruptionBudget 和terminationGracePeriodSeconds
+- 驱逐阈值
+- > 软驱逐：遵循eviction-max-pod-grace-period配置
+- > 硬驱逐：grace period  为0s
+- 驱逐信号：主要包含内存，node文件系统，image文件系统以及进程
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
 - 高可用问题：1.pod不在这台机器，则需要转移流量；2.node机器挂掉，则表现为请求不可达，但是服务事实上可用的行为
+
 
 ## API 分组和版本
 
