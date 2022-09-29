@@ -608,9 +608,12 @@ tolerations:
 - 设置驱逐的pod状态为Failed，终结pod；被终结的pod会在其他节点被重新创建
 - 和api初始驱逐不一样，不遵守podPodDisruptionBudget 和terminationGracePeriodSeconds
 - 驱逐阈值
-- > 软驱逐：遵循eviction-max-pod-grace-period配置
+- > 软驱逐：遵循eviction-max-pod-grace-period配置;
 - > 硬驱逐：grace period  为0s
 - 驱逐信号：主要包含内存，node文件系统，image文件系统以及进程
+- 
+
+
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
