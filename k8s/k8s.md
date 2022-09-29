@@ -608,11 +608,16 @@ tolerations:
 - 设置驱逐的pod状态为Failed，终结pod；被终结的pod会在其他节点被重新创建
 - 和api初始驱逐不一样，不遵守podPodDisruptionBudget 和terminationGracePeriodSeconds
 - 驱逐阈值
-- > 软驱逐：遵循eviction-max-pod-grace-period配置;
-- > 硬驱逐：grace period  为0s
+- > 软驱逐：遵循eviction-max-pod-grace-period配置;eviction-soft配置阈值；eviction-soft-grace-period
+- > 硬驱逐：grace period  为0s；eviction-hard
 - 驱逐信号：主要包含内存，node文件系统，image文件系统以及进程
-- 
+- 节点状态：MemoryPressure DiskPressure PIDPressure
+- 驱逐时的pod选择顺序：1.超过request资源的pod；2.按照优先级选择；3.相对于request的资源比例
+- 节点内存不够时的行为： 
+- > 依据Qos==oom_score_adj： Guaranteed=-997，BestEffort=1000，Burstable=[2,999]，优先级低的先被oomkill掉
+- > 低qos的优先优先被kill
 
+#### api驱逐
 
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
