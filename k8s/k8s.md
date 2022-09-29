@@ -616,9 +616,29 @@ tolerations:
 - 节点内存不够时的行为： 
 - > 依据Qos==oom_score_adj： Guaranteed=-997，BestEffort=1000，Burstable=[2,999]，优先级低的先被oomkill掉
 - > 低qos的优先优先被kill
-
 #### api驱逐
-
+- 使用 Eviction API 创建Eviction对象，触发优雅的pod终结
+- kubectl drain： 调用Eviction API
+- 基于PodDisruptionBudgets 和 terminationGracePeriodSeconds.
+- 驱逐流程：
+- > api server 接收请求
+- > 更新pod的deletion timestamp,并标记资源时间为terminationGracePeriodSeconds
+- > kubelete启动优雅关闭流程
+- > pod关闭之后，控制平面移除pod的关联
+- > 超时则强制关闭
+- > kubelet告诉api服务器移除pod资源
+- > api server移除资源
+#### 资源bin打包
+#### 调度框架
+- 以插件的形式编译进调度内核，减轻代码管理难度
+- 定义几个扩展点，调度插件注册以被一个或多个扩展点触发
+- 调度过程分为： 调度循环和绑定循环
+- 调度循环：为pod选择一个node，串行执行，可中断，7个扩展点
+- 绑定循环：应用调度结果到集群，可并行执行，可中断，4个扩展点
+- 扩展点：
+- > QueueSort: 对pod进行排序,只能有一个
+- > PreFilter： 预处理
+- > Filter: 
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
