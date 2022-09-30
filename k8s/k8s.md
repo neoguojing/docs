@@ -638,7 +638,22 @@ tolerations:
 - 扩展点：
 - > QueueSort: 对pod进行排序,只能有一个
 - > PreFilter： 预处理
-- > Filter: 
+- > Filter: 过滤不符合条件的node，依据配置顺序执行
+- > PostFilter : 只有找不到合适的node时才执行，配置顺序，只要找到一个合适的node，则剩下的plugin不需要执行;一般依据抢占策略来实现调度
+- > PreScore：用于生成pod的状态，供下面插件使用
+- > Score: 对每个node，都执行所有插件进行评分，最后依据插件的权重合并分数
+- > NormalizeScore: 只对相同插件的分数做归一化；失败则调度循环结束
+- > Reserve: 两个方法：Reserve Unreserve（Reserve失败才会执行）
+- > Permit: 用于阻止和延迟绑定；三种状态：approve，approve，wait
+- > PreBind: 预处理
+- > Bind: 执行绑定，按配置顺序，加入一个插件决定处理pod，则剩下的无需执行
+- > PostBind: 后处理
+#### 调度性能
+- percentageOfNodesToScore:1-100 设置需要打分的node比例，默认是一个线性方程，50%-100，10%-5000，最低5%
+- 在为足够的节点打分完成后，不继续处理其他节点
+- 小集群则给所有节点打分
+- 以轮训的方式遍历所有节点，直到找到足够node；下一轮从当前轮的结束点开始
+- 多个zone，每此切换一个zone
 ## nodeport
 - 流量转发给kube-proxy,kube-proxy下发路由规则给iptable，同时创建nodeport的端口监听
 - 通过iptable 查看 KUBE-EXTERNAL-SERVICES，为nodeport的条目
