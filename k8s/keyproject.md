@@ -13,6 +13,7 @@
 
 ## 存储
 - https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner
+- https://github.com/jooho/nfs-provisioner-operator
 
 ## 调度扩展
 - https://github.com/kubernetes-sigs/scheduler-plugins
