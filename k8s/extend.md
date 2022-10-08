@@ -42,3 +42,6 @@
 ### oprerator
 - https://operatorframework.io/
 - 是k8s api的客户端，同时扮演CDR的controller角色
+- 通常以deployment部署
+- 为cdr添加PVC，设置statufulset和执行初始化job等
+- 
