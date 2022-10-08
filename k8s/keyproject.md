@@ -8,6 +8,7 @@
 - https://github.com/containernetworking/plugins
 - https://github.com/flannel-io/flannel
 - https://github.com/projectcalico/calico
+- https://github.com/kubernetes/dns
 
 ## 存储
 - https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner
