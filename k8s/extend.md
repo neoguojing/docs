@@ -41,3 +41,4 @@
 
 ### oprerator
 - https://operatorframework.io/
+- 是k8s api的客户端，同时扮演CDR的controller角色
