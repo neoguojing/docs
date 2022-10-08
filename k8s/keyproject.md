@@ -1,6 +1,7 @@
 # 关键项目
 
 ## 扩展
+- https://operatorhub.io/
 - https://github.com/operator-framework/operator-sdk
 
 ## 网络
