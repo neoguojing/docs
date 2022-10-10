@@ -16,6 +16,7 @@
 - https://github.com/jooho/nfs-provisioner-operator
 - hostPath: pkg/volume/hostpath/host_path.go
 - csi: pkg/volume/csi/csi_plugin.go
+- csi: github.com/container-storage-interface/spec/lib/go/csi/csi.pb.go
 ![volume class](https://img-blog.csdnimg.cn/img_convert/0aaf388e02c6bd9beaec2cefff89c858.png)
 
 
