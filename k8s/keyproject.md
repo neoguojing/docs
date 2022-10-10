@@ -15,11 +15,9 @@
 - https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner
 - https://github.com/jooho/nfs-provisioner-operator
 - hostPath: pkg/volume/hostpath/host_path.go
-```
-plugin对象，通常需要实现1个接口：
-VolumeHost：
+- csi: pkg/volume/csi/csi_plugin.go
+![volume class](https://img-blog.csdnimg.cn/img_convert/0aaf388e02c6bd9beaec2cefff89c858.png)
 
-```
 
 ## 调度扩展
 - https://github.com/kubernetes-sigs/scheduler-plugins
