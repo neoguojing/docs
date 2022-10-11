@@ -492,9 +492,33 @@ dataSource:
 - kublet初始化时会注册plugins_registry目录中的插件
 - 属于outtree插件
 - 相关接口定义：vendor/github.com/container-storage-interface/spec/lib/go/csi/csi.pb.go
-- External Provisioner： 第三方编写的服务，负责
-- External Attacher： 调用 Volume Plugins 中的 ControllerPublishVolume 和 ControllerUnpublishVolume 函数来执行 Attach/Detach 操作
-- PV Controller：
+- 依赖接口：
+- > Identity: 身份接口（服务），负责提供插件信息
+- > Controller服务： 用于创建、删除volume，对应attach/detach
+- > Node服务：用于将volume挂载到指定目录，对应mount、unmount
+- 关联组件：
+- > External Provisioner： 第三方编写的服务，负责持久卷的创建和删除，有pv controller调用
+- > External Attacher： 主要功能是实现持久卷的附着(Attach)、分离(Detach)，由AttachDetachController调用
+- > PV Controller：监听pod状态，为pod的pvc创建volume和pv对象
+- > AttachDetachController: 监听pod的pvc处于代attach状态，则调用Volume Plugin，attach设备到node
+- > Volume Manager: 负责将目录挂载到pod
+- > node-driver-registrar: 向 kubelet 注册插件
+-  流程：
+```
+external-provisioner 组件实现
+PV 创建：runClaimWorker -> syncClaimHandler -> syncClaim -> provisionClaimOperation -> Provision -> CreateVolume
+PV controller 实现
+PVC/PV 绑定：claimWorker -> updateClaim -> syncClaim -> syncBoundClaim -> bind
+external-attacher 组件实现
+Volume 附着(Attach)：syncVA -> SyncNewOrUpdatedVolumeAttachment -> syncAttach -> csiAttach -> Attach -> ControllerPublishVolume
+kubelet实现：
+Volume 挂载(Mount)：reconcile -> mountAttachVolumes -> MountVolume -> SetUp -> SetUpAt -> NodePublishVolume
+
+作者：程序员札记
+链接：https://www.jianshu.com/p/cb849bcce15c
+来源：简书
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+```
 - https://www.jianshu.com/p/cb849bcce15c
 #### 存儲容量
 - 調度：pod未創建，聲明了使用CSI驅動的storage class；StorageCapacity爲true，這種情況下，調度器考慮卷的大小來選擇容器
