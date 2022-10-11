@@ -488,6 +488,9 @@ dataSource:
 #### 快照卷
 #### 快照卷類
 #### CSI
+- 默认插件目录：plugins_registry,存放socket文件
+- kublet初始化时会注册plugins_registry目录中的插件
+- 
 #### 存儲容量
 - 調度：pod未創建，聲明了使用CSI驅動的storage class；StorageCapacity爲true，這種情況下，調度器考慮卷的大小來選擇容器
 #### 卷健康監控
