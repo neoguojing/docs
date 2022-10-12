@@ -8,3 +8,8 @@
 - https://modelzoo.co/
 - https://pytorch.org/hub/research-models
 - https://github.com/tensorflow/models
+
+
+## pytorch -> onnx 模型转换
+- pip install onnx
+- pip install onnxruntime-gpu
