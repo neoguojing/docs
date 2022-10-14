@@ -371,7 +371,37 @@ topologyKeys:
 - > egress : 定义出口策略，CIDR和端口
 
 ####ipv4/v6 双栈
-
+#### CNI
+- 规范三部分
+- > 配置文件：指明插件明和配置
+- > CRI调用插件，将容器运行时信息传给插件
+- > 返回pod的ip就行了
+- 解决三点问题
+- > pod ip管理
+- > 同一节点上的pod通信
+- > 不同节点上的pod通信
+- 默认插件配置目录：/etc/cni/net.d，.conflist 结尾的文件，允许多插件
+- > name和cniVersion必须
+- 插件bin目录：/opt/cni/bin
+- 插件以daemonset的模式启动在每台机器上
+- sandbox：网络资源和存储资源的承载
+- > 作用一，屏蔽底层差异
+- > 资源共享： 网络资源和存储资源，避免频繁的资源创建（一个pod包含多个容器）
+- > pause() 让程序休眠不占用系统资源
+- 
+#### CRI
+- 由三部分组成
+- > CRI Client: kubelet 实现
+- > CRI Server： Containerd
+- > OCI Runtime： runc（使用namesapce），kata启动qemu虚拟机
+- > 中间层shim： 位于Server 和 runtime中间
+- docker-shim： 内嵌的grpc client 用于屏蔽掉docker的多余功能
+- qemu/Oracle VirtualBox： 位于用户空间，需要操作系统内核才能访问硬件
+- Hyper-V、Linux KVM、VMWare ESXi: 具备对宿主机硬件的直接访问
+-  qemu支持两种模式：1.直接于内核打交道；2.余kvm打交道
+-  > libvirtd是Linux中的一个守护进程，其使用的是libvirt库
+-  > ibvirtd适用于一台宿主机上启用多台虚拟机的场景
+-  > virt-manager是libvirt的图形化界面
 ### 存储
 
 #### 卷
