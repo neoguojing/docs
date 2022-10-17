@@ -41,7 +41,8 @@
 - ExplicitKey： 只有key，没有obj
 - metav1.Object ： 对象接口，如StatefulSet和Deployment均实现了该接口
 - api/core/v1/types.go：定义了Node，Volume等对象；这些类均实现了runtime.Object接口；Informer传入这些对象用于分类
-### Informer
+### Informer :
+- 从从 DeltaFIFO 中 pop 相应对象，然后通过 Indexer 将对象和索引丢到本地 cache 中，再触发相应的事件处理函数（Resource Event Handlers）运行；
 - 包含三个部分：Reflector、DeltaFIFO、LocalStore
 ```
 type ListerWatcher interface {
@@ -151,6 +152,7 @@ type ResourceEventHandlerFuncs struct {
 
 #### Reflector
 - list and watch 资源，然后同步到DeltaFIFO
+- Reflector 向 apiserver watch 特定类型的资源，拿到变更通知后将其丢到 DeltaFIFO 队列中
 ```
 type Reflector struct {
 	// name identifies this reflector. By default it will be a file:line if possible.
@@ -239,7 +241,8 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 - > knownObjects： 是本地localcache中的值
 - Resync：从localCache加载所有值到DeltaFIFO中，类型为SYNC
 
-#### LocalStore
+#### Indexer
+- Indexer 主要提供一个对象根据一定条件检索的能力，典型的实现是通过 namespace/name 来构造 key ，通过 Thread Safe Store 来存储对象
 - threadSafeMap 一个本地缓存：使用lock和map
 - > Indexers: 分类器：在原始数据上再构建一层map，相当于三级map
 - > indices: 存储分类之后的数据
@@ -249,6 +252,7 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 ### record
 - NewBroadcaster
 ### util/workqueue 只保存key
+- Workqueue 一般使用的是延时队列实现，在 Resource Event Handlers 中会完成将对象的 key 放入 workqueue 的过程，然后我们在自己的逻辑代码里从 workqueue 中消费这些 key
 - 接口定义
 ```
 type Interface interface {
@@ -327,3 +331,8 @@ type Type struct {
 - NewDelayingQueue： 实现将元素延时加入队列的功能
 
 ### worker
+- Worker 指的是我们自己的业务代码处理过程，在这里可以直接接收到 workqueue 里的任务，可以通过 Indexer 从本地缓存检索对象，通过 Clientset 实现对象的增删改查逻辑。
+### ClientSet
+- Clientset 提供的是资源的 CURD 能力，和 apiserver 交互
+### Resource Event Handlers
+- 一般是添加一些简单的过滤功能，判断哪些对象需要加到 workqueue 中进一步处理；对于需要加到 workqueue 中的对象，就提取其 key，然后入队
