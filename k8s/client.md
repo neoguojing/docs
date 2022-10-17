@@ -44,18 +44,8 @@
 ### Informer :
 - 从从 DeltaFIFO 中 pop 相应对象，然后通过 Indexer 将对象和索引丢到本地 cache 中，再触发相应的事件处理函数（Resource Event Handlers）运行；
 - 包含三个部分：Reflector、DeltaFIFO、LocalStore
+- 实际开发中使用SharedIndexInformer
 ```
-type ListerWatcher interface {
-	Lister
-	Watcher
-}
-
-type ListWatch struct {
-	ListFunc  ListFunc
-	WatchFunc WatchFunc
-	// DisableChunking requests no chunking for this list watcher.
-	DisableChunking bool
-}
 type Controller interface {
 	// Run does two things.  One is to construct and run a Reflector
 	// to pump objects/notifications from the Config's ListerWatcher
@@ -185,8 +175,6 @@ type Reflector struct {
 
 ```
 
-#### ListAndWatch： 为Reflector提供能力
-- 创建：NewListWatchFromClient，通过RESTClient实现
 - > Expired 或 Gone则设置资源不可用标志，pager.List从最后的资源版本开始list
 - > 将获得的object调用Replace放入DeltaFIFO；
 - > 调用Watch监听对象，设置最后版本、超时时间和bookmark；
@@ -194,6 +182,9 @@ type Reflector struct {
 - watchHandler：
 - > 将数据放入DeltaFIFO
 - > bookmark 不断更新last resource 版本
+
+#### ListAndWatch： 为Reflector提供能力
+- 创建：NewListWatchFromClient，通过RESTClient实现
 ```
 type Lister interface {
    // List 的返回值应该是一个 list 类型对象，也就是里面有 Items 字段，里面的 ResourceVersion 可以用来 watch
