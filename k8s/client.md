@@ -247,12 +247,14 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 - > Indexers: 分类器：在原始数据上再构建一层map，相当于三级map
 - > indices: 存储分类之后的数据
 - > updateIndices: 删除indices老数据，并为新数据建立索引
-
 ### listener
 ### record
 - NewBroadcaster
 ### util/workqueue 只保存key
 - Workqueue 一般使用的是延时队列实现，在 Resource Event Handlers 中会完成将对象的 key 放入 workqueue 的过程，然后我们在自己的逻辑代码里从 workqueue 中消费这些 key
+- 普通队列： 通过cond条件等待和唤醒；queue队列保证消息处理的顺序性；dirty防止重复处理和进行事件聚合；processing保证真在处理的事件不被重复处理，结合Done函数标记事件处理完成
+- 延时队列： 实现在指定的事件之后将元素加入队列；如何实现: 元素时间未到，则加入小顶堆；判断堆顶，未超时则建立定时器，等待超时事件
+- 限速队列
 - 接口定义
 ```
 type Interface interface {
@@ -279,10 +281,10 @@ type RateLimitingInterface interface {
 	// Forget indicates that an item is finished being retried.  Doesn't matter whether it's for perm failing
 	// or for success, we'll stop the rate limiter from tracking it.  This only clears the `rateLimiter`, you
 	// still have to call `Done` on the queue.
-	Forget(item interface{})
+	Forget(item interface{}) //结束重试
 
 	// NumRequeues returns back how many times the item was requeued
-	NumRequeues(item interface{}) int
+	NumRequeues(item interface{}) int //重试的次数
 }
 
 ```
@@ -294,7 +296,7 @@ type Type struct {
 	queue []t
 	//需要被处理的元素
 	dirty set
-	//正在被处理的元素
+	//正在被处理的元素，queue出队，并从dirty中删除
 	processing set
 	cond *sync.Cond
 	shuttingDown bool
@@ -305,7 +307,7 @@ type Type struct {
 ```
 - Add:锁定crond;shuttingDown则返回；dirty中以及存在则返回；不存在则放入dirty；processing存在则返回；将item加入queue；发送信号唤醒一个Get；
 - Get(item)操作：特性：必定会获取特定值：锁定crond；若队列为空，则在条件变量上等待被唤醒；否则返回queue[0],并重新赋值queue，插入processing和在dirty中删除元素
-- Done(item)：锁定crond，从processing删除；若dirty中依然存在，则插入到queue末尾，并发送信号唤醒一个Get函数
+- Done(item)：锁定crond，从processing删除；若dirty中依然存在（再次处理），则插入到queue末尾，并发送信号唤醒一个Get函数
 - ShutDown：设置shuttingDown标记，并使用cond的广播唤醒所有阻塞的线程
 - ShuttingDown： 获取ShuttingDown的标记
 - AddAfter ： 有duration；小于等于0则直接放入队列；否则发送到waitingForAddCh一个channel中等待waitingLoop处理
