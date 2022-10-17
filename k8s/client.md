@@ -1,6 +1,6 @@
 # client.go
 - k8s.io/client-go
-[![struct](https://img-blog.csdnimg.cn/img_convert/0aaf388e02c6bd9beaec2cefff89c858.png)](https://github.com/neoguojing/docs/blob/main/k8s/modb_20211019_c1fed00a-30e6-11ec-8b07-fa163eb4f6be.png)
+[![struct](https://github.com/neoguojing/docs/blob/main/k8s/modb_20211019_c1fed00a-30e6-11ec-8b07-fa163eb4f6be.png)]
 ## 流程
 ### 启动流程
 - 创建client：ctx.ClientBuilder.ClientOrDie("deployment-controller")
