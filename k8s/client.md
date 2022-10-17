@@ -184,7 +184,9 @@ type Reflector struct {
 }
 
 ```
-- ListAndWatch： 
+
+#### ListAndWatch： 为Reflector提供能力
+- 创建：NewListWatchFromClient，通过RESTClient实现
 - > Expired 或 Gone则设置资源不可用标志，pager.List从最后的资源版本开始list
 - > 将获得的object调用Replace放入DeltaFIFO；
 - > 调用Watch监听对象，设置最后版本、超时时间和bookmark；
@@ -192,9 +194,35 @@ type Reflector struct {
 - watchHandler：
 - > 将数据放入DeltaFIFO
 - > bookmark 不断更新last resource 版本
+```
+type Lister interface {
+   // List 的返回值应该是一个 list 类型对象，也就是里面有 Items 字段，里面的 ResourceVersion 可以用来 watch
+   List(options metav1.ListOptions) (runtime.Object, error)
+}
+
+type Watcher interface {
+   // 从指定的资源版本开始 watch
+   Watch(options metav1.ListOptions) (watch.Interface, error)
+}
+
+type ListerWatcher interface {
+	Lister
+	Watcher
+}
+
+type ListWatch struct {
+   ListFunc  ListFunc
+   WatchFunc WatchFunc
+   // DisableChunking requests no chunking for this list watcher.
+   DisableChunking bool
+}
+
+```
 #### DeltaFIFO  维护一个事件队列
 - 保证每个对象被处理的唯一性
 - 可以查看某个对象的上一个操作和所有操作
+- 维护了对象key的顺序性，同时维护了key对应对象的所有操作
+- pop操作会阻塞，同时传入回调函数，处理失败之后重新加入队列
 ```
 Added   DeltaType = "Added"
 Updated DeltaType = "Updated"
@@ -242,11 +270,42 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 - Resync：从localCache加载所有值到DeltaFIFO中，类型为SYNC
 
 #### Indexer
+- Indexer在threadSafeMap基础上拓展了对象检索功能
+···
+//给定一个对象，返回其key
+type KeyFunc func(obj interface{}) (string, error)
+MetaNamespaceKeyFunc实现之一：返回 namespace/name作为key
+// 给定对象，返回一堆key
+type IndexFunc func(obj interface{}) ([]string, error)
+MetaNamespaceIndexFunc：返回ns作为key
+
+type Indexer interface {
+   Store
+   Index(indexName string, obj interface{}) ([]interface{}, error) // 根据索引名和给定的对象返回符合条件的所有对象
+   IndexKeys(indexName, indexedValue string) ([]string, error)     // 根据索引名和索引值返回符合条件的所有对象的 key
+   ListIndexFuncValues(indexName string) []string                  // 列出索引函数计算出来的所有索引值
+   ByIndex(indexName, indexedValue string) ([]interface{}, error)  // 根据索引名和索引值返回符合条件的所有对象
+   GetIndexers() Indexers                     // 获取所有的 Indexers，对应 map[string]IndexFunc 类型
+   AddIndexers(newIndexers Indexers) error    // 这个方法要在数据加入存储前调用，添加更多的索引方法，默认只通过 namespace 检索
+}
+···
 - Indexer 主要提供一个对象根据一定条件检索的能力，典型的实现是通过 namespace/name 来构造 key ，通过 Thread Safe Store 来存储对象
-- threadSafeMap 一个本地缓存：使用lock和map
+- threadSafeMap上 一个本地缓存：使用lock和map
 - > Indexers: 分类器：在原始数据上再构建一层map，相当于三级map
 - > indices: 存储分类之后的数据
-- > updateIndices: 删除indices老数据，并为新数据建立索引
+- > updateIndices: 删除indices老数据，并为新数据建立索引;
+```
+type threadSafeMap struct {
+   lock  sync.RWMutex
+   items map[string]interface{}
+   indexers Indexers
+   indices Indices
+}
+
+type Index map[string]sets.String  //存储namespace：object集合
+type Indexers map[string]IndexFunc //存储不同类型的索引函数 namespace：func
+type Indices map[string]Index //namespace:Index的集合
+```
 ### listener
 ### record
 - NewBroadcaster
@@ -254,7 +313,7 @@ type DeltaFIFO struct { // 为每个key维护一个队列，key之间也有先�
 - Workqueue 一般使用的是延时队列实现，在 Resource Event Handlers 中会完成将对象的 key 放入 workqueue 的过程，然后我们在自己的逻辑代码里从 workqueue 中消费这些 key
 - 普通队列： 通过cond条件等待和唤醒；queue队列保证消息处理的顺序性；dirty防止重复处理和进行事件聚合；processing保证真在处理的事件不被重复处理，结合Done函数标记事件处理完成
 - 延时队列： 实现在指定的事件之后将元素加入队列；如何实现: 元素时间未到，则加入小顶堆；判断堆顶，未超时则建立定时器，等待超时事件
-- 限速队列
+- 限速队列： 通过RateLimiter限速器的When方法，获取元素下一次加入队列需要的时间，利用延时队列接口，加入工作队列
 - 接口定义
 ```
 type Interface interface {
@@ -331,6 +390,9 @@ type Type struct {
 -  > NumRequeues:同上
 -  > Forget:依次调用所有的
 - NewDelayingQueue： 实现将元素延时加入队列的功能
+- RateLimiter接口的实现: When: 获取元素要等待的时长；Forget： 标识元素结束重试；NumRequeues： 元素被处理了多少次
+- > ItemFastSlowRateLimiter: 超过阈值后调长重试时间
+- > WithMaxWaitRateLimiter: 设置一个最大延时，超过则返回最大时长
 
 ### worker
 - Worker 指的是我们自己的业务代码处理过程，在这里可以直接接收到 workqueue 里的任务，可以通过 Indexer 从本地缓存检索对象，通过 Clientset 实现对象的增删改查逻辑。
