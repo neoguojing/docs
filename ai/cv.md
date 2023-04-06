@@ -26,3 +26,10 @@
 
 ## 3d检测
 - PointPillars
+
+## 特征提取
+- ResNet
+- VGG 
+- Inception
+- MobileNet
+- DenseNet
