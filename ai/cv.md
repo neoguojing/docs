@@ -11,10 +11,14 @@
 - SSD Lite
 - Yolov3
 
-## 实例分割
+## 语义分割
 - Pspnet
 - DeeplabV3:
 - Bisenet v1
+
+## 实例分割
+- Maskrcnn
+- Yolact
 
 ## OCR
 - DBNet+CRNN
