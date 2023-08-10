@@ -37,3 +37,7 @@
 - Inception
 - MobileNet
 - DenseNet
+
+## 多模态
+- CLIP：是一种由OpenAI开发的深度学习模型，它能够理解图像和文本之间的关联
+- 
