@@ -5,6 +5,6 @@
 - LSTM
 - GRU
 - Transformer
-- BERT
-- GPT
+- BERT： 基于Transformer
+- GPT： 基于Transformer
 - CRF
