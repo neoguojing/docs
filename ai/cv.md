@@ -57,7 +57,7 @@
 - Bisenet v1
 
 ## 实例分割
-- Maskrcnn
+- Maskrcnn：目标检测和语义分割
 - Yolact
 
 ## OCR
