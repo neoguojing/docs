@@ -1,6 +1,8 @@
 # 语言模型整理
 - 大语言模型无监督训练方法是 "从互联网上的大量语料库中学习根据上文来预测下一个词"，它做的是个生成任务
 - 已有的大语言模型似乎并不能遵循用户的意图，而且还可能会输出不真实、有毒的内容或者是废话。换句话说，这些模型与他们的用户没有对齐 (Align)。
+## 数据集
+- https://huggingface.co/datasets/HuggingFaceH4/stack-exchange-preferences
 ## 伯克利 vicuna 
 ## meta LLaMA-2
 - LLaMA 2 其实是两种模型：LLaMA 2 和 LLaMA 2-CHAT，分别是仅仅预训练过的模型，和预训练过之后再经过人类指令微调的模型
