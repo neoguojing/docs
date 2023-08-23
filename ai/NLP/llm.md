@@ -24,6 +24,8 @@ SentencePiece 提供了多种模型和算法，包括 BPE、Unigram Language Mod
 ```
 ## 数据集
 - https://huggingface.co/datasets/HuggingFaceH4/stack-exchange-preferences
+- https://github.com/ymcui/Chinese-LLaMA-Alpaca/blob/main/data/alpaca_data_zh_51k.json 中文
+- https://github.com/tatsu-lab/stanford_alpaca#data-release
 ## 伯克利 vicuna 
 ## meta LLaMA-2
 - LLaMA 2 其实是两种模型：LLaMA 2 和 LLaMA 2-CHAT，分别是仅仅预训练过的模型，和预训练过之后再经过人类指令微调的模型
