@@ -1,7 +1,7 @@
 # 语言模型整理
 - 大语言模型无监督训练方法是 "从互联网上的大量语料库中学习根据上文来预测下一个词"，它做的是个生成任务
 - 已有的大语言模型似乎并不能遵循用户的意图，而且还可能会输出不真实、有毒的内容或者是废话。换句话说，这些模型与他们的用户没有对齐 (Align)。
-## 工具
+## 概念
 - LoRA（Language-Only Representation Learning）是一种基于语言的表示学习方法：
 ```
 在 LoRA 中，常用的自监督任务包括语言模型预测、掩码语言模型预测、下一句预测等。通过对这些任务进行训练，模型可以学习到单词、短语和句子之间的语义关系，从而得到更丰富的语言表示
@@ -15,7 +15,13 @@ https://github.com/huggingface/peft
 ```
 （LLRa）是一种用于大型语言模型的低秩适应方法。LLRa 旨在解决在特定任务上利用预训练的语言模型时遇到的计算资源和内存消耗的挑战
 ```
-
+- 字节对编码（Byte Pair Encoding，BPE）是一种用于无监督分词和数据压缩的技术。BPE 通过逐步合并常见的字节对（byte pairs），从而构建一个词汇表或字典，以便更好地表示文本中的词语和子词单元
+- 
+- SentencePiece
+```
+SentencePiece 是一种用于无监督分词和子词划分的开源工具
+SentencePiece 提供了多种模型和算法，包括 BPE、Unigram Language Model、Word Piece Model（与 BERT 中使用的模型相似）等。它使得无监督分词成为可能，并且可以根据特定任务和语言的需求进行灵活配置
+```
 ## 数据集
 - https://huggingface.co/datasets/HuggingFaceH4/stack-exchange-preferences
 ## 伯克利 vicuna 
