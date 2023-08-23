@@ -1,6 +1,21 @@
 # 语言模型整理
 - 大语言模型无监督训练方法是 "从互联网上的大量语料库中学习根据上文来预测下一个词"，它做的是个生成任务
 - 已有的大语言模型似乎并不能遵循用户的意图，而且还可能会输出不真实、有毒的内容或者是废话。换句话说，这些模型与他们的用户没有对齐 (Align)。
+## 工具
+- LoRA（Language-Only Representation Learning）是一种基于语言的表示学习方法：
+```
+在 LoRA 中，常用的自监督任务包括语言模型预测、掩码语言模型预测、下一句预测等。通过对这些任务进行训练，模型可以学习到单词、短语和句子之间的语义关系，从而得到更丰富的语言表示
+```
+- Parameter-Efficient Fine-Tuning：
+```
+https://github.com/huggingface/peft
+是一种用于大型语言模型的参数高效微调方法。PEFT 旨在在特定任务上使用较少的训练步骤和计算资源来微调预训练的语言模型，从而提高微调的效率
+```
+- Low-Rank Adaptation of Large Language Model
+```
+（LLRa）是一种用于大型语言模型的低秩适应方法。LLRa 旨在解决在特定任务上利用预训练的语言模型时遇到的计算资源和内存消耗的挑战
+```
+
 ## 数据集
 - https://huggingface.co/datasets/HuggingFaceH4/stack-exchange-preferences
 ## 伯克利 vicuna 
