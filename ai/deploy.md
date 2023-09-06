@@ -32,3 +32,16 @@
 - protobuf存储模型信息，存储结构定义在protobuf中
 ### android环境
 - NCNN 转换工具转换onnx
+
+## 推理加速
+```
+下面是关于OpenBLAS、BLIS、MKL和cuBLAS的简要介绍：
+
+OpenBLAS（Open Basic Linear Algebra Subprograms）：OpenBLAS是一个开源的基础线性代数子程序库，提供了高性能的基本线性代数运算函数，如矩阵乘法、矩阵-向量操作等。它被广泛用于科学计算、机器学习和深度学习等领域。OpenBLAS针对多核CPU进行了优化，支持多线程并行计算。它是一个跨平台的库，可以在Linux、Windows和其他操作系统上使用。
+
+BLIS（BLAS-like Library Instantiation Software）：BLIS是一个可实例化的类BLAS（Basic Linear Algebra Subprograms）库框架。它提供了一组C语言接口，用于执行基本线性代数运算，如矩阵乘法、矩阵-向量操作等。BLIS的设计目标是提供高性能、可移植和可扩展的线性代数操作。它支持多种架构和处理器，并使用优化技术来提高运算速度。BLIS可以作为一个库被链接到应用程序中，也可以通过编译器支持进行自动实例化。
+
+MKL（Intel Math Kernel Library）：MKL是英特尔提供的数学核心库，旨在优化数值计算和科学计算应用的性能。MKL提供了广泛的数学函数和线性代数子程序，包括BLAS、LAPACK、FFT、向量数学函数等。MKL针对英特尔处理器进行了高度优化，利用了硬件特性和并行计算能力，以提供高性能的数学计算功能。MKL支持多个操作系统和编程语言，包括C/C++、Fortran、Python等。
+
+cuBLAS（CUDA Basic Linear Algebra Subroutines）：cuBLAS是NVIDIA CUDA平台上的基本线性代数子程序库。它提供了一组GPU加速的线性代数操作，如矩阵乘法、矩阵-向量操作等。cuBLAS是专门为在CUDA设备上进行高性能并行计算而设计的，利用了GPU的并行计算能力来加速线性代数运算。它可以与CUDA C/C++编程一起使用，并通过CUDA API进行调用。
+```
