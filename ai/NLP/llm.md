@@ -41,5 +41,7 @@ SentencePiece 提供了多种模型和算法，包括 BPE、Unigram Language Mod
 ## open ai Dall-E 2
 ## stable diffusion
 ## google T5 Flan T5
+## bigscience/T0_3B：T0_3B是BigScience项目中的一个模型，表示该模型具有10万亿个参数（3B表示30亿）
+- 进行各种NLP任务，如文本分类、命名实体识别、机器翻译
 
 ## Pile 大型公共数据集
