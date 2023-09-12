@@ -42,6 +42,10 @@ model = PeftModel.from_pretrained(model, peft_model_id)
 ## Accelerate:Hugging Face Pytorch GPU多机多卡加速器
 - DeepSpeed
 
+## 常用库
+- transformers： https://huggingface.co/docs/transformers/index
+- 
+
 ## bitsandbytes
 - 轻量级的CUDA自定义函数包装器，特别用于PyTorch中的8位优化器、矩阵乘法（LLM.int8()）和量化函数。
 - 8位优化器：bitsandbytes提供了8位优化器，用于在深度学习模型中进行训练和优化。您可以使用8位优化器替换torch.optim中的优化器，并通过修改代码中的相应部分来配置和使用它们。
