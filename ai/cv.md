@@ -81,3 +81,6 @@
 ## 多模态
 - CLIP：是一种由OpenAI开发的深度学习模型，它能够理解图像和文本之间的关联
 - Diffusion Dreambooth在AI领域取得了一个重要的突破，它能够将文本转化为图像，并且具有很高的精确性和效率。
+
+## 多模态 工具
+- https://huggingface.co/docs/diffusers/index
