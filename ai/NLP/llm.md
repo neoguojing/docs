@@ -45,5 +45,5 @@ SentencePiece 提供了多种模型和算法，包括 BPE、Unigram Language Mod
 - 进行各种NLP任务，如文本分类、命名实体识别、机器翻译
 ## OPT-6.7B模型是一种预训练的语言模型，来自于Hugging Face的Transformers库。
 - 这个模型是在大量的文本数据上训练得到的，可以用于各种自然语言处理任务，如文本生成、分类、问答、摘要
-
+## MT0-Large模型是Hugging Face公司推出的一种基于Transformers库的预训练模型，具有1.2B参数，主要用于文本分类、文本生成、摘要等自然语言处理任务。
 ## Pile 大型公共数据集
