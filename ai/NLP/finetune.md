@@ -14,6 +14,10 @@
 - 特征分解在某些情况下可以提供更好的可解释性
 - 特征分解的计算复杂度较高
 - 特征分解只对方形矩阵有效
+
+### 原理
+- 对于 Transformer 模型，LoRA 可能会被添加到模型的每个 Transformer 层。在每个层中，LoRA 会生成一个低秩矩阵，用来调整该层的输出
+- 
 ### 使用LoRA进行模型微调
 ```
 from peft import get_peft_model, LoraConfig, TaskType
