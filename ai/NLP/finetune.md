@@ -14,7 +14,27 @@
 - 特征分解在某些情况下可以提供更好的可解释性
 - 特征分解的计算复杂度较高
 - 特征分解只对方形矩阵有效
+### 使用LoRA进行模型微调
+```
+from peft import get_peft_model, LoraConfig, TaskType
+## 配置lora
+peft_config = LoraConfig(
+    task_type=TaskType.SEQ_2_SEQ_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+)
 
+## get_peft_model包装基础模型
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path)
+model = get_peft_model(model, peft_config)
+model.print_trainable_parameters()
+## 保存Peft权重
+model.save_pretrained("output_dir") 
+```
+### 使用LoRA进行推理
+```
+from peft import PeftModel, PeftConfig
+## 合并模型 model为基模型，peft_model_id为PEFT模型路径
+model = PeftModel.from_pretrained(model, peft_model_id)
+```
 ## Accelerate:Hugging Face Pytorch GPU多机多卡加速器
 - DeepSpeed
 
