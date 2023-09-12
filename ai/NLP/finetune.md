@@ -14,7 +14,10 @@
 - 特征分解在某些情况下可以提供更好的可解释性
 - 特征分解的计算复杂度较高
 - 特征分解只对方形矩阵有效
-
+### 参数说明
+- r（低秩矩阵的维度）：指定LoRA（低秩注意力）层中低秩矩阵的维度。低秩矩阵是一种通过降低注意力机制的复杂度来减少计算和内存需求的方法。
+- lora_alpha（低秩矩阵的缩放因子）：用于缩放低秩矩阵的因子。通过调整该因子，可以控制低秩矩阵在模型中的重要性或影响力。
+- lora_dropout（LoRA层的dropout概率）：指定LoRA层中使用的dropout概率。dropout是一种在训练过程中随机丢弃一部分神经元的技术，有助于减少过拟合并提高模型的泛化能力。
 ### 原理
 - 对于 Transformer 模型，LoRA 可能会被添加到模型的每个 Transformer 层。在每个层中，LoRA 会生成一个低秩矩阵，用来调整该层的输出
 - 
@@ -41,6 +44,7 @@ model = PeftModel.from_pretrained(model, peft_model_id)
 ```
 ## Accelerate:Hugging Face Pytorch GPU多机多卡加速器
 - DeepSpeed
+- https://huggingface.co/docs/accelerate/index
 
 ## 常用库
 - transformers： https://huggingface.co/docs/transformers/index
