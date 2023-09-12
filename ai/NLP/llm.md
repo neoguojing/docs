@@ -43,5 +43,7 @@ SentencePiece 提供了多种模型和算法，包括 BPE、Unigram Language Mod
 ## google T5 Flan T5
 ## bigscience/T0_3B：T0_3B是BigScience项目中的一个模型，表示该模型具有10万亿个参数（3B表示30亿）
 - 进行各种NLP任务，如文本分类、命名实体识别、机器翻译
+## OPT-6.7B模型是一种预训练的语言模型，来自于Hugging Face的Transformers库。
+- 这个模型是在大量的文本数据上训练得到的，可以用于各种自然语言处理任务，如文本生成、分类、问答、摘要
 
 ## Pile 大型公共数据集
