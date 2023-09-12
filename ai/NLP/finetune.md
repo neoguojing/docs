@@ -49,6 +49,7 @@ model = PeftModel.from_pretrained(model, peft_model_id)
 ## 常用库
 - transformers： https://huggingface.co/docs/transformers/index
 - deepspeed ：https://huggingface.co/docs/transformers/main/main_classes/deepspeed
+- https://www.deepspeed.ai/tutorials/
 
 ## bitsandbytes
 - https://github.com/TimDettmers/bitsandbytes
