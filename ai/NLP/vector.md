@@ -23,7 +23,8 @@ BERT使用大规模无监督语料 pretrain 深层双向语言模型,得到词�
 子词化是将词或短语进一步切分为更小的单元（子词）的过程。子词化旨在处理词汇中的复杂性，如未登录词、复合词和低频词。通过将单词切分为子词，可以更好地捕捉语言中的内部结构和语义信息。
 ## 标记：（Token）
 是指将文本切分成较小的单位或符号的过程
-
+## Tokenizer（分词器）
+是自然语言处理（NLP）中的一个重要概念，指的是将文本切分成标记（tokens）的工具或算法。Tokenizer 在文本处理中起到了关键作用，它将连续的文本序列划分为离散的标记，例如单词、子词、字符或其他语言片段。
 # 区别和联系
 - 标记化是将文本转换为计算机可以处理的形式，以便进行后续的自然语言处理任务
 - 词向量它是将单词转换为连续的实数向量，以便进行机器学习和深度学习等任务
@@ -31,3 +32,16 @@ BERT使用大规模无监督语料 pretrain 深层双向语言模型,得到词�
 - 标记化是在自然语言处理任务的预处理阶段完成的
 - 词向量的生成可以是预训练模型或其他词嵌入技术进行的
 - 词向量可以用于模型的输入表示，以提供更丰富的语义信息和上下文理解能力
+
+## SentencePiece ：开源分词工具
+- 用于进行分词和子词化（subword segmentation）任务
+- 支持监督学习和未监督学习
+- 支持训练和推理
+- 还提供了其他功能，如模型保存和加载、词汇表的导出和导入、词频统计等
+- Unigram Language Model（一元语言模型）：Unigram Language Model 是 SentencePiece 中的一种语言模型，用于学习文本中的标记（tokens）的概率分布。它基于标记的出现频率来计算其概率，用于生成词汇表和进行编码。
+- Vocabulary Size（词汇表大小）：Vocabulary Size 是指在 SentencePiece 中生成的词汇表的大小，即词汇表中的唯一标记数量。较大的词汇表能够更好地覆盖不常见的标记，但会增加模型的复杂性和计算成本。
+- Model Type（模型类型）：Model Type 是 SentencePiece 中的一个参数，用于指定模型的类型。常见的模型类型有 "unigram"、"bpe"（Byte Pair Encoding）和 "word"。不同的模型类型具有不同的切分策略和性能特点。
+- Input Sentence Size（输入句子大小）：Input Sentence Size 是指用于训练 SentencePiece 模型的输入句子的大小。它可以是句子的字符数或标记数，用于控制训练数据的规模和模型的训练效果。
+- Character Coverage（字符覆盖率）：Character Coverage 是用于控制 SentencePiece 模型训练的一个参数，用于指定训练数据中要覆盖的字符比例。较高的字符覆盖率可以保留更多的字符信息，但可能导致词汇表增加和训练时间增加。
+- Normalization Rule（规范化规则）：Normalization Rule 是用于指定 SentencePiece 模型中文本的规范化规则。它可以包括对字符的大小写转换、标点符号的处理、Unicode 规范化等操作，以便在训练和切分过程中统一文本的表示形式。
+- https://github.com/google/sentencepiece
