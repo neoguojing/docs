@@ -119,10 +119,10 @@ model = AutoModelForCausalLM.from_pretrained(
 - 数据并行:一张GPU无法存储足够的数据，此时，需要对数据进行分块，放到不同的GPU上进行处理，反向传播后，再通过通信归约梯度，保证优化器在各个机器进行相同的更新
 - 模型并行。数据并行时，每个GPU会加载完整的模型结构，但是如果一个模型参数非常多，一个GPU无法加载所有的参数时，需要对模型进行分层，每个GPU处理一层，该方法就是模型并行
 - 流水线并行：必须同时计算多个 micro-batch，确保流水线的各个阶段能并行计算
-#### Zero-1 消除了内存冗余
+#### Zero-1 消除了内存冗余 训练 
 - Optimizer State Partitioning（Pos）优化器状态：减少4倍内存，通信量与数据并行性相同
 #### Zero-2 仅用于训练
 - 梯度：添加梯度分区（Pos+g）：减少8倍内存，通信量与数据并行性相同
-#### Zero-2 可用于推理和训练
+#### Zero-3 可用于推理和训练
 - 参数分区：添加参数分区（Pos+g+p）：内存减少与数据并行度Nd呈线性关系。例如，在64个GPU（Nd=64）之间进行拆分将产生64倍的内存缩减。通信量有50%的适度增长。
-#### ZeRO-Infinity (CPU and NVME offload)
+#### ZeRO-Infinity (CPU and NVME offload) 训练 推理 
