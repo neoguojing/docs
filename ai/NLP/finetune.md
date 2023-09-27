@@ -47,7 +47,9 @@ model = PeftModel.from_pretrained(model, peft_model_id)
 - 利用可学习的低秩适配器调整预训练模型的权重
 ### 技术细节
 - 4 位 Normalfloat，一种理论上最佳量化数据类型，该数据类型对正态分布数据产生比 4 位整数和 4 位 Float 更好的实证结果
+- NF4 的格点按照正态分布的分位数截取，格点分布两端稀疏，中间密集，格点分布与数据分布一致。
 - 双量化，一种量化量化常数的方法，每个参数保存平均约 0.37 位（65B 模型大约 3 GB）
+- QLoRA 将每 64 个参数为做一个 block，即 block_size = 64，每个 block 计算一个 Scale。由于量化后的 Scale 通常以 FP32 存储，在 block 数众多的情况下，Scale 占用的显存也不可忽视。因此，QLoRA 对 Scale 进一步量化成 FP8，取 Double Quant 的 block size = 256，因而进一步降低了显存消耗。
 - Paged Optimizers，使用 NVIDIA 统一内存，以防止梯度检查点期间的内存峰值导致传统上对大型模型困难的单个机器进行微调的内存不足错误
 - NVIDIA 统一内存：当 GPU 运行内存不足时，当优化器更新步骤中需要内存时，这些状态会被自动门出到 CPU RAM。
 - 存储数据类型：4 位 Normalfloat
@@ -67,6 +69,26 @@ model = AutoModelForCausalLM.from_pretrained(
         ),
     )
 ```
+## GPTQ
+- GPTQ 对某个 block 内的所有参数逐个量化，每个参数量化后，需要适当调整这个 block 内其他未量化的参数，以弥补量化造成的精度损失
+- 发现直接按顺序做参数量化，对精度影响也不大，因此参数矩阵每一行的量化可以做并行的矩阵计算
+- Lazy Batch-Updates，延迟一部分参数的更新，它能够缓解 bandwidth 的压力
+- Cholesky Reformulation，用 Cholesky 分解求海森矩阵的逆，在增强数值稳定性的同时，不再需要对海森矩阵做更新计算，进一步减少了计算量
+### OBD：Optimal Brain 
+- 任务参数之间相互独立
+- 实际上是一种剪枝方法，用于降低模型复杂度，提高泛化能力
+- 计算参数对结果的影响，排序，从而知道剪枝的顺序
+### OBS：Optimal Brain Surgeon
+- 参数之间的独立性不成立，我们还是要考虑交叉项
+- 寻找最合适的权重 ，使得删除它对目标的影响最小。
+### OBC
+- OBD 和 OBS 都存在一个缺点，就是剪枝需要计算全参数的海森矩阵（或者它的逆矩阵）
+- 假设参数矩阵的同一行参数互相之间是相关的，而不同行之间的参数互不相关
+- 这样，海森矩阵就只需要在每一行内单独计算
+### OBQ
+- 剪枝是一种特殊的量化（即剪枝的参数等价于量化到 0 点）
+- 算法复杂度太高
+- 采用贪心策略，先量化对目标影响最小的参数
 ## Accelerate:Hugging Face Pytorch GPU多机多卡加速器
 - DeepSpeed：https://huggingface.co/docs/accelerate/usage_guides/deepspeed
 - https://huggingface.co/docs/accelerate/index
