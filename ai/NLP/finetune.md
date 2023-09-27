@@ -42,6 +42,16 @@ from peft import PeftModel, PeftConfig
 ## 合并模型 model为基模型，peft_model_id为PEFT模型路径
 model = PeftModel.from_pretrained(model, peft_model_id)
 ```
+## QLoRA
+- 通过使用高精度权重进行模型微调
+- 利用可学习的低秩适配器调整预训练模型的权重
+### 技术细节
+- 4 位 Normalfloat，一种理论上最佳量化数据类型，该数据类型对正态分布数据产生比 4 位整数和 4 位 Float 更好的实证结果
+- 双量化，一种量化量化常数的方法，每个参数保存平均约 0.37 位（65B 模型大约 3 GB）
+- Paged Optimizers，使用 NVIDIA 统一内存，以防止梯度检查点期间的内存峰值导致传统上对大型模型困难的单个机器进行微调的内存不足错误
+- NVIDIA 统一内存：当 GPU 运行内存不足时，当优化器更新步骤中需要内存时，这些状态会被自动门出到 CPU RAM。
+- 存储数据类型：4 位 Normalfloat
+- 计算数据类型：BF16
 ## Accelerate:Hugging Face Pytorch GPU多机多卡加速器
 - DeepSpeed：https://huggingface.co/docs/accelerate/usage_guides/deepspeed
 - https://huggingface.co/docs/accelerate/index
