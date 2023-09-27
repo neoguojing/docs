@@ -52,6 +52,21 @@ model = PeftModel.from_pretrained(model, peft_model_id)
 - NVIDIA 统一内存：当 GPU 运行内存不足时，当优化器更新步骤中需要内存时，这些状态会被自动门出到 CPU RAM。
 - 存储数据类型：4 位 Normalfloat
 - 计算数据类型：BF16
+```
+model = AutoModelForCausalLM.from_pretrained(
+        model_name_or_path='/name/or/path/to/your/model',
+        load_in_4bit=True,
+        device_map='auto',
+        max_memory=max_memory,
+        torch_dtype=torch.bfloat16,
+        quantization_config=BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type='nf4'
+        ),
+    )
+```
 ## Accelerate:Hugging Face Pytorch GPU多机多卡加速器
 - DeepSpeed：https://huggingface.co/docs/accelerate/usage_guides/deepspeed
 - https://huggingface.co/docs/accelerate/index
