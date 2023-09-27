@@ -121,9 +121,8 @@ model = AutoModelForCausalLM.from_pretrained(
 - 流水线并行：必须同时计算多个 micro-batch，确保流水线的各个阶段能并行计算
 #### Zero-1 消除了内存冗余
 - Optimizer State Partitioning（Pos）优化器状态：减少4倍内存，通信量与数据并行性相同
+#### Zero-2 仅用于训练
 - 梯度：添加梯度分区（Pos+g）：减少8倍内存，通信量与数据并行性相同
+#### Zero-2 可用于推理和训练
 - 参数分区：添加参数分区（Pos+g+p）：内存减少与数据并行度Nd呈线性关系。例如，在64个GPU（Nd=64）之间进行拆分将产生64倍的内存缩减。通信量有50%的适度增长。
-#### Zero-2
-
-#### Zero-2
-
+#### ZeRO-Infinity (CPU and NVME offload)
