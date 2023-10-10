@@ -74,6 +74,7 @@ model = AutoModelForCausalLM.from_pretrained(
 - 发现直接按顺序做参数量化，对精度影响也不大，因此参数矩阵每一行的量化可以做并行的矩阵计算
 - Lazy Batch-Updates，延迟一部分参数的更新，它能够缓解 bandwidth 的压力
 - Cholesky Reformulation，用 Cholesky 分解求海森矩阵的逆，在增强数值稳定性的同时，不再需要对海森矩阵做更新计算，进一步减少了计算量
+- ExLLama:A standalone Python/C++/CUDA implementation of Llama for use with 4-bit GPTQ weights, designed to be fast and memory-efficient on modern GPUs.
 ### OBD：Optimal Brain 
 - 任务参数之间相互独立
 - 实际上是一种剪枝方法，用于降低模型复杂度，提高泛化能力
