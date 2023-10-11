@@ -1,7 +1,17 @@
 # transformer
 - 由 Encoder 和 Decoder 两个部分组成,分别由多个block组成
-- 
-- 
+- 输入矩阵 = 单词Embedding+单词位置Embedding，纬度：单词个数*向量纬度，每行标识一个单词
+- 输入矩阵经过Encoder，得到编码矩阵
+- 解码过程中，需要掩码掩盖i+1的信息，不让获取
+## 输入
+- 单词的 Embedding 有很多种方式可以获取，例如可以采用 Word2Vec、Glove 等算法预训练得到，也可以在 Transformer 中训练得到
+- 位置 Embedding：保存单词在序列中的绝对或者相对位置
+## 自注意力 Self-Attention
+- 输入：Q(查询),K(键值),V(值)，每一行都表示一个单词
+- Q乘以K的转置后，得到的矩阵行列数都为 n，n 为句子单词数，这个矩阵可以表示单词之间的 attention 强度
+- 除以向量纬度，防止内积过大
+- Softmax 计算每一个单词对于其他单词的 attention 系数
+- Softmax 矩阵之后可以和V相乘，得到最终的输出Z
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
 
