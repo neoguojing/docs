@@ -3,6 +3,10 @@
 - 输入矩阵 = 单词Embedding+单词位置Embedding，纬度：单词个数*向量纬度，每行标识一个单词
 - 输入矩阵经过Encoder，得到编码矩阵
 - 解码过程中，需要掩码掩盖i+1的信息，不让获取
+- Transformer 与 RNN 不同，可以比较好地并行训练。
+- Transformer 本身是不能利用单词的顺序信息的，因此需要在输入中添加位置 Embedding，否则 Transformer 就是一个词袋模型了。
+- Transformer 的重点是 Self-Attention 结构，其中用到的 Q, K, V矩阵通过输出进行线性变换得到。
+- Transformer 中 Multi-Head Attention 中有多个 Self-Attention，可以捕获单词之间多种维度上的相关系数 attention score。
 ## 输入
 - 单词的 Embedding 有很多种方式可以获取，例如可以采用 Word2Vec、Glove 等算法预训练得到，也可以在 Transformer 中训练得到
 - 位置 Embedding：保存单词在序列中的绝对或者相对位置
@@ -12,6 +16,19 @@
 - 除以向量纬度，防止内积过大
 - Softmax 计算每一个单词对于其他单词的 attention 系数
 - Softmax 矩阵之后可以和V相乘，得到最终的输出Z
+## Multi-Head Attention
+- 含多个 Self-Attention 层
+- 对多个Self-Attention 层的结果拼接，然后做线性变换
+## 编码
+- 由 Multi-Head Attention, Add & Norm, Feed Forward, Add & Norm 组成的
+- Add是残差连接，和resnet一样，让网络关注差异
+- Norm：将输入转换为均值方差，加快收敛
+- Feed Forward：两层全连接
+## 解码
+- 包含两个 Multi-Head Attention 层。
+- 第一个 Multi-Head Attention 层采用了 Masked 操作。Mask 操作是在 Self-Attention 的 Softmax 之前使用的
+- 第二个 Multi-Head Attention 层的K, V矩阵使用 Encoder 的编码信息矩阵C进行计算，而Q使用上一个 Decoder block 的输出计算。
+- 最后有一个 Softmax 层计算下一个翻译单词的概率。
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
 
