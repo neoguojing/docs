@@ -1,5 +1,5 @@
 # transformer
-
+## 
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
 
