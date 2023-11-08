@@ -2,6 +2,11 @@
 - 词向量是自然语言处理中表示词的数值化表示法,主要的计算方法包括:
 - 词向量*权重矩阵 = Embedding矩阵，是一个概率矩阵，反映词之间的关系
 - 也说Embedding是从原始数据中提取的特征
+- 对One-hot向量进行降维
+```
+embedding的每维特征都可以看出词的一个特征，比如人可以通过身高，体重，地址，年龄等多个特征表示，对于每个词embedding的每个维度的具体含义，不用人为定义，模型自己去学习。
+这样，在d维空间上，语义相近的词的向量就比较相似了，同时embedding还能起到降维的作用，将one-hot的[s,vocab_size]大小变成了[s,d]。
+```
 ## One-hot向量
 One-hot向量使用高维稀疏向量来表示词,将词映射到一个大的向量空间中,每个词对应一个索引位置,将该位置设为1,其他位置为0。这种方法可以区分不同词,但没有表征词的语义信息。
 
@@ -10,6 +15,15 @@ TF-IDF利用词频和反文档频率来表示词的重要程度。词频衡量�
 
 ## Word2Vec
 Word2Vec通过神经网络学习得到词的分布式向量表示,可以表示词的语义信息。主要有CBOW和Skip-Gram两种模型,能学到词的语义类比关系。
+- Skip-Gram：用输入单词作为中心单词去预测周边单词的方式
+- CBOW：用输入单词作为周边单词去预测中心单词的方式叫
+```
+# 一般embedding在语言模型的最开始，也就是词token操作之后
+# vocab_size 词汇表大小，hidden_size 隐藏层维度大小
+word_embeddings= nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+# input_ids是句子分词后词id，比如上述的“我喜欢”可转换成为[0,1,2],数字是在词汇表【我，喜，欢，吃,面】中的索引，即token id
+embeddings = word_embeddings(input_ids)  # embeddings的shape为[b,s,d],b:batch,s:seq_len,d:embedding size
+```
 
 ## GloVe
 GloVe通过统计词与词之间的共现关系生成词向量,也能表示词的语义信息。它利用统计方法和词的全局共现矩阵进行矩阵分解学习词向量。
