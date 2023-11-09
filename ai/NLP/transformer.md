@@ -8,7 +8,8 @@
 - Transformer 的重点是 Self-Attention 结构，其中用到的 Q, K, V矩阵通过输出进行线性变换得到。
 - Transformer 中 Multi-Head Attention 中有多个 Self-Attention，可以捕获单词之间多种维度上的相关系数 attention score。
 ## 位置编码
-- 纬度为d_model
+- 纬度为d_model的矩阵，每个index对应一个d维向量，对位置做了升维
+- 公式中，k标识单词位置，i标识在向量中的列位置
 - 为什么？ 输入的token是并行输入，无法确定先后位置
 ## 输入
 - 单词的 Embedding 有很多种方式可以获取，例如可以采用 Word2Vec、Glove 等算法预训练得到，也可以在 Transformer 中训练得到
