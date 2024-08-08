@@ -24,3 +24,16 @@
 ### GQA：增加推理速度，减少缓存
 ### 词典为128k token 100k英语token和28k非英语token
 ### RoPE 的频超参数调整为500,000
+### 小模型和大模型的区别： 层数不同，模型纬度不同，前馈网络纬度和注意力头数不同
+
+## Scaling Laws
+### 寻找token数量和计算量直接的关系
+
+## 训练效率提升
+### 16k GPU，每机8卡，显存80GB
+### 核心：算力、存储和网络
+### 技术术语： HBM3，RDMA over Converged Ethernet， Equal-Cost Multi-Path， Enhanced-ECMP 
+### 并行化训练：tensor parallelism，pipeline parallelism，context parallelism，data parallelism
+### tensor parallelism： 分割独立的权重到不同机器的不同chuck
+### pipeline parallelism：分割模型的不同层到不同的机器
+### context parallelism： 将输入分段，减少内存瓶颈
