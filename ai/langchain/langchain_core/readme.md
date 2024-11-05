@@ -2,8 +2,6 @@
 
 ![总体视图](./classes_core.png)
 
-![runnable](./classes_runnables.png)
-
 ![总体视图](./classes_callbacks.png)
 
 ![总体视图](./classes_document.png)
