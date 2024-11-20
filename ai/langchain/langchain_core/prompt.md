@@ -74,4 +74,8 @@ class StringPromptValue(PromptValue):
     - - StringPromptTemplate.format_prompt
       - PromptTemplate.format
       - return StringPromptValue
+     
+- BasePromptTemplate.invoke : 输入dict
+- - BaseChatPromptTemplate.format_prompt 输入dict ，返回ChatPromptValue
+  - - ChatPromptTemplate.format_messages 输入dict 返回list[BaseMessage]
 
