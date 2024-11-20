@@ -1,6 +1,10 @@
 # prompt
 ![runnable](./classes_prompts.png)
 
+## 类关系
+- BaseMessagePromptTemplate 相关类是对BaseMessage相关的类做的特化版本，专门用于渲染Message相关类型
+- BasePromptTemplate：相关类型是对字符串进行渲染，里面包含基本的渲染功能
+- ChatPromptTemplate继承自BasePromptTemplate
 ## 运转机制
 ### BaseMessagePromptTemplate示例
 ```
