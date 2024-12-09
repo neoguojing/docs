@@ -64,5 +64,29 @@ Retry	When a retry event is run	on_retry
 ## 其他
 - RunnableGenerator： 在流式计算中，将用户自定义调用转换为流式
 - RunnableLambda： 将函数转换为runnable
-- 
+
+## RunnableWithMessageHistory
+### invoke 流程
+- RunnableBindingBase.invoke : 输入 dict
+- RunnableSequence.invoke: 输入 dict
+- - context.run(step.invoke, input, config, **kwargs)  step是
+  - - RunnableWithMessageHistory._enter_history: RunnableLambda.invoke 输入 dict 输出：list[BaseMessage]
+  - - - Runnable._call_with_config 输出：list[BaseMessage]
+      - RunnableAssign.invoke
+      - - RunnableParallel.invoke
+      - - call_func_with_variable_args 输入 dict
+  - - RunnableLambda.invoke 输入：字典和chat_history
+    - - Runnable._call_with_config
+      - - context.run(call_func_with_variable_args,func ...)
+        - - call_func_with_variable_args
+          - - RunnableLambda._invoke
+            - - call_func_with_variable_args
+              - - RunnableWithMessageHistory._call_runnable_sync
+                - - RunnableBindingBase.invoke
+                  - - RunnableBranch.invoke
+                    - - branches 遍历
+                      - - condition.invoke
+                        - runnable.invoke
+                        - self.default.invoke
+                        - BaseChatPromptTemplate.format_prompt 输出ChatPromptValue
 
