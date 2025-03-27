@@ -1,0 +1,53 @@
+# tool call
+
+## function call of openai
+> 函数调用允许 LLM 根据用户输入，生成调用特定函数的指令及其参数，以结构化的 JSON 格式返回。​这使得模型能够与外部 API、数据库等系统交互，获取实时数据或执行特定操作。
+- 定义函数
+- 定义函数对应的json标准
+```
+{
+          "type": "function",
+          "function": {
+              "name": "get_current_weather",
+              "description": "获取指定位置的当前天气",
+              "parameters": {
+                  "type": "object",
+                  "properties": {
+                      "location": {
+                          "type": "string",
+                          "description": "城市名称，例如，北京",
+                      },
+                      "unit": {
+                          "type": "string",
+                          "enum": ["celsius", "fahrenheit"],
+                          "description": "温度单位，摄氏度或华氏度",
+                      },
+                  },
+                  "required": ["location"],
+              },
+          },
+      }
+```
+- 将请求和tools定义传入open ai接口
+- 模型更加该tools描述，返回调用信息
+```
+{
+  "content": null,
+  "role": "assistant",
+  "function_call": null,
+  "tool_calls": [
+    {
+      "id": "...",
+      "function": {
+        "arguments": "{\"location\":\"London\",\"unit\":\"celsius\"}",
+        "name": "get_current_weather"
+      },
+      "type": "function"
+    }
+  ]
+}
+```
+- 客户端根据该结构体调用函数
+- 特点：模型需要支持tool调用,客户端定义函数和解析函数的调用
+
+## langchain
