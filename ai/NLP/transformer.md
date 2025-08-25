@@ -10,6 +10,9 @@
 > Input sequence -> Embedding + Positional Encoding -> N x Encoder Layer -> Context
 > Context + Decoder Input -> N x Decoder Layer -> Output probabilities
 ## Tokenizer
+### 为什么tokenize
+- 计算机只能识别数字
+- 词表问题：解决词表过大（英文单词太多），
 ## Embding
 
 ## Encoder-Decoder 架构（原始 Transformer）
