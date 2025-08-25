@@ -46,7 +46,19 @@
 - 反向	梯度传回 embedding，只更新输入 token 对应行
 - 优化	Adam/AdamW 等优化器更新 embedding
 - 收敛后	embedding 空间形成语义结构，向量相似度表示语义相似性
-- 
+### W_vocab输出词表向量矩阵
+- 与embding共享权值
+- 隐藏向量映射到词表概率空间的矩阵
+### Hidden State
+- 输入的中间层表示
+- 每个 token 在每一层都有自己的 hidden state，随着层数增加，它的语义表达越来越丰富。
+- Embedding	seq_len × d	输入 token → 初始向量
+- Hidden State	seq_len × d	Transformer 内部中间表示，捕捉上下文语义
+- Logits	seq_len × V	Hidden state × W_vocab^T → token 概率
+### 位置编码
+- 位置向量让 Transformer 知道“这个 token 在第几位
+- 与 token embedding 相加 → Transformer 隐状态 hidden state 同时包含 语义 + 顺序
+#### 正余弦位置编码
 ## Encoder-Decoder 架构（原始 Transformer）
 
 ## Encoder：把输入序列编码成上下文表示
