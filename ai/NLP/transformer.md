@@ -7,32 +7,26 @@
 - Transformer 本身是不能利用单词的顺序信息的，因此需要在输入中添加位置 Embedding，否则 Transformer 就是一个词袋模型了。
 - Transformer 的重点是 Self-Attention 结构，其中用到的 Q, K, V矩阵通过输出进行线性变换得到。
 - Transformer 中 Multi-Head Attention 中有多个 Self-Attention，可以捕获单词之间多种维度上的相关系数 attention score。
-## 位置编码
-- 纬度为d_model的矩阵，每个index对应一个d维向量，对位置做了升维
-- 公式中，k标识单词位置，i标识在向量中的列位置
-- 为什么？ 输入的token是并行输入，无法确定先后位置
-## 输入
-- 单词的 Embedding 有很多种方式可以获取，例如可以采用 Word2Vec、Glove 等算法预训练得到，也可以在 Transformer 中训练得到
-- 位置 Embedding：保存单词在序列中的绝对或者相对位置
-## 自注意力 Self-Attention
-- 输入：Q(查询),K(键值),V(值)，每一行都表示一个单词
-- Q乘以K的转置后，得到的矩阵行列数都为 n，n 为句子单词数，这个矩阵可以表示单词之间的 attention 强度
-- 除以向量纬度，防止内积过大
-- Softmax 计算每一个单词对于其他单词的 attention 系数
-- Softmax 矩阵之后可以和V相乘，得到最终的输出Z
-## Multi-Head Attention
-- 含多个 Self-Attention 层
-- 对多个Self-Attention 层的结果拼接，然后做线性变换
-## 编码
-- 由 Multi-Head Attention, Add & Norm, Feed Forward, Add & Norm 组成的
-- Add是残差连接，和resnet一样，让网络关注差异
-- Norm：将输入转换为均值方差，加快收敛
-- Feed Forward：两层全连接
-## 解码
-- 包含两个 Multi-Head Attention 层。
-- 第一个 Multi-Head Attention 层采用了 Masked 操作。Mask 操作是在 Self-Attention 的 Softmax 之前使用的
-- 第二个 Multi-Head Attention 层的K, V矩阵使用 Encoder 的编码信息矩阵C进行计算，而Q使用上一个 Decoder block 的输出计算。
-- 最后有一个 Softmax 层计算下一个翻译单词的概率。
+## Tokenizer
+## Embding
+
+## Encoder-Decoder 架构（原始 Transformer）
+
+## Encoder：把输入序列编码成上下文表示
+
+## Decoder：根据上下文生成输出序列
+
+## Self-Attention 机制
+
+## Position Encoding
+
+## Feed-Forward Network (FFN)
+
+## Layer Normalization
+
+## Residual Connection
+
+## Masked Attention（在 Decoder 中）
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
 
