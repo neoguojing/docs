@@ -7,6 +7,8 @@
 - Transformer 本身是不能利用单词的顺序信息的，因此需要在输入中添加位置 Embedding，否则 Transformer 就是一个词袋模型了。
 - Transformer 的重点是 Self-Attention 结构，其中用到的 Q, K, V矩阵通过输出进行线性变换得到。
 - Transformer 中 Multi-Head Attention 中有多个 Self-Attention，可以捕获单词之间多种维度上的相关系数 attention score。
+> Input sequence -> Embedding + Positional Encoding -> N x Encoder Layer -> Context
+> Context + Decoder Input -> N x Decoder Layer -> Output probabilities
 ## Tokenizer
 ## Embding
 
