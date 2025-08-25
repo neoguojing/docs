@@ -34,7 +34,19 @@
 - 按频率合并字节码，而不是字符（中文用3个字节编码）
 - 得到最终词表
 ## Embding
-
+- llm的Embding通过训练得到
+- 纬度[词表大小，d]，d是模型的超参数，决定模型的表达力,有v行，d列
+- 所有词投影到一个 d 维语义空间，相似意思的词聚在一起，意思差异大的词相隔开
+### token id 到Embding
+- 查询Embding矩阵，矩阵的每一行表示该token的向量
+### embding的训练过程
+- 初始化	随机或预训练向量，矩阵 E ∈ R^(V×d)
+- 前向	token → embedding → 加位置编码 → Transformer → 输出概率
+- 损失	语言建模或对比学习等目标
+- 反向	梯度传回 embedding，只更新输入 token 对应行
+- 优化	Adam/AdamW 等优化器更新 embedding
+- 收敛后	embedding 空间形成语义结构，向量相似度表示语义相似性
+- 
 ## Encoder-Decoder 架构（原始 Transformer）
 
 ## Encoder：把输入序列编码成上下文表示
