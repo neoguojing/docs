@@ -85,13 +85,19 @@
 - 1.计算旋转角度：计算旋转角度 θk=10000^2k/d
 - 2.构建旋转矩阵R,d维的对角方阵：将向量每两个作为一组，
 - 3.应用旋转矩阵：x' = Rx  ,将向量X进行旋转
-
-## Encoder-Decoder 架构（原始 Transformer）
-
 ## Encoder：把输入序列编码成上下文表示
-
+> Input -> Multi-Head Self-Attention -> Add & Norm -> Feed Forward -> Add & Norm -> Output
 ## Decoder：根据上下文生成输出序列
-
+> Input (目标序列嵌入 + 位置编码) → Masked Multi-Head Self-Attention → Add & Norm → Multi-Head Attention over Encoder Output → Add & Norm → Feed Forward → Add & Norm → Output
+> decode only：Input (嵌入 + 位置编码) → Masked Multi-Head Self-Attention → Add & Norm → Feed Forward → Add & Norm → Output
+> 在 Decoder 里生成任务时，不能让模型看到未来的 token（即右侧的 token），否则会导致信息泄露
+> Masked Self-Attention 的核心就是 在注意力矩阵上应用掩码（mask），禁止模型关注未来信息。
+### 掩码注意力机制
+- 掩码矩阵纬度：L * L
+-- j <= i 的位置：值为0，保留原始值
+-- j > i的位置，值为无穷大，Softmax 后对应权重为 0
+- attention在softmax之前，加上掩码矩阵
+- softmax之后，演变为一个下三角矩阵
 ## Self-Attention 机制 
 - 输入x纬度：序列长度L*d
 - 输出纬度：L*d
@@ -115,8 +121,19 @@
 - 参数可控
 
 ## Feed-Forward Network (FFN)
-
+> 参数量大于MHA
+- 输入：L*d
+- 1.升维：xW1; W1：升维矩阵，纬度：df*d，df一般为d的2-4倍；结果纬度L*df
+- 2.偏置：加上参数b1，做平移；纬度为：df；偏置是逐维加的
+- 3.激活函数：非线性激活：ReLU，GELU，SwiGLU；用于引入通用近似能力
+- 4.降维操作：W2*h；W2：降维矩阵，纬度：df*d；
+- 5.偏置：b2，纬度:d
+### 特性：
+- 逐位置（Position-wise）：每个 token 的向量独立通过 FFN，不考虑序列上下文关系
+- 升维-降维结构：像瓶颈层（bottleneck），增加模型容量又能保持输出维度不变。
+- 并行计算：不同 token 的 FFN 可以同时计算，非常适合 GPU/TPU
 ## Layer Normalization
+- 出现在多头注意力和FFN后面，和残差一起使用
 - 1.把输入减去均值，保证特征的平均值为 0
 - 2.把每个特征除以标准差，保证特征分布的方差为 1
 - 3.仿射变换：引入可训练的缩放 γ 和平移 β
@@ -126,7 +143,9 @@
 - 缓解梯度消失/爆炸
 - 信息保留
 - 加速收敛
-## Masked Attention（在 Decoder 中）
+
+## 输出层
+
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
 
