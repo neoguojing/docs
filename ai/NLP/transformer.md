@@ -93,8 +93,10 @@
 ## Decoder：根据上下文生成输出序列
 
 ## Self-Attention 机制
-- 输入纬度：序列长度L*d
-- 单头注意力下：Q，W，V的参数矩阵的纬度是：d * d
+- 输入x纬度：序列长度L*d
+- 单头注意力下：Q，K，V的投影参数矩阵w的纬度是：d * d
+- 1.Q=XWQ,K=XWK,V=XWV： 输入和投影矩阵相乘得到Q k V
+- 2.attn = softmax(​​QKT/​投影矩阵纬度)V
 ### 多头注意力（MHA），单个w（投影矩阵）的纬度（d，d/h）
 - 将参数纬度d拆分为h个
 - h个self attention的组合：通常8，16
