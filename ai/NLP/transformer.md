@@ -92,8 +92,9 @@
 
 ## Decoder：根据上下文生成输出序列
 
-## Self-Attention 机制
+## Self-Attention 机制 
 - 输入x纬度：序列长度L*d
+- 输出纬度：L*d
 - 单头注意力下：Q，K，V的投影参数矩阵w的纬度是：d * d
 - 1.Q=XWQ,K=XWK,V=XWV： 输入和投影矩阵相乘得到Q K V
 - - Q:要查询的信息；K:可以提供的信息，可检索标签；QK的点积：标识在K中寻找最相关的Q的信息，结果越大相关性越高
@@ -116,9 +117,15 @@
 ## Feed-Forward Network (FFN)
 
 ## Layer Normalization
-
+- 1.把输入减去均值，保证特征的平均值为 0
+- 2.把每个特征除以标准差，保证特征分布的方差为 1
+- 3.仿射变换：引入可训练的缩放 γ 和平移 β
 ## Residual Connection
-
+- 残差连接：y = x + F(x)
+- 出现在多头注意力和FFN后面
+- 缓解梯度消失/爆炸
+- 信息保留
+- 加速收敛
 ## Masked Attention（在 Decoder 中）
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
