@@ -163,7 +163,17 @@
 - Beam Search：同时保留多个候选序列，选择整体概率最大的序列
 ### 交叉熵损失函数（训练）
 - 训练时用于评估，做反向传播，更新参数
-
+## kv cache
+> 这样每次只算 1 个 token 的 Q/K/V，而历史的 KV 来自 cache，不用重复计算。
+> HuggingFace Transformers：在 generate() 里自动维护 past_key_values（就是 KV cache）
+> vLLM：用了更高级的 PagedAttention（把 KV 存在一个“大内存池”里，减少内存碎片，提高显存利用率）
+> TensorRT / FasterTransformer：KV cache 会存到 GPU 的高效 buffer 里，避免频繁拷贝
+- 存储MHA每层的 Key/Value 张量（维度 = [batch, heads, seq_len, head_dim]）
+- 每次生成新 token 时只算它的 K/V
+- 把新 K/V append 到缓存
+- Attention 查询时用历史缓存 + 新 Q 计算
+- 框架里一般通过 past_key_values 参数传入和更新
+- 
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
 
