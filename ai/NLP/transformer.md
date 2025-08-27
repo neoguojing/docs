@@ -145,10 +145,12 @@
 - 加速收敛
 
 ## 输出层
-### 线性投影
+### 线性投影 参数与Embding共享：纬度（V，d）
 - 每个 token 的隐藏向量 与 词表矩阵 W 做内积，得到每个 token 属于词表中每个词的 logits
-- logits:未归一化分数
-### Softmax层
+- logits:未归一化分数；纬度：L*v
+### Softmax
+- 对logits做softmax归一化，得到概率分布
+
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
 
