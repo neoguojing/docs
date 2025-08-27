@@ -118,6 +118,9 @@
 - attention在softmax之前，加上掩码矩阵
 - softmax之后，演变为一个下三角矩阵
 ## Self-Attention 机制 
+> Q.K 是点积计算
+> XW_Q、XW_K、XW_V 就是这样的矩阵乘法
+> 
 - 输入x纬度：序列长度L*d
 - 输出纬度：L*d
 - 单头注意力下：Q，K，V的投影参数矩阵w的纬度是：d * d
