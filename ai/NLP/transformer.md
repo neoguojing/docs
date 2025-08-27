@@ -9,6 +9,25 @@
 - Transformer 中 Multi-Head Attention 中有多个 Self-Attention，可以捕获单词之间多种维度上的相关系数 attention score。
 > Input sequence -> Embedding + Positional Encoding -> N x Encoder Layer -> Context
 > Context + Decoder Input -> N x Decoder Layer -> Output probabilities
+## 参数分布：
+| 层 | 参数 | 维度 |
+|-----|------|------|
+| **Embedding** | Token Embedding `E` | `(V, d_model)` |
+|  | Position Embedding `P` | `(L, d_model)` |
+| **Multi-Head Attention** | Query `W_Q` | `(d_model, h*d_k)` |
+|  | Key `W_K` | `(d_model, h*d_k)` |
+|  | Value `W_V` | `(d_model, h*d_v)` |
+|  | 输出线性 `W_O` | `(h*d_v, d_model)` |
+|  | 偏置 `b_Q, b_K, b_V, b_O` | `(h*d_k / d_v / d_model)` |
+| **Feed Forward Network** | 第一层权重 `W_1` | `(d_model, d_ff)` |
+|  | 第一层偏置 `b_1` | `(d_ff,)` |
+|  | 第二层权重 `W_2` | `(d_ff, d_model)` |
+|  | 第二层偏置 `b_2` | `(d_model,)` |
+| **LayerNorm** | scale `γ` | `(d_model,)` |
+|  | shift `β` | `(d_model,)` |
+| **输出层** | 词表投影 `W_vocab` | `(d_model, V)` |
+|  | 偏置 `b_vocab` | `(V,)` |
+
 ## Tokenizer
 ### 为什么tokenize
 - 计算机只能识别数字
