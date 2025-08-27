@@ -106,11 +106,21 @@
 - 3.应用旋转矩阵：x' = Rx  ,将向量X进行旋转
 ## Encoder：把输入序列编码成上下文表示
 > Input -> Multi-Head Self-Attention -> Add & Norm -> Feed Forward -> Add & Norm -> Output
+- Multi-Head Self-Attention输入序列中的每个 token 与其他 token 交互（没有 mask）。
+- Add & Norm（残差 + LayerNorm）
+- Feed Forward Network (FFN)
 ## Decoder：根据上下文生成输出序列
 > Input (目标序列嵌入 + 位置编码) → Masked Multi-Head Self-Attention → Add & Norm → Multi-Head Attention over Encoder Output → Add & Norm → Feed Forward → Add & Norm → Output
 > decode only：Input (嵌入 + 位置编码) → Masked Multi-Head Self-Attention → Add & Norm → Feed Forward → Add & Norm → Output
 > 在 Decoder 里生成任务时，不能让模型看到未来的 token（即右侧的 token），否则会导致信息泄露
 > Masked Self-Attention 的核心就是 在注意力矩阵上应用掩码（mask），禁止模型关注未来信息。
+### 每一层 Decoder Layer 包含：
+- Masked Multi-Head Self-Attention（防止看未来）
+- Add & Norm
+- Encoder-Decoder Attention（Query 来自 Decoder，Key/Value 来自 Encoder）
+- Add & Norm
+- Feed Forward Network
+- Add & Norm
 ### 掩码注意力机制
 - 掩码矩阵纬度：L * L
 -- j <= i 的位置：值为0，保留原始值
