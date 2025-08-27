@@ -192,7 +192,16 @@
 - 把新 K/V append 到缓存
 - Attention 查询时用历史缓存 + 新 Q 计算
 - 框架里一般通过 past_key_values 参数传入和更新
-- 
+
+## 长上下文扩展
+> 序列越长，计算量和显存消耗呈平方增长
+降低复杂度：
+- 稀疏注意力（Sparse Attention）:每个 token 只和局部窗口或少量全局 token 做注意力
+- 滑动窗口 / 分块 Attention将序列切块，只在块内做 attention，再跨块传递信息
+- 分段训练 / Gradient Checkpoint大序列分段训练，显存累积梯度
+- KV Cache（主要用于推理）
+
+不重复计算历史 token 的 K/V
 ## 投影
 - q_proj：q_proj 是指查询投影（Query Projection）。在自注意力机制中，输入被分为查询（query）、键（key）和值（value）三部分。q_proj 负责将查询部分进行线性变换投影，以便与键和值进行匹配。
 
