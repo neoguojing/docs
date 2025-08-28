@@ -76,6 +76,31 @@ x[1:3, 0:2]  # 第1、2行，第0、1列 → tensor([[4,5],[7,8]])
 - Jacobian 矩阵，输出对每个矩阵元素求导组成的矩阵，计算量和存储量大
 - 向量-雅可比积 (Vector-Jacobian Product, VJP)：拿一行权重（上游梯度）去乘这个表格，只算需要的那一部分
 ## 模块化神经网络
+### nn.Module
+- 参数注册：通过 nn.Parameter 自动加入 _parameters
+- 子模块注册：通过 _modules 管理，支持递归访问
+- 前向传播：forward() 用户定义，__call__ 负责调用并处理 hooks
+- 缓冲区：register_buffer 管理非训练张量
+- 训练模式管理：self.training 控制 Dropout/BatchNorm 行为
+- 模块序列化：state_dict() / load_state_dict() 保存和加载权重
+-- 收集本模块参数
+-- 收集 buffer
+-- 递归收集子模块
+-- OrderedDict：保持层级顺序，方便加载到原模型
+  
+### 子模块组合
+- 子模块本质上是 另一个 Module 实例
+- 
+### 自动管理参数
+### 前向传播由 forward
+### 内置网络层
+- 全连接层：nn.Linear
+- 卷积层：nn.Conv 支持1-3维的卷积
+- 池化层：
+- 激活函数
+- 正则化层：LayerNorm
+- Dropout：随机失活
+- 注意力，LSTM等
 ## 损失函数
 ## 优化器
 ## 数据加载
