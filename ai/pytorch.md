@@ -6,6 +6,23 @@
 --它不是二维矩阵
 --它只有一个轴
 --这个轴的长度是 3
+### 三要素
+- shape（形状）：各维度长度，如 (B, C, H, W)。
+
+- dtype（数据类型）：如 float32、bfloat16、int64、bool、complex64 等。
+
+- device（设备）：cpu 或 cuda（GPU）。
+### 底层实现
+- PyTorch 的核心是 ATen 库（C++），所有张量操作最终调用 ATen 的函数。
+- Tensor 在 C++ 层是一个 TensorImpl 对象，Python 只是一个封装（PyObject）。
+- Tensor 的数据和元信息分开管理：
+-- 数据（storage）：连续内存块，存储实际数字（float32, int64 等）
+-- 元信息（TensorImpl）：shape、stride、dtype、device、requires_grad 等
+### contiguous
+- 由于底层存储是连续内存，大部分情况下知识改变了元数据
+- 某些情况下，CUDA等要求内存是连续的
+- contiguous 重新分配内存和元素重排
+- is_contiguous 判断内存是否连续
 ### 基于轴的操作
 - 沿着 axis 的方向“压扁”它，剩下的方向就保留下来
 - 矩阵：axis=0，即沿着行的方向（上下）压缩，axis=1，沿着列的方向压缩
