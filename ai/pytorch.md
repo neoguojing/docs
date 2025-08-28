@@ -90,8 +90,16 @@ x[1:3, 0:2]  # 第1、2行，第0、1列 → tensor([[4,5],[7,8]])
   
 ### 子模块组合
 - 子模块本质上是 另一个 Module 实例
-- 
-### 自动管理参数
+- nn.Module 内部通过 _modules 管理子模块
+- 组合方式：
+-- 顺序：nn.Sequential
+-- 列表：nn.ModuleList
+-- 字典：nn.ModuleDict
+- 优势：
+-- 参数递归管理
+-- forward 递归调用
+-- state_dict 自动保存子模块参数
+-- 可复用、可扩展
 ### 前向传播由 forward
 ### 内置网络层
 - 全连接层：nn.Linear
@@ -102,7 +110,70 @@ x[1:3, 0:2]  # 第1、2行，第0、1列 → tensor([[4,5],[7,8]])
 - Dropout：随机失活
 - 注意力，LSTM等
 ## 损失函数
+| 类型    | 函数                  | 适用场景     | 输入特点                    |
+| ----- | ------------------- | -------- | ----------------------- |
+| 分类    | CrossEntropyLoss    | 多分类      | logits, label           |
+| 分类    | BCEWithLogitsLoss   | 二分类/多标签  | logits, 0/1             |
+| 分类    | NLLLoss             | 多分类      | log-prob, label         |
+| 回归    | MSELoss             | 回归       | y\_pred, y\_true        |
+| 回归    | L1Loss              | 回归       | y\_pred, y\_true        |
+| 回归    | SmoothL1Loss        | 回归/异常值鲁棒 | y\_pred, y\_true        |
+| 对比/嵌入 | CosineEmbeddingLoss | 相似度学习    | x1, x2, label           |
+| 对比/嵌入 | TripletMarginLoss   | 嵌入学习     | anchor, pos, neg        |
+| 分布    | KLDivLoss           | 分布匹配/蒸馏  | log\_prob, target\_prob |
+
 ## 优化器
+> 优化器负责 根据梯度更新模型参数，是训练神经网络的核心
+> PyTorch 中优化器位于 torch.optim 模块，常用类继承自 Optimizer 基类
+```
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+for x, y in dataloader:
+    optimizer.zero_grad()         # 清空梯度
+    y_pred = model(x)
+    loss = loss_fn(y_pred, y)
+    loss.backward()               # 反向传播计算梯度
+    optimizer.step()              # 更新参数
+
+```
+### 核心工作：
+- 接收模型参数
+- 根据梯度和优化算法更新参数
+- 支持动量、权重衰减、学习率调度等
+### 核心成员：
+- param_groups：参数组，每组可设置不同学习率或权重衰减
+- state：存储优化器状态（如动量、Adam 的一阶/二阶矩）
+### 核心方法：
+- step()：执行一次参数更新
+- zero_grad()：清空梯度（一般在反向传播前调用）
+### 核心流程：
+- 遍历 param_groups
+- 对每个参数 p：
+-- 获取梯度 g = p.grad
+-- 更新状态 state[p]
+-- 计算参数更新量 delta：参数更新量 = 学习率 × 梯度 × 其他修正因子（如动量、自适应系数）
+-- 执行 p.data.add_(delta)：等价于 p.data = p.data + delta；
+### 常见优化器
+| 优化器          | 特点             | 公式（参数更新）                                                                                                                                                                                                                                          |
+| ------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SGD          | 随机梯度下降，简单，收敛慢  | $\theta_{t+1} = \theta_t - \eta \nabla_\theta L$                                                                                                                                                                                                  |
+| SGD+Momentum | 引入动量，缓冲梯度      | $v_{t} = \mu v_{t-1} + \nabla_\theta L, \theta_{t+1} = \theta_t - \eta v_t$                                                                                                                                                                       |
+| SGD+Nesterov | 提前梯度更新         | $v_{t} = \mu v_{t-1} + \nabla_\theta L(\theta_t - \eta \mu v_{t-1})$                                                                                                                                                                              |
+| Adam         | 自适应学习率，一阶矩和二阶矩 | $ m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t$ <br> $v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2$ <br> $\hat{m}_t = m_t/(1-\beta_1^t)$, $\hat{v}_t = v_t/(1-\beta_2^t)$ <br> $\theta_{t+1} = \theta_t - \eta \hat{m}_t / (\sqrt{\hat{v}_t} + \epsilon)$ |
+| AdamW        | Adam + 正则化分离   | 权重衰减直接作用于参数而不是梯度                                                                                                                                                                                                                                  |
+| RMSprop      | 自适应学习率         | $E[g^2]_t = \gamma E[g^2]_{t-1} + (1-\gamma) g_t^2$ <br> $\theta_{t+1} = \theta_t - \eta g_t / (\sqrt{E[g^2]_t} + \epsilon)$                                                                                                                      |
+
+### 概念：
+| 概念       | 作用         | PyTorch 表达           |
+| -------- | ---------- | -------------------- |
+| 学习率 η    | 控制更新步长     | lr=0.01              |
+| 动量 μ     | 利用历史梯度平滑更新 | momentum=0.9         |
+| Nesterov | 提前修正梯度方向   | nesterov=True        |
+| 自适应学习率   | 对不同参数调节步长  | Adam / RMSprop       |
+| 权重衰减 λ   | 防止过拟合      | weight\_decay=0.01   |
+| 梯度裁剪     | 防止梯度爆炸     | clip\_grad\_norm\_   |
+| 梯度累积     | 多步累积梯度再更新  | 手动控制 backward / step |
+
 ## 数据加载
 ## 设备管理
 ## 保存与加载模型
