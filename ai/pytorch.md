@@ -177,5 +177,19 @@ for x, y in dataloader:
 | 梯度累积     | 多步累积梯度再更新  | 手动控制 backward / step |
 
 ## 数据加载
+### Dataset
+- 抽象类：torch.utils.data.Dataset
+- 核心方法：
+```
+__len__()     # 返回样本数量
+__getitem__(idx)  # 返回 idx 对应的样本 (x, y)
+```
+### DataLoader
+- 作用：批量读取、打乱顺序、并行加载
+- 常用参数：
+-- batch_size：每个 batch 样本数量
+-- shuffle：是否打乱顺序
+-- num_workers：多进程加载数量
+-- collate_fn：自定义 batch 合并方法
 ## 设备管理
 ## 保存与加载模型
