@@ -192,4 +192,5 @@ __getitem__(idx)  # 返回 idx 对应的样本 (x, y)
 -- num_workers：多进程加载数量
 -- collate_fn：自定义 batch 合并方法
 ## 设备管理
+- CUDACachingAllocator 管理gpu内存
 ## 保存与加载模型
