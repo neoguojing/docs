@@ -193,4 +193,29 @@ __getitem__(idx)  # 返回 idx 对应的样本 (x, y)
 -- collate_fn：自定义 batch 合并方法
 ## 设备管理
 - CUDACachingAllocator 管理gpu内存
-## 保存与加载模型
+## 自定义算子
+```
+import torch
+
+class SwishFn(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        sig = x.sigmoid()
+        y = x * sig
+        ctx.save_for_backward(x, sig)   # 反向会用到
+        return y
+
+    @staticmethod
+    def backward(ctx, grad_y):
+        x, sig = ctx.saved_tensors
+        grad_x = grad_y * (sig + x * sig * (1 - sig))
+        return grad_x
+
+def swish(x):
+    return SwishFn.apply(x)
+
+# 使用 & 梯度检验（双精度 + 小扰动）
+x = torch.randn(5, requires_grad=True, dtype=torch.double)
+torch.autograd.gradcheck(SwishFn.apply, (x,), eps=1e-6, atol=1e-4, rtol=1e-3)
+
+```
