@@ -18,7 +18,8 @@
 -- eos_token_id：序列结束 token id。
 -- decoder_start_token_id：解码起始 token id。
 -- sep_token_id：分隔 token id。
-## QWEN3
+## Qwen3
+### Qwen3Config
 
 ## Gemma3
 
