@@ -103,6 +103,11 @@ x[1:3, 0:2]  # 第1、2行，第0、1列 → tensor([[4,5],[7,8]])
 ### 前向传播由 forward
 ### 内置网络层
 - 全连接层：nn.Linear
+```
+nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
+本质就是 torch.matmul(x, W.T) + b
+参数 W 和 b 会自动注册为模型参数，并且能被优化器更新。
+```
 - 卷积层：nn.Conv 支持1-3维的卷积
 - 池化层：
 - 激活函数
