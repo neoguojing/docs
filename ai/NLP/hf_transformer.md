@@ -1,5 +1,5 @@
 # transfomer 库详解
-
+> python utils/modular_model_converter.py :基于mudular文件生成model文件，避免重复代码
 ## 通用库
 ### PretrainedConfig 模型配置：
 - 类属性： 如model_type 等
