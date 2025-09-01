@@ -1,6 +1,14 @@
 # transfomer 库详解
 > python utils/modular_model_converter.py :基于mudular文件生成model文件，避免重复代码
 ## 通用库
+### 通用参数名称对照表：
+- scaling： attention的缩放参数，对应公式除的根号d
+- q_proj： XWq的函数，投影矩阵
+- k_proj： XWk的函数
+- v_proj： XWv的函数
+- q_norm：
+- k_norm：
+- sliding_window
 ### PretrainedConfig 模型配置：
 - 类属性： 如model_type 等
 - 公共属性（所有子类都有）
