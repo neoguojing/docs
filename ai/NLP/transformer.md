@@ -302,6 +302,7 @@ Output = MHA_output * W_O
 ```
 ## Feed-Forward Network (FFN)
 > 参数量大于MHA
+> FFN(x)=W2​f(W1​x+b1​)+b2​
 - 输入：L*d
 - 1.升维：xW1; W1：升维矩阵，纬度：df*d，df一般为d的2-4倍；结果纬度L*df
 - 2.偏置：加上参数b1，做平移；纬度为：df；偏置是逐维加的
