@@ -20,7 +20,9 @@
 -- sep_token_id：分隔 token id。
 ## Qwen3
 ### Qwen3Config
-
+- vocab_size： 151936
+- hidden_size： 4096
+- intermediate_size： 前馈网络的升维纬度，22016
 ## Gemma3
 
 ## GPTOSS
