@@ -76,7 +76,7 @@ base_model_tp_plan = {
     "layers.*.mlp.down_proj": "rowwise",
 }
 ```
-#####流水线并行
+##### 流水线并行
 ```
 base_model_pp_plan = {
     "embed_tokens": (["input_ids"], ["inputs_embeds"]),
