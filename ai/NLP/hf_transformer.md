@@ -23,6 +23,15 @@
 - vocab_size： 151936
 - hidden_size： 4096
 - intermediate_size： 前馈网络的升维纬度，22016
+- - 在「接近 4~6 倍」的区间内，挑一个能被硬件友好分割的数
+  - GPU 上矩阵乘法（GEMM）通常要求维度是 64 或 128 的倍数，才能利用 Tensor Core 高效运算。22016 ÷ 128 = 172 → 恰好是整数
+- num_hidden_layers：32；block的层数
+  - Block = Attention + FFN + Norm + Residual
+- num_attention_heads: 32;Attention的头数
+- num_key_value_heads：kv头的数量，适用于MQA GQA
+- head_dim： 128；单个头的纬度；
+- hidden_act：激活函数；silu：SiLU(x)=x⋅σ(x)
+- max_position_embeddings：32768；模型的最大支持的序列长度
 ## Gemma3
 
 ## GPTOSS
