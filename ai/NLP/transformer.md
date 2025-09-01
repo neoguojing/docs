@@ -186,6 +186,8 @@ x' = [-1.14, 1.92, 2.96, 4.03]
   - softmax取点积的概率
 - 3：概率与V的加权：让 Query 从上下文所有 Value 中，按相关性做加权平均，得到一个带上下文信息的新表示
 ### 多头注意力（MHA），单个w（投影矩阵）的纬度（d，d/h）
+> 推理时，每生成一个 token，都要缓存所有头的 K/V → 内存占用很大。
+>对大模型和长序列推理不友好。
 - 将参数纬度d拆分为h个
 - h个self attention的组合：通常8，16
 - 每个head的输出纬度：L*d/h
@@ -300,6 +302,17 @@ Output = MHA_output * W_O
 
 可以直接作为 残差连接 + LayerNorm 的输入
 ```
+## MQA
+- Queries: 多头（比如 32 个 Q）
+- Keys/Values: 单头（只有 1 份 K/V）
+- 缓存的 K/V 大幅减少（1 份而不是 h 份）
+- 推理加速，特别适合 大模型部署。
+## GQA
+- num_attention_heads = 32
+- num_key_value_heads = 8
+- 说明 32 个 Q 头被分成 8 组，每组 4 个 Q 共享 1 个 K/V。
+- 兼顾了 参数/缓存减少（比 MHA 少很多） 和 表达能力（比 MQA 强）。
+- 对长序列推理更友好
 ## Feed-Forward Network (FFN)
 > 参数量大于MHA
 > FFN(x)=W2​f(W1​x+b1​)+b2​
