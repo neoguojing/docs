@@ -18,6 +18,8 @@
 -- eos_token_id：序列结束 token id。
 -- decoder_start_token_id：解码起始 token id。
 -- sep_token_id：分隔 token id。
+### PreTrainedModel:
+### GradientCheckpointingLayer
 ## Qwen3
 ### Qwen3Config
 - vocab_size： 151936
@@ -51,6 +53,29 @@ self.layer_types = [
             ]
 ```
 - attention_dropout (float, 默认值=0.0)注意力概率的 dropout 比例。
+#### 并行策略
+##### 张量并行
+> colwise 列并行
+> rowwise 行并行
+```
+base_model_tp_plan = {
+    "layers.*.self_attn.q_proj": "colwise",
+    "layers.*.self_attn.k_proj": "colwise",
+    "layers.*.self_attn.v_proj": "colwise",
+    "layers.*.self_attn.o_proj": "rowwise",
+    "layers.*.mlp.gate_proj": "colwise",
+    "layers.*.mlp.up_proj": "colwise",
+    "layers.*.mlp.down_proj": "rowwise",
+}
+```
+#####流水线并行
+```
+base_model_pp_plan = {
+    "embed_tokens": (["input_ids"], ["inputs_embeds"]),
+    "layers": (["hidden_states", "attention_mask"], ["hidden_states"]),
+    "norm": (["hidden_states"], ["hidden_states"]),
+}
+```
 ## Gemma3
 
 ## GPTOSS
