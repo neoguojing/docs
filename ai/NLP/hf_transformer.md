@@ -32,6 +32,17 @@
 - head_dim： 128；单个头的纬度；
 - hidden_act：激活函数；silu：SiLU(x)=x⋅σ(x)
 - max_position_embeddings：32768；模型的最大支持的序列长度
+- initializer_range: 权重矩阵初始标准差
+- rms_norm_eps：归一化层的参数0.02，防止除0；RMSNorm
+- use_cache：true，使用kvcache，加速推理
+- tie_word_embeddings：共享输入输出层的Embding；false
+- rope_theta：RoPE的旋转周期；10000
+- attention_bias：是否attention层偏置；false
+- use_sliding_window (bool, 默认值=False)是否使用滑动窗口注意力（SWA）。
+- sliding_window (int, 默认值=4096)滑动窗口注意力的窗口大小。
+- max_window_layers (int, 默认值=28)前 max_window_layers 层使用全局注意力，之后的层使用滑动窗口注意力。
+- layer_types (list, 可选)每一层的注意力模式定义（比如混合使用全局注意力和 SWA）。
+- attention_dropout (float, 默认值=0.0)注意力概率的 dropout 比例。
 ## Gemma3
 
 ## GPTOSS
