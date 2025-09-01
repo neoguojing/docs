@@ -42,6 +42,14 @@
 - sliding_window (int, 默认值=4096)滑动窗口注意力的窗口大小。
 - max_window_layers (int, 默认值=28)前 max_window_layers 层使用全局注意力，之后的层使用滑动窗口注意力。
 - layer_types (list, 可选)每一层的注意力模式定义（比如混合使用全局注意力和 SWA）。
+```
+self.layer_types = [
+                "sliding_attention"
+                if self.sliding_window is not None and i >= self.max_window_layers
+                else "full_attention"
+                for i in range(self.num_hidden_layers)
+            ]
+```
 - attention_dropout (float, 默认值=0.0)注意力概率的 dropout 比例。
 ## Gemma3
 
