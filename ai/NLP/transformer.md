@@ -313,6 +313,69 @@ Output = MHA_output * W_O
 - 说明 32 个 Q 头被分成 8 组，每组 4 个 Q 共享 1 个 K/V。
 - 兼顾了 参数/缓存减少（比 MHA 少很多） 和 表达能力（比 MQA 强）。
 - 对长序列推理更友好
+## 滑动窗口
+- 核心思想：每个 token 只关注窗口内的邻居
+- 每个 token 只与它前后 W 个 token 做 attention
+- 窗口大小 W = sliding_window
+- 复杂度从 O(L²) → O(L * W)
+- L = 序列长度
+- W ≪ L → 大幅降低计算量
+```
+import torch
+import torch.nn.functional as F
+
+# ------------------------------
+# 参数设置
+# ------------------------------
+L = 10        # 序列长度
+d_model = 8   # 隐藏维度
+window_size = 2  # 滑动窗口大小
+
+# 输入序列
+X = torch.randn(L, d_model)  # shape (L, d_model)
+
+# 线性投影矩阵（简化，不使用nn.Linear）
+W_Q = torch.randn(d_model, d_model)
+W_K = torch.randn(d_model, d_model)
+W_V = torch.randn(d_model, d_model)
+
+# ------------------------------
+# Step1: Q,K,V投影
+# ------------------------------
+Q = X @ W_Q  # shape (L, d_model)
+K = X @ W_K
+V = X @ W_V
+
+# ------------------------------
+# Step2: 滑动窗口注意力计算
+# ------------------------------
+Z = torch.zeros_like(X)  # 输出初始化
+
+for i in range(L):
+    # 窗口范围
+    start = max(0, i - window_size)
+    end = min(L, i + window_size + 1)
+    
+    # 局部K,V
+    K_local = K[start:end]  # shape (window_len, d_model)
+    V_local = V[start:end]  # shape (window_len, d_model)
+    
+    # 注意力分数
+    scores = Q[i:i+1] @ K_local.T / (d_model ** 0.5)  # shape (1, window_len)
+    
+    # softmax
+    alpha = F.softmax(scores, dim=-1)  # shape (1, window_len)
+    
+    # 加权求和
+    Z[i] = alpha @ V_local  # shape (1, d_model)
+
+# ------------------------------
+# 输出
+# ------------------------------
+print("输入 X:\n", X)
+print("输出 Z:\n", Z)
+
+```
 ## Feed-Forward Network (FFN)
 > 参数量大于MHA
 > FFN(x)=W2​f(W1​x+b1​)+b2​
