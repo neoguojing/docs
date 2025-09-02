@@ -87,18 +87,18 @@ base_model_pp_plan = {
 ```
 ### Qwen3Attention继承自LlamaAttention
 ```
-(B,L,d) -> (B,L)
+#(B,L,d) -> (B,L)
 input_shape = hidden_states.shape[:-1]
-(B,L,-1,head_dim) -1表示自动推断，在后面计算过程中自动推断
+#(B,L,-1,head_dim) -1表示自动推断，在后面计算过程中自动推断
 hidden_shape = (*input_shape, -1, self.head_dim)
-
+#view 会自动推断-1的纬度 ,transpose交互1和2维，得到(B,head_num,L,head_dim)
 query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
 key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
 value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-
+#输入的位置编码矩阵
 cos, sin = position_embeddings
 query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
-
+# k,v缓存
 if past_key_values is not None:
     # sin and cos are specific to RoPE models; cache_position needed for the static cache
     cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
@@ -119,10 +119,21 @@ attn_output, attn_weights = attention_interface(
     sliding_window=self.sliding_window,  # diff with Llama
     **kwargs,
 )
-
+# (B, L, hidden_dim)
 attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+# 多头拼接
 attn_output = self.o_proj(attn_output)
 return attn_output, attn_weights
+```
+#### 位置编码 
+> 原理1：i⋅(x+iy)=ix+i^2y=−y+ix   等价与旋转90度
+> 原理2：旋转任意角度:(x+iy)⋅eiθ=(xcosθ−ysinθ)+i(xsinθ+ycosθ)
+> 原理3： i(xsinθ+ycosθ) 就等价于复数乘法，对x,y旋转90度
+```
+cos = cos.unsqueeze(unsqueeze_dim)
+sin = sin.unsqueeze(unsqueeze_dim)
+q_embed = (q * cos) + (rotate_half(q) * sin)
+k_embed = (k * cos) + (rotate_half(k) * sin)
 ```
 ## Gemma3
 
