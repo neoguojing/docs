@@ -17,6 +17,7 @@
 - q_norm：对 Q向量做 RMSNorm（归一化），保证数值稳定，提升训练和推理效果
 - k_norm：对 Q 向量做 RMSNorm（归一化），保证数值稳定，提升训练和推理效果
 - sliding_window
+### Cache类：kv缓存
 ### PretrainedConfig 模型配置：
 - 类属性： 如model_type 等
 - 公共属性（所有子类都有）
