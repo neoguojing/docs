@@ -87,7 +87,9 @@ base_model_pp_plan = {
 ```
 ### Qwen3Attention继承自LlamaAttention
 ```
+(B,L,d) -> (B,L)
 input_shape = hidden_states.shape[:-1]
+(B,L,-1,head_dim) -1表示自动推断，在后面计算过程中自动推断
 hidden_shape = (*input_shape, -1, self.head_dim)
 
 query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
