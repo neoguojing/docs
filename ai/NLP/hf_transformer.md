@@ -1,6 +1,13 @@
 # transfomer 库详解
 > python utils/modular_model_converter.py :基于mudular文件生成model文件，避免重复代码
 ## 通用库
+### attention计算优化
+- flash_attention_2/3	GPU kernel 优化，高速	超长序列训练	高
+- flex_attention	灵活块大小，自适应	可变序列长度	高
+- paged_attention	分页计算，减少 O(seq²)	超长序列	高
+- sdpa	标准公式，直观	普通序列	中
+- sdpa_paged	分页优化	长序列	高
+- eager_paged	即时分页计算	推理/训练长序列	高
 ### 通用参数名称对照表：
 - scaling： attention的缩放参数，对应公式除的根号d
 - q_proj = XWq   输入：隐藏状态 ；输出：查询向量 Q
@@ -103,7 +110,7 @@ if past_key_values is not None:
     # sin and cos are specific to RoPE models; cache_position needed for the static cache
     cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
     key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
-
+# 选择attention的计算策略
 attention_interface: Callable = eager_attention_forward
 if self.config._attn_implementation != "eager":
     attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
