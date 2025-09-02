@@ -3,11 +3,12 @@
 ## 通用库
 ### 通用参数名称对照表：
 - scaling： attention的缩放参数，对应公式除的根号d
-- q_proj： XWq的函数，投影矩阵
-- k_proj： XWk的函数
-- v_proj： XWv的函数
-- q_norm：
-- k_norm：
+- q_proj = XWq   输入：隐藏状态 ；输出：查询向量 Q
+- k_proj = XWk
+- v_proj = XWv
+- o_proj = [head1​,head2​,...,headh​]Wo； 输入：拼接后的多头注意力结果；输出：回到模型隐藏维度hidden_size，以便传给后续的 FFN 或残差连接
+- q_norm：对 Q向量做 RMSNorm（归一化），保证数值稳定，提升训练和推理效果
+- k_norm：对 Q 向量做 RMSNorm（归一化），保证数值稳定，提升训练和推理效果
 - sliding_window
 ### PretrainedConfig 模型配置：
 - 类属性： 如model_type 等
@@ -83,6 +84,43 @@ base_model_pp_plan = {
     "layers": (["hidden_states", "attention_mask"], ["hidden_states"]),
     "norm": (["hidden_states"], ["hidden_states"]),
 }
+```
+### Qwen3Attention继承自LlamaAttention
+```
+input_shape = hidden_states.shape[:-1]
+hidden_shape = (*input_shape, -1, self.head_dim)
+
+query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+
+cos, sin = position_embeddings
+query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+if past_key_values is not None:
+    # sin and cos are specific to RoPE models; cache_position needed for the static cache
+    cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+    key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
+
+attention_interface: Callable = eager_attention_forward
+if self.config._attn_implementation != "eager":
+    attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+
+attn_output, attn_weights = attention_interface(
+    self,
+    query_states,
+    key_states,
+    value_states,
+    attention_mask,
+    dropout=0.0 if not self.training else self.attention_dropout,
+    scaling=self.scaling,
+    sliding_window=self.sliding_window,  # diff with Llama
+    **kwargs,
+)
+
+attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+attn_output = self.o_proj(attn_output)
+return attn_output, attn_weights
 ```
 ## Gemma3
 
