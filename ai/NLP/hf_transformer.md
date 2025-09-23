@@ -36,6 +36,11 @@
 -- decoder_start_token_id：解码起始 token id。
 -- sep_token_id：分隔 token id。
 ### PreTrainedModel:
+- 统一管理配置、加载、保存、上传
+- 提供常见操作（调整 embedding、裁剪 head）
+- 兼容不同硬件（FP16/FP32，TP/PP 并行，FlashAttn）
+- 保证与旧版 checkpoint 的兼容性
+- 为推理/分布式训练框架提供 hook 和标志位
 ### GradientCheckpointingLayer
 ## Qwen3
 ### Qwen3Config
@@ -143,7 +148,8 @@ sin = sin.unsqueeze(unsqueeze_dim)
 q_embed = (q * cos) + (rotate_half(q) * sin)
 k_embed = (k * cos) + (rotate_half(k) * sin)
 ```
-### RMSNorm，相对layerNorm计算更少
+### RMSNorm，相对layerNorm计算更少（保留f32,防止值不稳定）
+- - Qwen3RMSNorm(Qwen2RMSNorm)
 - 计算向量的每个值的平方的均值
 - x/sqrt(mean(x^2)+e)
 - torch.rsqrt 倒数平方根，对向量的每个值分别取平方根，返回是一个向量
