@@ -143,6 +143,12 @@ sin = sin.unsqueeze(unsqueeze_dim)
 q_embed = (q * cos) + (rotate_half(q) * sin)
 k_embed = (k * cos) + (rotate_half(k) * sin)
 ```
+### RMSNorm，相对layerNorm计算更少
+- 计算向量的每个值的平方的均值
+- x/sqrt(mean(x^2)+e)
+- torch.rsqrt 倒数平方根，对向量的每个值分别取平方根，返回是一个向量
+- pow： 逐元素取平方，返回向量
+- mean： 对向量取平均值，会改变纬度
 ## Gemma3
 
 ## GPTOSS
