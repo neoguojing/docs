@@ -134,9 +134,9 @@ attn_output = self.o_proj(attn_output)
 return attn_output, attn_weights
 ```
 #### 位置编码 
-> 原理1：i⋅(x+iy)=ix+i^2y=−y+ix   等价与旋转90度
-> 原理2：旋转任意角度:(x+iy)⋅eiθ=(xcosθ−ysinθ)+i(xsinθ+ycosθ)
-> 原理3： i(xsinθ+ycosθ) 就等价于复数乘法，对x,y旋转90度
+- 原理1：i⋅(x+iy)=ix+i^2y=−y+ix   等价与旋转90度
+- 原理2：旋转任意角度:(x+iy)⋅eiθ=(xcosθ−ysinθ)+i(xsinθ+ycosθ)
+- 原理3： i(xsinθ+ycosθ) 就等价于复数乘法，对x,y旋转90度
 ```
 cos = cos.unsqueeze(unsqueeze_dim)
 sin = sin.unsqueeze(unsqueeze_dim)
