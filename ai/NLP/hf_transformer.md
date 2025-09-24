@@ -41,6 +41,13 @@
 - 兼容不同硬件（FP16/FP32，TP/PP 并行，FlashAttn）
 - 保证与旧版 checkpoint 的兼容性
 - 为推理/分布式训练框架提供 hook 和标志位
+#### post_init 的主要职责：
+- 初始化权重，保证模型 ready。
+- 处理梯度检查点兼容性。
+- 验证 FP32 精度保留模块 配置是否合法。
+- 将配置文件里的 并行计划 (TP/PP/EP) 附加到模型上，并收集子模块的计划，形成完整的分布式执行图。
+### GenericForSequenceClassification 文本分类器基类
+- 添加一个全连接层，
 ### GradientCheckpointingLayer
 ## Qwen3
 ### Qwen3Config
