@@ -46,6 +46,8 @@
 - 处理梯度检查点兼容性。
 - 验证 FP32 精度保留模块 配置是否合法。
 - 将配置文件里的 并行计划 (TP/PP/EP) 附加到模型上，并收集子模块的计划，形成完整的分布式执行图。
+### GenerationMixin 
+- 提供了 .generate() 方法，支持文本生成（贪心搜索、beam search、采样等）
 ### GenericForSequenceClassification 文本分类器基类
 - 重要配置：num_labels，分类标签数量
 - 添加一个全连接层，
@@ -71,10 +73,31 @@ self.qa_outputs = nn.Linear(config.hidden_size, 2)
 #### 输出多了
 - start_logits [batch, seq_len]：每个 token 作为起点的分数
 - end_logits [batch, seq_len]：每个 token 作为终点的分数
-### CausalLM 因果模型的输出
-- 
+### CausalLM 因果模型
+- lm_head：线性层，把 hidden_states [batch, seq_len, hidden_size] 投影到 [batch, seq_len, vocab_size]，得到对每个 token 的预测分布。
+- 投影到词库
+```
+ nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+```
+- 输出的logits，每行标识一个token在词库空间的得分
 ### GradientCheckpointingLayer
 ## Qwen3
+```
+PreTrainedModel
+       ▲
+       │
+Qwen3PreTrainedModel
+       ▲
+       │
+ ┌───────────────┬───────────────────┬──────────────────┬───────────────────┐
+ │               │                   │                  │                   │
+Qwen3Model   Qwen3ForSeqCls   Qwen3ForTokenCls   Qwen3ForQA         Qwen3ForCausalLM
+   │                                                                      │
+   │                                                                      │
+   ▼                                                                      ▼
+Qwen3DecoderLayer                                                   GenerationMixin
+
+```
 ### Qwen3Config
 - vocab_size： 151936
 - hidden_size： 4096
