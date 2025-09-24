@@ -107,7 +107,7 @@ x[1:3, 0:2]  # 第1、2行，第0、1列 → tensor([[4,5],[7,8]])
 -- 可复用、可扩展
 ### 前向传播由 forward
 ### 内置网络层
-- 全连接层：nn.Linear
+#### 全连接层：nn.Linear
 ```
 nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
 本质就是 torch.matmul(x, W.T) + b
@@ -119,6 +119,18 @@ nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
 - 正则化层：LayerNorm
 - Dropout：随机失活
 - 注意力，LSTM等
+#### nn.Embedding 是一个 可训练的查找表，把离散的整数 id 转换成稠密向量，在训练过程中不断调整 embedding，使其更好地表达这些 id 的语义或特征
+```
+nn.Embedding(
+    num_embeddings,   # 词表大小，比如 50000
+    embedding_dim,    # 向量维度，比如 768
+    padding_idx=None, # 如果设置，这个 index 的 embedding 永远是 0
+    max_norm=None,    # 如果设置，embedding 会被约束在最大范数内
+    norm_type=2.0,    # max_norm 的范数类型 (默认 L2 范数)
+    scale_grad_by_freq=False, # 是否根据词频缩放梯度（稀有词梯度更大）
+    sparse=False      # 是否使用稀疏更新（节省内存，适合大词表）
+)
+```
 ## 损失函数
 > transfomer的损失函数多是CrossEntropyLoss
 > 自监督学习：将预测的token和实际训练数据的token做输入，进行损失计算
