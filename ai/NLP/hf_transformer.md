@@ -210,6 +210,11 @@ k_embed = (k * cos) + (rotate_half(k) * sin)
 - torch.rsqrt 倒数平方根，对向量的每个值分别取平方根，返回是一个向量
 - pow： 逐元素取平方，返回向量
 - mean： 对向量取平均值，会改变纬度
+### Qwen3Model 主模型
+- 构建了Embding层
+- 构建旋转位置编码函数
+- 通过层数配置，构建按顺序执行的多个DecodeLayer
+- 构建归一化函数
 ## Gemma3
 
 ## GPTOSS
