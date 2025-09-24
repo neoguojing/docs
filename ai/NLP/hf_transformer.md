@@ -211,7 +211,9 @@ k_embed = (k * cos) + (rotate_half(k) * sin)
 - pow： 逐元素取平方，返回向量
 - mean： 对向量取平均值，会改变纬度
 ### Qwen3MLP
-- 
+- gate_proj 和up_proj 一样：升维操作
+- act_fn 激活函数
+- down_proj：降维操作
 ```
 down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 ```
