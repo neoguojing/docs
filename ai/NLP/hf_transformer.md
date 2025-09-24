@@ -47,7 +47,22 @@
 - 验证 FP32 精度保留模块 配置是否合法。
 - 将配置文件里的 并行计划 (TP/PP/EP) 附加到模型上，并收集子模块的计划，形成完整的分布式执行图。
 ### GenericForSequenceClassification 文本分类器基类
+- 重要配置：num_labels，分类标签数量
 - 添加一个全连接层，
+```
+self.score = nn.Linear(config.hidden_size, self.num_labels, bias=False)
+```
+#### 返回值：
+- loss： 训练是计算和真实标签的损失
+- logits： 模型最终输出的未归一化分数（分类器的线性层输出），可以使用softmax进一步处理
+- - 是一个矩阵
+  - 每行代表一个输入
+  - 每列代表一个分类标签的得分
+- past_key_values： 保存 Transformer 注意力层的缓存 (keys, values)
+- hidden_states： 每一层 Transformer 的隐藏表示
+- attentions： 每一层自注意力的注意力权重矩阵
+### GenericForTokenClassification token分类器同上
+### 
 ### GradientCheckpointingLayer
 ## Qwen3
 ### Qwen3Config
