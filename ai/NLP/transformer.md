@@ -171,6 +171,18 @@ x' = [-1.14, 1.92, 2.96, 4.03]
 -- j > i的位置，值为无穷大，Softmax 后对应权重为 0
 - attention在softmax之前，加上掩码矩阵
 - softmax之后，演变为一个下三角矩阵
+#### SDPA (Scaled Dot-Product Attention) mask
+- 直接在 QKT结果里加上一个大负数（如 -1e9）的位置来屏蔽不允许的注意力
+#### Eager mask
+- 和 SDPA 类似，也是加大负数，但运算在 Python eager execution 模式下，调试友好
+#### lashAttention 2 mask
+- 在 kernel 内嵌入 causal mask / padding mask 的逻辑
+- 不再需要显式构造 mask 矩阵（节省显存）
+### FlexAttention mask
+- FlexAttention 是 PyTorch 2.3+ 新引入的注意力 API
+- 它比 FlashAttention 更通用，支持更多 mask 类型，底层也能用高效 kernel
+- 用户可以指定 mask 的规则（如 "仅关注最近 128 个 token"）
+- 框架生成相应的稀疏/局部 mask 并调用优化后的 attention kernel
 ## Self-Attention 机制 
 > Q.K 是点积计算
 > XW_Q、XW_K、XW_V 就是这样的矩阵乘法
