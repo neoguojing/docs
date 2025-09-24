@@ -48,6 +48,28 @@
 - 将配置文件里的 并行计划 (TP/PP/EP) 附加到模型上，并收集子模块的计划，形成完整的分布式执行图。
 ### GenerationMixin 
 - 提供了 .generate() 方法，支持文本生成（贪心搜索、beam search、采样等）
+```
+inputs	模型输入或生成提示（prompt），
+Decoder-only 用 input_ids，E
+ncoder-Decoder 用 input_ids 或其他输入形式
+generation_config	生成配置，包含 num_beams、max_length、do_sample 等参数
+logits_processor	自定义 logits 处理器，用于修改下一步 token 概率（如禁止重复 n-gram）
+stopping_criteria	自定义停止条件（如达到最大长度或特殊 token）
+prefix_allowed_tokens_fn	用于约束束搜索生成 token 的函数
+synced_gpus	是否在多 GPU 上同步生成，避免死锁
+assistant_model	小型助手模型，用于加速预测候选 token
+streamer	流式输出生成结果，用于即时显示
+negative_prompt_ids	负向提示，用于对抗性生成（如 CFG）
+custom_generate	自定义 generate 函数或仓库路径，可完全替换标准生成逻辑
+```
+#### token生成策略
+- GREEDY_SEARCH： 贪心算法，每次选择最高
+- SAMPLE： 随机采样
+- BEAM_SEARCH：经典 beam search，每一步保留 num_beams 条最优序列
+- BEAM_SAMPLE：Beam search 每步采样 token，而不是总选择最优。
+- GROUP_BEAM_SEARCH：将 beam 分成多个组，组内独立搜索，增加多样性。
+- CONSTRAINED_BEAM_SEARCH: 在 beam search 中加入约束条件，例如必须生成某些 token 或短语
+- CONTRASTIVE_SEARCH: 同时考虑 token 的概率和序列与历史的对比度，避免重复且提高多样性。
 ### GenericForSequenceClassification 文本分类器基类
 - 重要配置：num_labels，分类标签数量
 - 添加一个全连接层，
