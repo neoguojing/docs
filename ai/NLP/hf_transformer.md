@@ -62,7 +62,17 @@ self.score = nn.Linear(config.hidden_size, self.num_labels, bias=False)
 - hidden_states： 每一层 Transformer 的隐藏表示
 - attentions： 每一层自注意力的注意力权重矩阵
 ### GenericForTokenClassification token分类器同上
-### 
+### GenericForQuestionAnswering 问答型任务
+- 给出问题和上下文，预测答案在上下文中的起始和结束位置
+- 添加了qa层，将隐藏层映射到2维
+```
+self.qa_outputs = nn.Linear(config.hidden_size, 2)
+```
+#### 输出多了
+- start_logits [batch, seq_len]：每个 token 作为起点的分数
+- end_logits [batch, seq_len]：每个 token 作为终点的分数
+### CausalLM 因果模型的输出
+- 
 ### GradientCheckpointingLayer
 ## Qwen3
 ### Qwen3Config
