@@ -62,6 +62,11 @@ streamer	流式输出生成结果，用于即时显示
 negative_prompt_ids	负向提示，用于对抗性生成（如 CFG）
 custom_generate	自定义 generate 函数或仓库路径，可完全替换标准生成逻辑
 ```
+- 真正调用模型是在：_beam_search，_sample 和_group_beam_search 等函数中的,
+- 这些函数会循环调用，直到条件达成或者最大生成长度达成
+```
+model_outputs = self(**model_inputs, return_dict=True)
+```
 #### token生成策略
 - GREEDY_SEARCH： 贪心算法，每次选择最高
 - SAMPLE： 随机采样
@@ -70,6 +75,12 @@ custom_generate	自定义 generate 函数或仓库路径，可完全替换标准
 - GROUP_BEAM_SEARCH：将 beam 分成多个组，组内独立搜索，增加多样性。
 - CONSTRAINED_BEAM_SEARCH: 在 beam search 中加入约束条件，例如必须生成某些 token 或短语
 - CONTRASTIVE_SEARCH: 同时考虑 token 的概率和序列与历史的对比度，避免重复且提高多样性。
+#### _beam_search
+- 每轮只产生 1 个 token（per beam）。这个“1”来自于：取模型输出的 logits[:, -1, :] → 选 next token → 把新 token 拼接到序列里 → cur_len += 1。
+- running_sequences 持续记录并携带“当前已生成的完整序列”，下一轮就是用它来生成下一个 token（或只用最后一个 token+cache）。
+- cache (past_key_values) 与 prepare_inputs_for_generation 的协同，保证模型不需要重复计算前面所有 token 的 attention（只计算新 token 的 attention），实现高效逐步生成。
+- stopping_criteria 与 is_sent_finished/is_early_stop_heuristic_unsatisfied 控制何时停止某些 beam 或整个循环。
+- 
 ### GenericForSequenceClassification 文本分类器基类
 - 重要配置：num_labels，分类标签数量
 - 添加一个全连接层，
