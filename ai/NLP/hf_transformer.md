@@ -18,7 +18,7 @@
 - k_norm：对 Q 向量做 RMSNorm（归一化），保证数值稳定，提升训练和推理效果
 - sliding_window
 ### Cache类：kv缓存
-- 更新指定层的缓存
+- 更新指定层的缓存,输入：当前的状态，输出：拼接后的完整状态
 - keys, values = cache.update(key_states, value_states, layer_idx, cache_kwargs)
 - prefetch(layer_idx)：预加载下一层到 GPU，避免计算阻塞。
 - offload(layer_idx)：将某层从 GPU 移到 CPU（节省显存）。
