@@ -19,6 +19,20 @@
 - sliding_window
 ### Cache类：kv缓存
 #### DynamicCache(Cache)
+- 内部结构
+```
+cache.layers = [
+    DynamicLayer(
+        keys=torch.randn(1, 2, 3, 4),
+        values=torch.randn(1, 2, 3, 4),
+    ),
+    DynamicLayer(
+        keys=torch.randn(1, 2, 3, 4),
+        values=torch.randn(1, 2, 3, 4),
+    ),
+    # ...
+]
+```
 ##### DynamicLayer（两个参数，key和value）
 - keys:   [batch_size, num_heads, seq_len, head_dim]
 - values: [batch_size, num_heads, seq_len, head_dim]
@@ -27,6 +41,13 @@
 - 裁剪支持：可以裁掉历史 token，控制缓存长度。
 - batch 操作：支持 batch 扩张 (repeat_interleave) 和选择 (batch_select_indices)。
 - mask 适配：提供 mask 长度与偏移信息
+##### DynamicSlidingWindowLayer
+- 裁剪seq的长度，保证sliding_window窗口大小的长度
+```
+self.keys = full_key_states[:, :, -self.sliding_window + 1:, :]
+self.values = full_value_states[:, :, -self.sliding_window + 1:, :]
+
+```
 ### PretrainedConfig 模型配置：
 - 类属性： 如model_type 等
 - 公共属性（所有子类都有）
