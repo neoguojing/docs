@@ -230,6 +230,7 @@ base_model_pp_plan = {
 }
 ```
 ### Qwen3Attention继承自LlamaAttention
+- 关键参数：layer_idx，记录该attn所在的层，用于cache寻找缓存参数
 ```
 #(B,L,d) -> (B,L)
 input_shape = hidden_states.shape[:-1]
@@ -246,6 +247,7 @@ query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, s
 if past_key_values is not None:
     # sin and cos are specific to RoPE models; cache_position needed for the static cache
     cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+# 返回 keys shape [1,8,past_len+q_len,64]
     key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 # 选择attention的计算策略
 attention_interface: Callable = eager_attention_forward
