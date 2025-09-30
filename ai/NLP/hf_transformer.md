@@ -18,6 +18,19 @@
 - k_norm：对 Q 向量做 RMSNorm（归一化），保证数值稳定，提升训练和推理效果
 - sliding_window
 ### Cache类：kv缓存
+- 更新指定层的缓存
+- keys, values = cache.update(key_states, value_states, layer_idx, cache_kwargs)
+- prefetch(layer_idx)：预加载下一层到 GPU，避免计算阻塞。
+- offload(layer_idx)：将某层从 GPU 移到 CPU（节省显存）。
+- early_initialization(...)：提前初始化所有层，用空 tensor 占位，不占用内存，用于导出或模型 warmup。
+- get_seq_length(layer_idx)：返回该层缓存序列长度。
+- get_mask_sizes(cache_position, layer_idx)：返回 (kv_length, kv_offset)，用于生成注意力 mask。
+- get_max_cache_shape(layer_idx)：返回该层缓存最大长度，动态层返回 -1。
+- reset()：清空所有层缓存。
+- crop(max_length)：裁剪缓存到指定长度。
+- batch_repeat_interleave(repeats)：按 batch 扩展缓存。
+- batch_select_indices(indices)：按 batch 选择索引。
+
 #### DynamicCache(Cache)
 - 内部结构
 ```
