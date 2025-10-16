@@ -364,7 +364,11 @@ output
 - - up_proj 权重： [hidden_size, intermediate_size] * num_experts
 - - down_proj 权重： [intermediate_size, hidden_size] * num_experts
 ##### 运行
-- 
+- hidden_states = hidden_states.view(-1, hidden_dim) ： 将 [B, L, D] 展平为 [B*L, D]，方便按 token 处理
+- 使用 gate 线性层计算每个 token 的专家 logits： (batch_size * sequence_length, num_experts)，每行表示1个token对应的logit
+- softmax 得到概率分布： (batch_size * sequence_length, num_experts)
+- 取 top-k 最大概率的专家： (batch_size * sequence_length, topk)，以及topk对应的专家索引（selected_experts）
+- 可选地对 top-k 概率归一化（norm_topk_prob）： 将概率和调整为1
 
 
 ## Gemma3
