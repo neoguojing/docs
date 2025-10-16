@@ -289,6 +289,12 @@ k_embed = (k * cos) + (rotate_half(k) * sin)
 - torch.rsqrt 倒数平方根，对向量的每个值分别取平方根，返回是一个向量
 - pow： 逐元素取平方，返回向量
 - mean： 对向量取平均值，会改变纬度
+```
+variance = hidden_states.pow(2).mean(-1, keepdim=True)
+hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+return self.weight * hidden_states
+
+```
 ### Qwen3MLP
 - gate_proj 和up_proj 一样：升维操作
 - act_fn 激活函数
@@ -342,10 +348,10 @@ input
 output
 ```
 ### 类结构
-- class Qwen3MoeAttention(Qwen3Attention)
-- class Qwen3MoeMLP(nn.Module):
+- class Qwen3MoeAttention(Qwen3Attention)： 和Qwen3Attention 一致
+- class Qwen3MoeMLP(nn.Module): 相比于Qwen3MLP，中间层纬度可以指定：moe_intermediate_size
 - class Qwen3MoeSparseMoeBlock(nn.Module): 包含：Qwen3MoeMLP
-- class Qwen3MoeRMSNorm(LlamaRMSNorm):
+- class Qwen3MoeRMSNorm(LlamaRMSNorm): 和Qwen3RMSNorm一致
 - class Qwen3MoeDecoderLayer(Qwen2MoeDecoderLayer, nn.Module):包含：Qwen3MoeAttention，Qwen3MoeSparseMoeBlock或Qwen3MoeMLP，Qwen3MoeRMSNorm
 - class Qwen3MoeModel(MixtralModel):
 - class Qwen3MoeForCausalLM(MixtralForCausalLM): 包含 Qwen3MoeModel
