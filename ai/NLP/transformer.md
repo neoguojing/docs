@@ -388,9 +388,10 @@ print("输入 X:\n", X)
 print("输出 Z:\n", Z)
 
 ```
-## Feed-Forward Network (FFN)
+## MLP (Multi-Layer Perceptron) 指任意的多层前馈神经网络
+## Feed-Forward Network (FFN) ：2层的前馈网络
 > 参数量大于MHA
-> FFN(x)=W2​f(W1​x+b1​)+b2​
+> hidden = W2(activation(W1(x)))
 - 输入：L*d
 - 1.升维：xW1; W1：升维矩阵，纬度：df*d，df一般为d的2-4倍；结果纬度L*df
 - 2.偏置：加上参数b1，做平移；纬度为：df；偏置是逐维加的
