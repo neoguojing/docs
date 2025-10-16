@@ -247,6 +247,7 @@ query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, s
 if past_key_values is not None:
     # sin and cos are specific to RoPE models; cache_position needed for the static cache
     cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+# 以 batch=1, heads=8, q_len=1（新 token），past_len=10, head_dim=64 为例：
 # 返回 keys shape [1,8,past_len+q_len,64]
     key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 # 选择attention的计算策略
