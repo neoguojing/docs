@@ -326,6 +326,30 @@ down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 | **output_router_logits**  | `bool`, False     | 是否输出路由器 logits（启用后也会输出辅助损失，如 load balancing loss）。            |
 | **router_aux_loss_coef**  | `float`, 0.001    | 路由器辅助损失系数。                                                    |
 | **mlp_only_layers**       | `list[int]`, `[]` | 指定哪些层只使用普通 MLP 而不使用 MoE 层。若为空，则根据 `decoder_sparse_step` 自动决定。 |
+### 网络结构
+- 将传统transformer block的FFN 替换MOE
+```
+input
+ │
+ ├──► Multi-Head Self-Attention (保持不变)
+ │       ↓
+ │     Add & Norm
+ │
+ ├──► MoE Feed Forward Layer
+ │       ↓
+ │     Add & Norm
+ │
+output
+```
+### 类结构
+- class Qwen3MoeAttention(Qwen3Attention)
+- class Qwen3MoeMLP(nn.Module):
+- class Qwen3MoeSparseMoeBlock(nn.Module): 包含：Qwen3MoeMLP
+- class Qwen3MoeRMSNorm(LlamaRMSNorm):
+- class Qwen3MoeDecoderLayer(Qwen2MoeDecoderLayer, nn.Module):包含：Qwen3MoeAttention，Qwen3MoeSparseMoeBlock或Qwen3MoeMLP，Qwen3MoeRMSNorm
+- class Qwen3MoeModel(MixtralModel):
+- class Qwen3MoeForCausalLM(MixtralForCausalLM): 包含 Qwen3MoeModel
+
 
 ## Gemma3
 
