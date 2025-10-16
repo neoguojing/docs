@@ -389,6 +389,12 @@ print("输出 Z:\n", Z)
 
 ```
 ## MLP (Multi-Layer Perceptron) 指任意的多层前馈神经网络
+> down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+- gate_proj：门控分支；
+- up_proj：主分支；
+- act_fn：激活函数（如 SiLU / GELU）；
+- *：逐元素乘法；
+- down_proj：输出投影。
 ## Feed-Forward Network (FFN) ：2层的前馈网络
 > 参数量大于MHA
 > hidden = W2(activation(W1(x)))
