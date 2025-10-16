@@ -314,6 +314,19 @@ down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 - 构建旋转位置编码函数，使用Qwen3RotaryEmbedding，生成cos和sin张量
 - 通过层数配置，构建按顺序执行的多个DecodeLayer
 - 构建归一化层：RMSNorm
+## Qwen3 MOE
+### config
+| 参数名                       | 类型 / 默认值          | 说明                                                            |
+| ------------------------- | ----------------- | ------------------------------------------------------------- |
+| **decoder_sparse_step**   | `int`, 1          | 控制稀疏专家层的频率（即每多少层插入一个 MoE 层）。                                  |
+| **moe_intermediate_size** | `int`, 768        | 单个专家的中间层维度。                                                   |
+| **num_experts_per_tok**   | `int`, 8          | 每个 token 选用的专家数量（Top-K）。                                      |
+| **num_experts**           | `int`, 128        | 总专家数量。                                                        |
+| **norm_topk_prob**        | `bool`, False     | 是否对 top-k 专家概率进行归一化。                                          |
+| **output_router_logits**  | `bool`, False     | 是否输出路由器 logits（启用后也会输出辅助损失，如 load balancing loss）。            |
+| **router_aux_loss_coef**  | `float`, 0.001    | 路由器辅助损失系数。                                                    |
+| **mlp_only_layers**       | `list[int]`, `[]` | 指定哪些层只使用普通 MLP 而不使用 MoE 层。若为空，则根据 `decoder_sparse_step` 自动决定。 |
+
 ## Gemma3
 
 ## GPTOSS
