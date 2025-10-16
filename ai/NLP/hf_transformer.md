@@ -321,6 +321,7 @@ down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 - 通过层数配置，构建按顺序执行的多个DecodeLayer
 - 构建归一化层：RMSNorm
 ## Qwen3 MOE
+> 这是 MoE 架构的核心优势：训练超大模型而不显著增加每个 token 的计算量。
 ### config
 | 参数名                       | 类型 / 默认值          | 说明                                                            |
 | ------------------------- | ----------------- | ------------------------------------------------------------- |
@@ -355,6 +356,15 @@ output
 - class Qwen3MoeDecoderLayer(Qwen2MoeDecoderLayer, nn.Module):包含：Qwen3MoeAttention，Qwen3MoeSparseMoeBlock或Qwen3MoeMLP，Qwen3MoeRMSNorm
 - class Qwen3MoeModel(MixtralModel):
 - class Qwen3MoeForCausalLM(MixtralForCausalLM): 包含 Qwen3MoeModel
+#### Qwen3MoeSparseMoeBlock
+##### 参数
+- gate：线性层计算每个 token 的专家 logits，[hidden_size, num_experts]
+- experts：num_experts 个专家，每个专家是一个 FFN（Qwen3MoeMLP）
+- - gate_proj 权重： [hidden_size, intermediate_size] * num_experts
+- - up_proj 权重： [hidden_size, intermediate_size] * num_experts
+- - down_proj 权重： [intermediate_size, hidden_size] * num_experts
+##### 运行
+- 
 
 
 ## Gemma3
