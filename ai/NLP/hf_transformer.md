@@ -367,9 +367,15 @@ output
 - hidden_states = hidden_states.view(-1, hidden_dim) ： 将 [B, L, D] 展平为 [B*L, D]，方便按 token 处理
 - 使用 gate 线性层计算每个 token 的专家 logits： (batch_size * sequence_length, num_experts)，每行表示1个token对应的logit
 - softmax 得到概率分布： (batch_size * sequence_length, num_experts)
-- 取 top-k 最大概率的专家： (batch_size * sequence_length, topk)，以及topk对应的专家索引（selected_experts）
+- 取 top-k 最大概率的专家： (batch_size * sequence_length, topk)，以及topk对应的专家索引（selected_experts）（batch_size * sequence_length, topk），值为索引
 - 可选地对 top-k 概率归一化（norm_topk_prob）： 将概率和调整为1
-
+- expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts)：将selected_experts转换为：）（batch_size * sequence_length, topk，num_experts），扩展topk维转换为向量
+- permute(2, 1, 0)： （num_experts, topk,batch_size * sequence_length）命中专家i的topk被哪些token命中，命中为1
+- expert_mask.sum(dim=(-1,-2))： （num_experts，）每个专家命中的token数量（先对topk维求和，再对,batch_size * sequence_length求和）
+- torch.greater(...,0).nonzero()：（num_experts，1）：命中token的专家索引
+- 遍历每个被命中的专家
+- - 
+- - 
 
 ## Gemma3
 
