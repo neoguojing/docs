@@ -90,11 +90,17 @@
 ## Text
 配置等同于语言模型
 ## Thinker
+
 ### 配置
 > 标识输入序列的特殊标记（special tokens）或时间步/位置的起点
 > 每种 token 都像一个“模态标签”，告诉模型接下来应该使用哪个编码器和处理方式。
 > 对文本 token，通常使用标准的位置编码
 > 对视觉/音频 token，位置编码可以结合 patch 或帧索引 + RoPE 方式
+- audio_config → Qwen3OmniMoeAudioEncoderConfig
+
+- vision_config → Qwen3OmniMoeVisionEncoderConfig
+
+- text_config → Qwen3OmniMoeTextConfig
 | 参数                        | 默认值    | 说明                 |
 | ------------------------- | ------ | ------------------ |
 | `audio_token_id`          | 151646 | 音频输入 token ID      |
@@ -104,12 +110,6 @@
 | `user_token_id`           | 872    | 用户 token ID        |
 | `position_id_per_seconds` | 25     | 每秒位置 ID 增量，用于时间步编码，例如 25 → 每秒增加 25 个位置 ID |
 | `initializer_range`       | 0.02   | 权重初始化标准差           |
-
-- audio_config → Qwen3OmniMoeAudioEncoderConfig
-
-- vision_config → Qwen3OmniMoeVisionEncoderConfig
-
-- text_config → Qwen3OmniMoeTextConfig
 ## Talker 
 ###配置
 | Token 名称                | 默认值    | 功能说明                        |
@@ -140,8 +140,6 @@
 | ---------------- | ---- | ------------------- |
 | `codebook_size`  | 2048 | 每个残差码本的条目数量         |
 | `num_quantizers` | 16   | 残差量化器数量，多码本表示音频更细粒度 |
-| 参数                  | 默认          | 功能              |
-| ------------------- | ----------- | --------------- |
 | `upsample_rates`    | `(8,5,4,3)` | 每层特征上采样倍数       |
 | `upsampling_ratios` | `(2,2)`     | 反卷积上采样比例        |
 | `decoder_dim`       | 1536        | 输出特征维度，映射到波形生成前 |
