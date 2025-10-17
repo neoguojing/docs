@@ -364,28 +364,80 @@ output
 - - up_proj 权重： [hidden_size, intermediate_size] * num_experts
 - - down_proj 权重： [intermediate_size, hidden_size] * num_experts
 ##### 运行
-- hidden_states = hidden_states.view(-1, hidden_dim) ： 将 [B, L, D] 展平为 [B*L, D]，方便按 token 处理
-- 使用 gate 线性层计算每个 token 的专家 logits： (batch_size * sequence_length, num_experts)，每行表示1个token对应的logit
-- softmax 得到概率分布routing_weights： (batch_size * sequence_length, num_experts)
-- 取 top-k 最大概率的专家： (batch_size * sequence_length, topk)，以及topk对应的专家索引（selected_experts）（batch_size * sequence_length, topk），值为索引
-- 可选地对 top-k 概率归一化（norm_topk_prob）： 将概率和调整为1
-- expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts)：将selected_experts转换为：）（batch_size * sequence_length, topk，num_experts），扩展topk维转换为向量
-- permute(2, 1, 0)： （num_experts, topk,batch_size * sequence_length）专家i的topk被哪些token命中，命中为1
-- expert_mask.sum(dim=(-1,-2))： （num_experts，）每个专家命中的token数量（先对topk维求和，再对,batch_size * sequence_length求和）
-- torch.greater(...,0).nonzero()：（num_experts，1）：命中token的专家索引
-- 遍历每个被命中的专家
-- - idx, top_x = torch.where(expert_mask[expert_idx].squeeze(0)) :筛选专家 i 被哪些 token 命中
-  - idx：命中的 第几个 top_k 槽，[0, 0]；
-  - top_x:命中的 token 索引,[0, 2]；
-  - > expert_mask[0][0,0] = 1 → 表示 token 0 的 top1 槽命中 expert 0
-- hidden_states[None, top_x]：[None, ...].reshape(-1, H) 的作用是给 hidden_states 在最前面增加一个维度；(1, N, hidden_dim)，N表示命中的N个token
-- expert_layer对hidden_states执行MLP计算
-- *routing_weights[top_x, idx, None]：shape = (N, 1)： 进行加权
-- final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
-- - 沿着维度 dim（这里是 0 维），
-- - 对 tensor 中索引为 top_x[i]（值为token索引） 的行，
-- - 加上 hidden_states[i] 对应的行。
-- 输出纬度：[B, L, D] 
+###### 1. 输入展开
+- hidden_states = hidden_states.view(-1, hidden_dim)  
+- 输入维度 `[B, L, D]` → `[B*L, D]`  
+- 目的：将 batch 和序列长度展开为 token 维度，方便每个 token 独立路由。
+
+###### 2. 计算专家 logits
+- router_logits = self.gate(hidden_states)  
+- 输出维度 `[B*L, num_experts]`  
+- 每行表示该 token 对所有专家的 logits。
+
+###### 3. Softmax 得到路由概率
+- routing_weights = F.softmax(router_logits, dim=1)  
+- 输出 `[B*L, num_experts]`  
+- 表示每个 token 被每个专家选择的概率。
+
+###### 4. 取 Top-K 专家
+- routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)  
+- routing_weights `[B*L, top_k]`：top-k 概率  
+- selected_experts `[B*L, top_k]`：对应专家索引  
+- 可选归一化：
+  - if self.norm_topk_prob: routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+
+###### 5. 生成专家掩码
+- expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts)  
+- expert_mask = expert_mask.permute(2, 1, 0)  
+- `[B*L, top_k, num_experts]` → `[num_experts, top_k, B*L]`  
+- 含义：第 i 个专家对应的 top-k 槽被哪些 token 命中（1 表示命中）。
+
+###### 6. 统计命中 token
+- expert_mask.sum(dim=(-1,-2)) → `[num_experts]`，统计每个专家被多少 token 命中  
+- torch.greater(...,0).nonzero() → `[num_active_experts, 1]`  
+- 意义：只遍历有 token 命中的专家。
+
+###### 7. 遍历每个命中专家
+- idx, top_x = torch.where(expert_mask[expert_idx].squeeze(0))  
+  - top_x `[N]`：命中该专家的 token 索引  
+  - idx `[N]`：token 命中 top-k 的哪一槽（top1/top2/...）  
+- 示例：
+  - expert_mask[0] = [[1,0], [0,0], [1,0], [0,0]]  
+  - torch.where(expert_mask[0]) → idx=[0,0], top_x=[0,2]  
+  - 含义：token 0 top1 命中 expert 0，token 2 top1 命中 expert 0
+
+###### 8. 准备 token 输入给专家
+- current_state = hidden_states[None, top_x].reshape(-1, hidden_dim)  
+- `[1, N, D]` → `[N, D]`  
+- [None, ...] 用于增加维度便于广播和索引操作。
+
+###### 9. 专家前向计算 + 加权
+- current_hidden_states = expert_layer(current_state) * routing_weights[top_x, idx, None]  
+- current_hidden_states `[N, D]`  
+- 每个 token 的输出乘以对应专家的 routing weight。
+
+###### 10. 累加到最终输出
+- final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))  
+- `[B*L, D]`  
+- 沿 token 维累加各专家输出（token 可能由多个专家命中）。
+
+###### 11. 恢复原始维度
+- final_hidden_states = final_hidden_states.reshape(B, L, D)  
+- 输出 `[B, L, D]`  
+- 最终每个 token 的表示由 top-k 专家加权和得到。
+
+###### 总结流程
+1. 将 `[B, L, D]` 展平成 `[B*L, D]`  
+2. gate 线性层计算每个 token 的专家 logits  
+3. Softmax → routing_weights  
+4. Top-K 专家选择  
+5. one-hot → expert_mask，表示 token 命中情况  
+6. 统计命中专家  
+7. 遍历每个专家，取命中 token → current_state  
+8. 专家前向计算 + routing_weights 加权  
+9. index_add_ → 累加到最终 hidden_states  
+10. reshape 回 `[B, L, D]`
+
 
 
 ## Gemma3
