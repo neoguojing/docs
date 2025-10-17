@@ -370,13 +370,23 @@ output
 - 取 top-k 最大概率的专家： (batch_size * sequence_length, topk)，以及topk对应的专家索引（selected_experts）（batch_size * sequence_length, topk），值为索引
 - 可选地对 top-k 概率归一化（norm_topk_prob）： 将概率和调整为1
 - expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts)：将selected_experts转换为：）（batch_size * sequence_length, topk，num_experts），扩展topk维转换为向量
-- permute(2, 1, 0)： （num_experts, topk,batch_size * sequence_length）命中专家i的topk被哪些token命中，命中为1
+- permute(2, 1, 0)： （num_experts, topk,batch_size * sequence_length）专家i的topk被哪些token命中，命中为1
 - expert_mask.sum(dim=(-1,-2))： （num_experts，）每个专家命中的token数量（先对topk维求和，再对,batch_size * sequence_length求和）
 - torch.greater(...,0).nonzero()：（num_experts，1）：命中token的专家索引
 - 遍历每个被命中的专家
-- - idx, top_x = torch.where(expert_mask[expert_idx].squeeze(0)) : idx：命中的 第几个 top_k 槽，[0, 0]； top_x:命中的 token 索引,[0, 2]
+- - idx, top_x = torch.where(expert_mask[expert_idx].squeeze(0)) :筛选专家 i 被哪些 token 命中
+  - idx：命中的 第几个 top_k 槽，[0, 0]；
+  - top_x:命中的 token 索引,[0, 2]；
   - > expert_mask[0][0,0] = 1 → 表示 token 0 的 top1 槽命中 expert 0
-- - 
+- hidden_states[None, top_x]：[None, ...].reshape(-1, H) 的作用是给 hidden_states 在最前面增加一个维度；(1, N, hidden_dim)，N表示命中的N个token
+- expert_layer对hidden_states执行MLP计算
+- *routing_weights[top_x, idx, None]：shape = (N, 1)： 进行加权
+- final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
+- - 沿着维度 dim（这里是 0 维），
+- - 对 tensor 中索引为 top_x[i]（值为token索引） 的行，
+- - 加上 hidden_states[i] 对应的行。
+- 输出纬度：[B, L, D] 
+
 
 ## Gemma3
 
