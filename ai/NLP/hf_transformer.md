@@ -353,7 +353,7 @@ output
 - class Qwen3MoeMLP(nn.Module): 相比于Qwen3MLP，中间层纬度可以指定：moe_intermediate_size
 - class Qwen3MoeSparseMoeBlock(nn.Module): 包含：Qwen3MoeMLP
 - class Qwen3MoeRMSNorm(LlamaRMSNorm): 和Qwen3RMSNorm一致
-- class Qwen3MoeDecoderLayer(Qwen2MoeDecoderLayer, nn.Module):包含：Qwen3MoeAttention，Qwen3MoeSparseMoeBlock或Qwen3MoeMLP，Qwen3MoeRMSNorm
+- class Qwen3MoeDecoderLayer(Qwen2MoeDecoderLayer, nn.Module):包含：Qwen3MoeAttention，Qwen3MoeSparseMoeBlock或Qwen3MoeMLP，Qwen3MoeRMSNorm，架构与Qwen3DecoderLayer一致
 - class Qwen3MoeModel(MixtralModel):
 - class Qwen3MoeForCausalLM(MixtralForCausalLM): 包含 Qwen3MoeModel
 #### Qwen3MoeSparseMoeBlock
@@ -438,7 +438,13 @@ output
 9. index_add_ → 累加到最终 hidden_states  
 10. reshape 回 `[B, L, D]`
 
-
+#### Qwen3MoeDecoderLayer
+- mlp层有两种情况：1、Qwen3MoeSparseMoeBlock，当当前层不在mlp_only_layers中时；2.Qwen3MoeMLP普通的mlp
+#### Qwen3MoeForCausalLM：
+- 训练时需要计算aux_loss，路由的损失；如果少数专家被频繁选择，会增加该 loss，使训练时路由更均匀
+- token 被 top-k 专家选择。
+- 计算每个专家的 token 使用比例与 routing 权重平均值。
+- 分布不均衡 → loss 大。
 
 ## Gemma3
 
