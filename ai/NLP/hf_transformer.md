@@ -445,7 +445,6 @@ output
 - token 被 top-k 专家选择。
 - 计算每个专家的 token 使用比例与 routing 权重平均值。
 - 分布不均衡 → loss 大。
-
 ## Gemma3
 
 ## GPTOSS
