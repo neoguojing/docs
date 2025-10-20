@@ -227,9 +227,15 @@ Qwen3OmniMoeProcessor
 | `"nb_max_frames": 30000`        | 视频或序列最大帧数                        |
 #### WhisperFeatureExtractor
 > class WhisperFeatureExtractor(SequenceFeatureExtractor):
-> class SequenceFeatureExtractor(FeatureExtractionMixin):
-> 把 raw waveform → log-mel fbank，供 Whisper 模型使用
 
+> class SequenceFeatureExtractor(FeatureExtractionMixin):
+
+> 把 raw waveform → log-mel fbank，供 Whisper 模型使用
+#### waveform
+- 它表示的是声音随时间变化的振幅（Amplitude）
+- (num_samples,)： 单声道是一维数组
+- 每个值标识1/sample秒的声音振幅
+- 
 
 #### Qwen2VLImageProcessor
 #### Qwen2VLVideoProcessor
