@@ -288,6 +288,38 @@ Qwen3OmniMoeProcessor
 - 如果原始音频长度不同，需要 padding 对齐 batch
 - mask 告诉模型 哪些帧是真实音频，哪些是 padding，防止模型对 padding 做无意义计算
 #### Qwen2VLImageProcessor
+##### 配置
+| 参数                    | 默认值                                                    | 作用                      |
+| --------------------- | ------------------------------------------------------ | ----------------------- |
+| `do_resize`           | True                                                   | 是否调整图片尺寸                |
+| `size`                | `{"shortest_edge": 56*56, "longest_edge": 28*28*1280}` | resize 的目标尺寸范围          |
+| `resample`            | BICUBIC                                                | resize 时使用的插值方法         |
+| `do_rescale`          | True                                                   | 是否缩放像素值                 |
+| `rescale_factor`      | 1/255                                                  | 缩放比例（通常把 0-255 映射到 0-1） |
+| `do_normalize`        | True                                                   | 是否做均值/方差归一化             |
+| `image_mean`          | `[0.48145466, 0.4578275, 0.40821073]`                  | 归一化均值                   |
+| `image_std`           | `[0.26862954, 0.26130258, 0.27577711]`                 | 归一化标准差                  |
+| `do_convert_rgb`      | True                                                   | 是否将图片转换为 RGB            |
+| `min_pixels`          | 56*56                                                  | resize 的最小像素限制          |
+| `max_pixels`          | 28*28*1280                                             | resize 的最大像素限制          |
+| `patch_size`          | 14                                                     | 空间 patch 尺寸             |
+| `temporal_patch_size` | 2                                                      | 时间 patch 尺寸（视频时） 每个时间 patch 由 2 帧组成        |
+| `merge_size`          | 2                                                      | 局部 patch 合并大小           |
+#### 转换
+- 用于将输入的图片或视频帧处理成模型可以直接使用的视觉特征输入
+- 把图片/视频切成很多小方块（patch），每个方块变成一个小向量，然后排成一排，送进模型去理解
+- merge_size 不是固定的 → 可以动态调整模型序列长度
+- merge_size 可控 → 可以选择在保留局部特征的同时减少 token
+- 小 patch → merge = 先切小方块，再拼成大方块，输出维度更容易匹配 Transformer 隐藏层需求
+- grid_h=height/patch_size
+- grid_w=W/patch_size
+- merge_size = 2 → 每 2×2 个 patch 合并
+- grid_h=grid_h/merge_size
+- grid_w=grid_w/merge_size
+- grid_t=num_frames/temporal_patch_size
+- patch_dim=channel∗temporal_patch_size∗patch_size∗patch_size∗merge_size2
+- num_patches=grid_t​∗grid_h​∗grid_w
+- flatten_patches.shape = (num_patches, patch_dim)
 #### Qwen2VLVideoProcessor
 
 ## OmniMoe
