@@ -231,12 +231,62 @@ Qwen3OmniMoeProcessor
 > class SequenceFeatureExtractor(FeatureExtractionMixin):
 
 > 把 raw waveform → log-mel fbank，供 Whisper 模型使用
-#### waveform
+
+> 输入：(num_samples,)  输出：（num_mel_filters, num_frames）
+
+| 函数                    | 作用             | 输出              | 备注                         |
+| --------------------- | -------------- | --------------- | -------------------------- |
+| `torch.hann_window`   | 生成 Hann 窗      | Tensor(n_fft)   | 用于加窗                       |
+| `torch.randn`         | 生成正态随机噪声       | Tensor          | 用于抖动 (dither)              |
+| `torch.stft`          | 短时傅里叶变换        | Tensor(complex) | `return_complex=True` 返回复数 |
+| `.abs()`              | 取复数幅值          | Tensor          | 用于功率谱计算                    |
+| `**2`                 | 幅值平方 → 功率谱     | Tensor          |                            |
+| `@`                   | 矩阵乘法           | Tensor          | 频谱 → Mel 频率                |
+| `torch.clamp(min)`    | 限制最小值          | Tensor          | 避免 log(0)                  |
+
+
+##### waveform
 - 它表示的是声音随时间变化的振幅（Amplitude）
+- 表示在时间上连续的离散采样
 - (num_samples,)： 单声道是一维数组
 - 每个值标识1/sample秒的声音振幅
-- 
+##### 分帧
+- 在极短的时间片段中，语音的频谱特征基本不变
+- 对每一帧计算频谱
+- n_fft - hop_length 是帧直接的重叠长度
+- num_frames = int(1 + np.floor((waveform.size - frame_length) / hop_length)) ： 总帧数计算
+##### 加窗
+- buffer[:frame_length] *= window：点积
+- window是一个frame_length长度的数组，值为浮点数
+- 目的在于帧数据*一个系数，是的边界数据比较平滑（边缘系数很小，边缘的值会变小）
+- 帧边界平滑过渡 → 频谱干净、特征更稳定。
+#### 傅里叶变化
+- DFT（离散傅里叶变换): 把信号投影到一系列“正弦 + 余弦”基上，得到每个频率分量的强度和相位
+- FFT（快速傅里叶变换）: 通过分治算法，把复杂度降低
+- rFFT（实值快速傅里叶变换）: 负频率部分是正频率的镜像,只需要存储一半数据
+- 结果是复数数组，因为频率既有大小又有相位
+- np.fft.fft(x)输出结果示例：[ 0.+0.j  0.+0.j  0.-4.j  0.+0.j  0.+0.j  0.+0.j  0.+4.j  0.+0.j]
+- 计算结果形状：(num_frames, num_frequency_bins)
+- 线性频率： 每个频率 bin 是等间隔的 Hz 值
+##### 频谱处理
+- np.abs(spectrogram)：就是取 每个频率 bin 的幅度
+- 幅度谱：每个频率分量的振幅大小，也就是波形在某一频率的“强度”
+- 功率谱：每个频率分量的能量，单位是振幅平方
+##### Mel谱转换
+- 低频：人耳敏感 → 需要更多滤波器
+- 人耳不敏感 → 滤波器间隔可大
+- 每个滤波器是一个列向量，长度 = num_freq_bins
+- 滤波器矩阵 shape = (num_freq_bins, num_mel_filters)
+- 对 FFT 幅度谱做矩阵乘法：mel_spectrogram = mel_filters.T @ spectrogram
+- 输出结果：（num_mel_filters, num_frames）
+##### log mel转换
+- 人耳对声强的感知是 对数关系（例如音量增加 10 倍，感觉只大约增加 2 倍）
+- log_mel 选项就是把线性谱 → 对数谱，符合人耳感知，方便机器学习建模
+- log / log10 / dB 的区别主要在 对数底数 与 是否换算成分贝单位
 
+##### 输出
+- 如果原始音频长度不同，需要 padding 对齐 batch
+- mask 告诉模型 哪些帧是真实音频，哪些是 padding，防止模型对 padding 做无意义计算
 #### Qwen2VLImageProcessor
 #### Qwen2VLVideoProcessor
 
