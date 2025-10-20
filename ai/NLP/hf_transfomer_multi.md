@@ -317,7 +317,7 @@ Qwen3OmniMoeProcessor
 - grid_h=grid_h/merge_size
 - grid_w=grid_w/merge_size
 - grid_t=num_frames/temporal_patch_size
-- patch_dim=channel∗temporal_patch_size∗patch_size∗patch_size∗merge_size2
+- patch_dim=channel∗temporal_patch_size∗patch_size∗patch_size∗merge_size2：merge参数使得 输出维度更容易匹配 Transformer 隐藏层需求
 - num_patches=grid_t​∗grid_h​∗grid_w
 - flatten_patches.shape = (num_patches, patch_dim)
 #### Qwen2VLVideoProcessor
