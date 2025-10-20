@@ -226,6 +226,11 @@ Qwen3OmniMoeProcessor
 | `"merge_size": 2`               | 图像 patch 合并尺寸，用于降采样或多尺度融合        |
 | `"nb_max_frames": 30000`        | 视频或序列最大帧数                        |
 #### WhisperFeatureExtractor
+> class WhisperFeatureExtractor(SequenceFeatureExtractor):
+> class SequenceFeatureExtractor(FeatureExtractionMixin):
+> 把 raw waveform → log-mel fbank，供 Whisper 模型使用
+
+
 #### Qwen2VLImageProcessor
 #### Qwen2VLVideoProcessor
 
