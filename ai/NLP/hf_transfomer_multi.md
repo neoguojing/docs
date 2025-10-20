@@ -146,6 +146,89 @@
 | `upsample_rates`    | `(8,5,4,3)` | 每层特征上采样倍数       |
 | `upsampling_ratios` | `(2,2)`     | 反卷积上采样比例        |
 | `decoder_dim`       | 1536        | 输出特征维度，映射到波形生成前 |
+
+## Processor
+#### from_pretrained
+- AutoProcessor.from_pretrained() 读取配置；
+- 发现 "image_processor_type" 字段；
+- 调用 get_possibly_dynamic_module("Qwen2VLImageProcessor")；
+- 检查是否在 transformers 模块中定义 → 没找到；
+- 进入 IMAGE_PROCESSOR_MAPPING._extra_content；
+- 找到注册过的 Qwen2VLImageProcessor 类；
+- 返回类对象；
+#### 注册
+```
+from transformers import AutoImageProcessor
+
+AutoImageProcessor.register(
+    "qwen2-vl",  # key
+    Qwen2VLImageProcessor  # class
+)
+
+```
+### ProcessorMixin
+> 汇总各种处理器，处理统一输入
+
+| 属性名                 | 输入数据     | 子处理器类型 |
+| ------------------- | -------- | ------ |
+| `tokenizer`         | `text`   | 文本处理   |
+| `image_processor`   | `images` | 图像处理   |
+| `video_processor`   | `videos` | 视频帧处理  |
+| `feature_extractor` | `audio`  | 音频特征提取 |
+
+### Qwen3OmniMoeProcessor
+```
+Qwen3OmniMoeProcessor
+│
+├── image_processor → Qwen2VLImageProcessor
+├── video_processor → Qwen2VLVideoProcessor
+├── feature_extractor → WhisperFeatureExtractor
+├── tokenizer → Qwen2TokenizerFast
+│
+├── __call__() → 主入口
+│    ├── 音频提取
+│    ├── 图像处理
+│    ├── 视频处理
+│    ├── 文本多模态占位符替换
+│    ├── 文本分词
+│    └── 合并为 BatchFeature
+│
+├── replace_multimodal_special_tokens() → 多模态 token 展开，将占位符替换为实际token
+├── get_chunked_index() → 时间片索引划分
+├── apply_chat_template() → 应用对话模板
+└── model_input_names → 输入字段总览
+
+```
+#### 配置
+| 字段                                                    | 含义                                   |
+| ----------------------------------------------------- | ------------------------------------ |
+| `"processor_class": "Qwen3OmniMoeProcessor"`          | 顶层处理器类名，负责协调图像和音频两个子模块；是主入口。         |
+| `"image_processor_type": "Qwen2VLImageProcessor"`     | 图像处理器类型，用于 resize、normalize、打 patch。 |
+| `"feature_extractor_type": "WhisperFeatureExtractor"` | 音频特征提取类，用于将波形转换为频谱特征。                |
+| 字段                              | 含义                       |
+| ------------------------------- | ------------------------ |
+| `"feature_size": 128`           | 每帧音频特征的维度，通常是 Mel 滤波器数量  |
+| `"n_fft": 400`                  | STFT 的窗口长度               |
+| `"hop_length": 160`             | 帧移，即连续帧之间的步长             |
+| `"n_samples": 4800000`          | 最大采样点数，通常用于截断长音频         |
+| `"sampling_rate": 16000`        | 音频采样率（16 kHz）            |
+| `"dither": 0.0`                 | 加性噪声参数（用于防止量化伪影）         |
+| `"padding_value": 0.0`          | 填充时的默认值                  |
+| `"return_attention_mask": true` | 是否返回掩码，用于模型区分 padding 区域 |
+| 字段                              | 含义                               |
+| ------------------------------- | -------------------------------- |
+| `"image_mean": [0.5, 0.5, 0.5]` | 图像归一化均值（通道维度）                    |
+| `"image_std": [0.5, 0.5, 0.5]`  | 图像归一化方差（通道维度）                    |
+| `"patch_size": 16`              | ViT patch 大小（每 16×16 像素为一 patch） |
+| `"temporal_patch_size": 2`      | 时间维 patch（多帧视频或时间维切块）            |
+| `"max_pixels": 12845056`        | 输入图像允许的最大像素数，用于限制内存占用            |
+| `"min_pixels": 3136`            | 最小分辨率限制                          |
+| `"merge_size": 2`               | 图像 patch 合并尺寸，用于降采样或多尺度融合        |
+| `"nb_max_frames": 30000`        | 视频或序列最大帧数                        |
+#### WhisperFeatureExtractor
+#### Qwen2VLImageProcessor
+#### Qwen2VLVideoProcessor
+
 ## OmniMoe
 ### 配置
 | Token 名称                                                     | 作用                   |
