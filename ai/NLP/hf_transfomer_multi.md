@@ -321,6 +321,8 @@ Qwen3OmniMoeProcessor
 - num_patches=grid_t​∗grid_h​∗grid_w
 - flatten_patches.shape = (num_patches, patch_dim)
 #### Qwen2VLVideoProcessor
+> 帧抽样 → 图像裁剪/缩放 → 标准化/归一化 → 切 patch 并合并成 tokens最终生成模型可直接输入的 视频向量化表示。
+
 
 ## OmniMoe
 ### 配置
