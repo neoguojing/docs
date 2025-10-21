@@ -339,7 +339,14 @@ Qwen3OmniMoeProcessor
 - - group_videos_by_shape：按尺寸分组视频，方便对齐
   - - grouped_videos：dict[(T,H,W), Tensor]每组视频堆叠后的批次数据
   - - grouped_videos_index：dict[int, ((T,H,W), idx)]原始索引 → (分组键, 分组内位置)
-
+- smart_resize: 高、宽都能被 factor 整除（一般是模型 patch size 的倍数，比如 28）;总像素数在 [min_pixels, max_pixels] 范围内;尽可能保持原图宽高比（不拉伸变形
+- 输出：
+- - pixel_values_videos.shape： (N, P, D) ;
+  - N：批内视频数量（总视频数）
+  - P：每个视频的 patch 数量，等于 grid_t * grid_h * grid_w
+  - D：每个 patch 的向量长度（维度），等于 C * temporal_patch_size * patch_size * patch_size
+  - video_grid_thw:(N, 3)
+  - 每行表示 [grid_t, grid_h, grid_w]（时、空高、空宽）
 ## OmniMoe
 ### 配置
 | Token 名称                                                     | 作用                   |
