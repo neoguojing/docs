@@ -322,7 +322,23 @@ Qwen3OmniMoeProcessor
 - flatten_patches.shape = (num_patches, patch_dim)
 #### Qwen2VLVideoProcessor
 > 帧抽样 → 图像裁剪/缩放 → 标准化/归一化 → 切 patch 并合并成 tokens最终生成模型可直接输入的 视频向量化表示。
-
+##### 配置 大部分参数等同于图像处理
+- do_sample_frames bool 是否进行帧采样
+##### 类
+- class Qwen2VLVideoProcessor(BaseVideoProcessor)
+- class BaseVideoProcessor(BaseImageProcessorFast):
+- class BaseImageProcessorFast(BaseImageProcessor):
+- class BaseImageProcessor(ImageProcessingMixin):
+##### 运行
+- _decode_and_sample_videos： 解码或者采样视频帧，返回列表：[torch.Tensor(num_frames, 3, H, W)]
+- sample_frames： 安装输入的帧数或者fps，进行均匀采样，返回的是帧的帧数索引数组：indices = [0, k, 2k, 3k, ...]
+- - torch.arange(start, end, step)：在 [start, end) 区间内，按固定间隔 step 生成一个一维张量
+- fetch_videos： 负责下载视频，组装图片，以及调用视频解码器，解码帧，返回[num_frames, height, width, 3]
+- _prepare_input_videos：格式化输入为[(num_frames, C, H, W)]
+- _preprocess:
+- - group_videos_by_shape：按尺寸分组视频，方便对齐
+  - - grouped_videos：dict[(T,H,W), Tensor]每组视频堆叠后的批次数据
+  - - grouped_videos_index：dict[int, ((T,H,W), idx)]原始索引 → (分组键, 分组内位置)
 
 ## OmniMoe
 ### 配置
