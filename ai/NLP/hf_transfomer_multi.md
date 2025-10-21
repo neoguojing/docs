@@ -68,7 +68,11 @@
 | `n_window_infer`          | `int`   | 400      | 推理时使用的块大小。                                          |
 | `conv_chunksize`          | `int`   | 500      | 卷积特征块的尺寸。                                           |
 | `downsample_hidden_size`  | `int`   | 480      | 下采样隐藏层的维度。                                          |
-
+### 类
+- Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel)
+- - class Qwen3OmniMoeAudioEncoderLayer(GradientCheckpointingLayer):
+  - class Qwen3OmniMoeAudioAttention(nn.Module):
+  - class SinusoidsPositionEmbedding(nn.Module):
 ## VisionEncoder
 ### 配置
 | 参数                         | 默认值                 | 说明                          |
@@ -86,7 +90,15 @@
 | `num_position_embeddings`  | 2304                | 位置编码向量数量                    |
 | `deepstack_visual_indexes` | [8, 16, 24]         | 用于 DeepStack 的特定层索引         |
 | `initializer_range`        | 0.02                | 权重初始化范围                     |
-
+### 类
+- class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
+- - class Qwen3OmniMoeVisionPatchMerger(nn.Module):
+  - class Qwen3OmniMoeVisionPatchEmbed(nn.Module):
+  - class Qwen3OmniMoeVisionRotaryEmbedding(nn.Module):
+  - class Qwen3OmniMoeVisionPatchMerger(nn.Module):
+  - class Qwen3OmniMoeVisionBlock(GradientCheckpointingLayer):
+  - - class Qwen3OmniMoeVisionAttention(nn.Module):
+    - class Qwen3OmniMoeVisionMLP(nn.Module):
 ## Text
 配置等同于语言模型
 ## Thinker
@@ -111,6 +123,15 @@
 - vision_config → Qwen3OmniMoeVisionEncoderConfig
 
 - text_config → Qwen3OmniMoeTextConfig
+### 类
+- class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
+- - class Qwen3OmniMoeThinkerTextDecoderLayer(GradientCheckpointingLayer):
+  - - class Qwen3OmniMoeThinkerTextAttention(nn.Module):
+    - class Qwen3OmniMoeThinkerTextSparseMoeBlock(nn.Module):
+    - class Qwen3OmniMoeThinkerTextMLP(nn.Module):
+    - class Qwen3OmniMoeThinkerTextRMSNorm(nn.Module):
+- - class Qwen3OmniMoeThinkerTextRMSNorm(nn.Module):
+  - class Qwen3OmniMoeThinkerTextRotaryEmbedding(nn.Module):
 
 ## Talker 
 ### 配置
@@ -127,7 +148,22 @@
 | `codec_nothink_id`      | 4203   | 表示无需思考步骤（think step）的 token |
 | `codec_think_bos_id`    | 4204   | 思考阶段的开始 token               |
 | `codec_think_eos_id`    | 4205   | 思考阶段的结束 token               |
-
+###-类
+- class Qwen3OmniMoeTalkerForConditionalGeneration(Qwen3OmniMoeThinkerTextPreTrainedModel, GenerationMixin):
+- - class Qwen3OmniMoeTalkerModel(Qwen3OmniMoePreTrainedModel):
+  - - class Qwen3OmniMoeTalkerDecoderLayer(GradientCheckpointingLayer):
+    - - class Qwen3OmniMoeThinkerTextAttention(nn.Module):
+    - class Qwen3OmniMoeTextRMSNorm(nn.Module):
+    - class Qwen3OmniMoeTalkerRotaryEmbedding(Qwen3OmniMoeThinkerTextRotaryEmbedding):
+- - class Qwen3OmniMoeTalkerResizeMLP(nn.Module):
+  - class Qwen3OmniMoeTalkerCodePredictorModelForConditionalGeneration(Qwen3OmniMoePreTrainedModel, GenerationMixin):
+  - - class Qwen3OmniMoeTalkerCodePredictorModel(Qwen3OmniMoePreTrainedModel):
+    - - class Qwen3OmniMoeTalkerCodePredictorDecoderLayer(GradientCheckpointingLayer):
+      - - class Qwen3OmniMoeTalkerCodePredictorAttention(nn.Module):
+        - class Qwen3OmniMoeMLP(nn.Module):
+        - class Qwen3OmniMoeRMSNorm(nn.Module):
+    - class Qwen3OmniMoeRMSNorm(nn.Module):
+    - class Qwen3OmniMoeRotaryEmbedding(nn.Module):
 ## Code-to-Waveform
 > 将离散音频码本（acoustic token）转换为高保真波形。它主要负责 音频生成阶段，通常作为 Talker 模型输出音频 token 的最终解码器
 
@@ -146,6 +182,22 @@
 | `upsample_rates`    | `(8,5,4,3)` | 每层特征上采样倍数       |
 | `upsampling_ratios` | `(2,2)`     | 反卷积上采样比例        |
 | `decoder_dim`       | 1536        | 输出特征维度，映射到波形生成前 |
+### 类
+- class Qwen3OmniMoeCode2Wav(Qwen3OmniMoePreTrainedModel):
+- - class Qwen3OmniMoeCode2WavTransformerModel(Qwen3OmniMoePreTrainedModel):
+- - - class Qwen3OmniMoeCode2WavTransformerLayer(GradientCheckpointingLayer):
+- - - - class Qwen3OmniMoeCode2WavAttention(nn.Module):
+      - class Qwen3OmniMoeCode2WavMlp(nn.Module):
+      - class Qwen3OmniMoeCode2WavRMSNorm(nn.Module):
+      - class Qwen3OmniMoeCode2WavLayerScale(nn.Module):
+- - - class Qwen3OmniMoeRMSNorm(nn.Module):
+- - - class Qwen3OmniMoeRotaryEmbedding(nn.Module):
+- - class Qwen3OmniMoeCausalTransConvNet(nn.Module):
+- - class Qwen3OmniMoeConvNeXtBlock(nn.Module):
+- - class Qwen3OmniMoeCausalConvNet(nn.Module):
+- - class Qwen3OmniMoeCode2WavDecoderBlock(Qwen3OmniMoePreTrainedModel):
+- - class Qwen3OmniMoeCode2WavDecoderResidualUnit(nn.Module):
+- - class SnakeBeta(nn.Module):
 
 ## Processor
 #### from_pretrained
@@ -354,4 +406,15 @@ Qwen3OmniMoeProcessor
 | `im_start_token_id` / `im_end_token_id`                      | 图像输入序列的起始/结束标识       |
 | `tts_pad_token_id` / `tts_bos_token_id` / `tts_eos_token_id` | 语音生成（TTS）的填充、开始、结束标记 |
 | `system_token_id` / `user_token_id` / `assistant_token_id`   | 多轮对话中标识系统、用户和助手发言    |
+
+### 类
+- class Qwen3OmniMoeForConditionalGeneration(Qwen3OmniMoePreTrainedModel, GenerationMixin):
+- - class Qwen3OmniMoeThinkerForConditionalGeneration(Qwen3OmniMoePreTrainedModelForConditionalGeneration, GenerationMixin):
+  - class Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel):
+  - class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
+  - class Qwen3OmniMoeThinkerTextModel(Qwen3OmniMoePreTrainedModel):
+  - class Qwen3OmniMoeTalkerForConditionalGeneration(Qwen3OmniMoeThinkerTextPreTrainedModel, GenerationMixin):
+  - class Qwen3OmniMoeCode2Wav(Qwen3OmniMoePreTrainedModel):
+
+
 
