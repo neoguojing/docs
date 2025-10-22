@@ -317,8 +317,8 @@ Qwen3OmniMoeProcessor
 - FFT（快速傅里叶变换）: 通过分治算法，把复杂度降低
 - rFFT（实值快速傅里叶变换）: 负频率部分是正频率的镜像,只需要存储一半数据
 - 结果是复数数组，因为频率既有大小又有相位
-- np.fft.fft(x)输出结果示例：[ 0.+0.j  0.+0.j  0.-4.j  0.+0.j  0.+0.j  0.+0.j  0.+4.j  0.+0.j]
-- 计算结果形状：(num_frames, num_frequency_bins)
+- np.fft.fft(x)输出结果示例：[ 0.+0.j  0.+0.j  0.-4.j  0.+0.j  0.+0.j  0.+0.j  0.+4.j  0.+0.j]；输出是每个频率分量的复数表示，索引位置表示第k个频谱，对应的频率fk​=k/N *​Fs
+- 计算结果形状：(num_frames, num_frequency_bins)进行转置：每列是一帧的频谱，每行是一个频率 bin
 - 线性频率： 每个频率 bin 是等间隔的 Hz 值
 ##### 频谱处理
 - np.abs(spectrogram)：就是取 每个频率 bin 的幅度
@@ -328,9 +328,9 @@ Qwen3OmniMoeProcessor
 - 低频：人耳敏感 → 需要更多滤波器
 - 人耳不敏感 → 滤波器间隔可大
 - 每个滤波器是一个列向量，长度 = num_freq_bins
-- 滤波器矩阵 shape = (num_freq_bins, num_mel_filters)
-- 对 FFT 幅度谱做矩阵乘法：mel_spectrogram = mel_filters.T @ spectrogram
-- 输出结果：（num_mel_filters, num_frames）
+- 滤波器矩阵 shape = (num_freq_bins, num_mel_filters)：每列是一条 Mel 滤波器，对应一段频率范围
+- 对 FFT 幅度谱做矩阵乘法：mel_spectrogram = mel_filters.T @ spectrogram：将每一帧的频谱按 Mel 滤波器加权求和
+- 输出结果：（num_mel_filters, num_frames）：每列是一帧的 Mel 频谱
 ##### log mel转换
 - 人耳对声强的感知是 对数关系（例如音量增加 10 倍，感觉只大约增加 2 倍）
 - log_mel 选项就是把线性谱 → 对数谱，符合人耳感知，方便机器学习建模
