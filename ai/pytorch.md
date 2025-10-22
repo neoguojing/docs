@@ -114,7 +114,9 @@ nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
 本质就是 torch.matmul(x, W.T) + b
 参数 W 和 b 会自动注册为模型参数，并且能被优化器更新。
 ```
-- 卷积层：nn.Conv 支持1-3维的卷积
+#### 卷积层：nn.Conv 支持1-3维的卷积
+- 输入：(B, C_in, H_in, W_in)
+- 输出： (B, C_out, H_out, W_out)
 - 池化层：
 - 激活函数
 - 正则化层：LayerNorm
