@@ -73,6 +73,11 @@
 - - class Qwen3OmniMoeAudioEncoderLayer(GradientCheckpointingLayer):
   - class Qwen3OmniMoeAudioAttention(nn.Module):
   - class SinusoidsPositionEmbedding(nn.Module):
+### 编码流程
+> 它负责将 原始的 Mel 频谱特征（二维时频图）编码成适合 Transformer 处理的隐藏向量序列
+> 分块（chunk）+ 卷积下采样（Conv2D）+ 位置编码（PosEnc）+ 多层 Transformer（MoE Encoder Layers）
+
+- 
 ## VisionEncoder
 ### 配置
 | 参数                         | 默认值                 | 说明                          |
