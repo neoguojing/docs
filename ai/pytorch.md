@@ -115,13 +115,14 @@ nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
 参数 W 和 b 会自动注册为模型参数，并且能被优化器更新。
 ```
 #### 卷积层：nn.Conv 支持1-3维的卷积
+- 对输入的每个滑动窗口与卷积核做点积，得到输出特征图的一个像素
 - 输入：(B, C_in, H_in, W_in)
 - 输出： (B, C_out, H_out, W_out)
-- 池化层：
-- 激活函数
-- 正则化层：LayerNorm
-- Dropout：随机失活
-- 注意力，LSTM等
+#### 池化层：
+#### 激活函数
+#### 正则化层：LayerNorm
+#### Dropout：随机失活
+
 #### nn.Embedding 是一个 可训练的查找表，把离散的整数 id 转换成稠密向量，在训练过程中不断调整 embedding，使其更好地表达这些 id 的语义或特征
 ```
 nn.Embedding(
