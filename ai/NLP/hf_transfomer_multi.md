@@ -73,10 +73,17 @@
 - - class Qwen3OmniMoeAudioEncoderLayer(GradientCheckpointingLayer):
   - class Qwen3OmniMoeAudioAttention(nn.Module):
   - class SinusoidsPositionEmbedding(nn.Module):
+- num_mel_bins = config.num_mel_bins（mel 频带数）
+- n_window：chunk window（推理/训练分块大小相关）时间纬度分片
+- layers = nn.ModuleList([Qwen3OmniMoeAudioEncoderLayer(...) for _ in ：多层注意力
+- conv2d1/2/3：三层 2D 卷积，conv2d1 的输入通道为 1（mel 图的单通道）
+- conv_out：线性层，把最后的 channels * freq_after_conv 映射到 d_model
+- proj1、act、proj2：输出投影 MLP
+- n_window_infer、conv_chunksize：推理时分块窗口和卷积分割的 chunk 大小
 ### 编码流程
 > 它负责将 原始的 Mel 频谱特征（二维时频图）编码成适合 Transformer 处理的隐藏向量序列
 > 分块（chunk）+ 卷积下采样（Conv2D）+ 位置编码（PosEnc）+ 多层 Transformer（MoE Encoder Layers）
-
+> 输入形状：(batch_size, num_mel_bins, max_time_steps)
 - 
 ## VisionEncoder
 ### 配置
