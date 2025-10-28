@@ -109,6 +109,9 @@ x[1:3, 0:2]  # 第1、2行，第0、1列 → tensor([[4,5],[7,8]])
 ### 前向传播由 forward
 ### 内置网络层
 #### 全连接层：nn.Linear
+- in_features	输入向量长度
+- out_features 输出向量长度
+- 下采样：让数据纬度降低
 ```
 nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
 本质就是 torch.matmul(x, W.T) + b
