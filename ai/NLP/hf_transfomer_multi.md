@@ -84,7 +84,24 @@
 > 它负责将 原始的 Mel 频谱特征（二维时频图）编码成适合 Transformer 处理的隐藏向量序列
 > 分块（chunk）+ 卷积下采样（Conv2D）+ 位置编码（PosEnc）+ 多层 Transformer（MoE Encoder Layers）
 > 输入形状：(batch_size, num_mel_bins, max_time_steps)
-- 
+- 卷积特征长度:stride=2
+```
+input_lengths = (input_lengths - 1(卷积核长度2-1)) // 2 + 1
+output_lengths = (input_lengths - 2) // 2 + 1
+```
+- 计算分配长度
+- 特征分片后: [(chunk_len_i, batch_size, num_mel_bins)],数组长度为chunk_lengths
+- 填充是的所有chunk一样大： (batch_size, num_mel_bins, max_chunk_len)
+- 3层卷积：输入：(batch_size, 1, num_mel_bins, max_chunk_len)，输出：(batch_size, C_out, F（特征纬度）, T（时间纬度）)
+- 全连接投影：(b, t（时间）, d_model) ： 投影到d_model
+```
+downsample_hidden_size： 为channel数量
+self.conv_out = nn.Linear(
+            config.downsample_hidden_size * ((((config.num_mel_bins + 1) // 2 + 1) // 2 + 1) // 2),
+            config.d_model,
+            bias=False,
+        )
+```
 ## VisionEncoder
 ### 配置
 | 参数                         | 默认值                 | 说明                          |
