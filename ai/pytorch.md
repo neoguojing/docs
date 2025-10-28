@@ -116,6 +116,13 @@ nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
 ```
 #### 卷积层：nn.Conv 支持1-3维的卷积
 - 对输入的每个滑动窗口与卷积核做点积，得到输出特征图的一个像素
+- H_in,W_in输入特征图高宽
+- kH，kW：卷积核的宽高
+- 填充：pH, pW
+- 步幅：sH, sW
+- 扩张（dilation）：dH, dW
+- 卷积就是用“小滤镜”在图上滑动，取一块区域，乘一乘，加一加，得到新的像素值。
+- H_out = floor( (H_in + 2*pH - dH*(kH-1) -1) / sH ) + 1
 - 输入：(B, C_in, H_in, W_in)
 - 输出： (B, C_out, H_out, W_out)
 #### 池化层：
