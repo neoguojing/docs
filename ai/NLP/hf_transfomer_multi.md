@@ -82,17 +82,28 @@
 - n_window_infer、conv_chunksize：推理时分块窗口和卷积分割的 chunk 大小
 ### 编码流程
 > 它负责将 原始的 Mel 频谱特征（二维时频图）编码成适合 Transformer 处理的隐藏向量序列
+
 > 分块（chunk）+ 卷积下采样（Conv2D）+ 位置编码（PosEnc）+ 多层 Transformer（MoE Encoder Layers）
+
 > 输入形状：(batch_size, num_mel_bins, max_time_steps)
+
 > feature_lens：每条样本的帧长度
+
 > chunk_num: 每个样本被切成多少块：feature_lens / (self.n_window * 2)
+
 > chunk_lengths： 每个块的长度
+
 > padded_feature: [batch_size, feature_dim, max_chunk_len]，pad到统一长度
+
 > padded_embed: [batch_size, seq_len_after_cnn, d_model] ，CNN采样后
+
 > padded_mask_after_cnn: [batch_size, seq_len_after_cnn_max]，每个样本前 length 个位置是 True（有效 token），后面是false
+
 > window_aftercnn：表示每次推理时，一个「有效块」经过 CNN 后包含多少帧
+
 > cu_seqlens： 分块长度的累积和，指定的段落边界，分块计算自注意力，避免 OOM
-- 卷积特征长度:stride=2
+
+> 卷积特征长度:stride=2
 ```
 input_lengths = (input_lengths - 1(卷积核长度2-1)) // 2 + 1
 output_lengths = (input_lengths - 2) // 2 + 1
