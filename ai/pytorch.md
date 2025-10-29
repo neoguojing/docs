@@ -148,7 +148,9 @@ nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
 - 输出： (B, C_out, H_out, W_out)
 #### 池化层：
 #### 激活函数
-#### 正则化层：LayerNorm
+#### 正则化层：LayerNorm：把每个样本的特征维度标准化到均值 0、方差 1，然后可学习地缩放和平移
+- 计算该时间步 t 的特征均值和方差
+- 归一化后乘以 γ，加上 β
 #### Dropout：随机失活
 
 #### nn.Embedding 是一个 可训练的查找表，把离散的整数 id 转换成稠密向量，在训练过程中不断调整 embedding，使其更好地表达这些 id 的语义或特征
