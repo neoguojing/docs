@@ -433,7 +433,7 @@ Qwen3OmniMoeProcessor
 - 小 patch → merge = 先切小方块，再拼成大方块，输出维度更容易匹配 Transformer 隐藏层需求
 - grid_h=height/patch_size
 - grid_w=W/patch_size
-- merge_size = 2 → 每 2×2 个 patch 合并
+- merge_size = 2 → 每 2×2 个 patch 合并，是一个重新调整纬度，按照mergesize分组的过程
 - grid_h=grid_h/merge_size
 - grid_w=grid_w/merge_size
 - grid_t=num_frames/temporal_patch_size
