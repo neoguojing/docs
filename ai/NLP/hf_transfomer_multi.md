@@ -70,9 +70,9 @@
 | `downsample_hidden_size`  | `int`   | 480      | 下采样隐藏层的维度。                                          |
 ### 类
 - Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel)
-- - class Qwen3OmniMoeAudioEncoderLayer(GradientCheckpointingLayer):
+- - class Qwen3OmniMoeAudioEncoderLayer(GradientCheckpointingLayer): 和通用一致
   - class Qwen3OmniMoeAudioAttention(nn.Module):
-  - class SinusoidsPositionEmbedding(nn.Module):
+  - class SinusoidsPositionEmbedding(nn.Module): 正余弦位置编码，论文标注编码
 - num_mel_bins = config.num_mel_bins（mel 频带数）
 - n_window：chunk window（推理/训练分块大小相关）时间纬度分片
 - layers = nn.ModuleList([Qwen3OmniMoeAudioEncoderLayer(...) for _ in ：多层注意力
