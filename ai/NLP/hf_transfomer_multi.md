@@ -196,6 +196,7 @@ self.conv_out = nn.Linear(
 - 旋转编码计算：rotary_pos_emb
 - cu_seqlens：计算
 - 逐层 Transformer Block
+- 合并patch特征: 返回形状 [seq_len, hidden_size]
 - deepstack 特征提取
 - 返回hidden_state 和deepstack 特征列表
 ## Text
