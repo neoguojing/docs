@@ -71,7 +71,14 @@
 ### 类
 - Qwen3OmniMoeAudioEncoder(Qwen3OmniMoePreTrainedModel)
 - - class Qwen3OmniMoeAudioEncoderLayer(GradientCheckpointingLayer): 和通用一致
-  - class Qwen3OmniMoeAudioAttention(nn.Module):
+  - class Qwen3OmniMoeAudioAttention(nn.Module): 多头注意力
+  - - [seq_len, embed_dim] （单条序列，batch 由 cu_seqlens 表示）
+    - 使用 cu_seqlens 管理不等长音频片段（FA2 高效 attention）
+    - 序列较长，不能使用矩阵乘法
+    - 非自回归，非因果：音频的某一帧可能和前后几百帧都有相关性，编码是学习而非生成
+    - encoder模型，无掩码，无缓存
+    - 输入 hidden_states → Q/K/V 线性投影 → reshape 多头 → transpose + unsqueeze → 调用 attention 函数计算注意力 → reshape 拼接多头 → 输出线性投影 → 返回 attn_output
+    - _flash_varlen_fn：针对变长序列去掉 padding，使用累积长度索引（cu_seqlens）在 fused GPU kernel 中计算 attention，从而显著降低显存占用并提升长序列速度。
   - class SinusoidsPositionEmbedding(nn.Module): 正余弦位置编码，论文标注编码
 - num_mel_bins = config.num_mel_bins（mel 频带数）
 - n_window：chunk window（推理/训练分块大小相关）时间纬度分片
