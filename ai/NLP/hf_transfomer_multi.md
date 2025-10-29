@@ -102,6 +102,7 @@ self.conv_out = nn.Linear(
             bias=False,
         )
 ```
+- padded_embed = padded_embed + positional_embedding：位置编码
 ## VisionEncoder
 ### 配置
 | 参数                         | 默认值                 | 说明                          |
