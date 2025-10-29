@@ -31,6 +31,20 @@
 - 矩阵：axis=0，即沿着行的方向（上下）压缩，axis=1，沿着列的方向压缩
 ### 张量的算子，对张亮进行的数学运算
 - +, -, *, / 对张量元素做逐元素运算
+- torch.ceil(input)：对 input 张量中的每个元素，返回大于或等于该元素的最小整数
+- F.pad： F.pad(chunk_num, (1, 0), value=-1) ：在左边添加1维，右边不添加，值是-1
+- - input：需要填充的张量
+- - pad：填充参数，长度是 2 * number_of_dims_to_pad，pad = (pad_left, pad_right, pad_top, pad_bottom, ...)
+- - mode：填充模式，常用 'constant'（常数填充）、'reflect'（镜像填充）、'replicate'（复制边界）
+- - value：当 mode='constant' 时，用于指定填充值（默认 0）
+- cumsum： 累积和，延指定纬度，（1，2，3） -> (1,3,6)
+- split: 沿指定维度拆分张量; torch.Tensor.split(split_size_or_sections, dim=0)
+- - 如果是整数 → 每块长度相等
+- - 如果是 list → 每块长度按照 list 指定
+- nn.utils.rnn.pad_sequence：将一个长度不同的序列列表（List of Tensors）填充（pad）成统一长度的张量
+- - sequences：包含多个tensor的列表
+  - batch_first：true
+  - padding_value： 填充值
 - matmul, t()做矩阵乘法或转置
 - sum, mean, max对张量沿指定维度求和、
 - reshape： 改变shape，总元素不变
@@ -40,6 +54,10 @@
 - 逻辑/比较运算>, <, ==
 - 激活函数ReLU, Sigmoid, Tanh非线性映射，用于神经网络
 - 索引/切片x[0,:], gather获取张量的子集或重排
+- 切片：x[start : end : step]，x[start_dim0:end_dim0, start_dim1:end_dim1, ...]
+- - start：起始索引（包含）
+- - end：结束索引（不包含）
+- - step：步长（默认为1，可为负数表示反向）
 - gather → 类似“根据索引表挑选元素”，特别适合 batch 处理或神经网络输出重排
 - vmap (vectorized map) = 把一个作用在单个样本上的函数，自动扩展成能在 batch 上并行计算的函数。
 ```
