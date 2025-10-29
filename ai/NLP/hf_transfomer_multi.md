@@ -167,6 +167,37 @@ self.conv_out = nn.Linear(
   - class Qwen3OmniMoeVisionBlock(GradientCheckpointingLayer):
   - - class Qwen3OmniMoeVisionAttention(nn.Module):
     - class Qwen3OmniMoeVisionMLP(nn.Module):
+### 参数
+- self.patch_size / self.spatial_merge_size / self.spatial_merge_unit
+- - Patch 切分大小 & 空间合并尺寸。
+- - spatial_merge_unit = merge_size²，表示每个合并块包含多少个 patch。
+- self.patch_embed
+- - 将图像 patch 映射到隐藏向量。
+- - 输入 shape [seq_len, input_dim] → 输出 [seq_len, hidden_size]。
+- self.pos_embed / self.num_grid_per_side
+- - pos_embed 是可学习的二维网格位置编码。
+- - num_grid_per_side = sqrt(num_position_embeddings)，用于将位置映射到二维网格。
+- self.rotary_pos_emb
+- - Rotary embedding（RoPE），用于 Transformer 的旋转式位置编码，适合长序列。
+- - 这里 head_dim // 2 是因为 Qwen 的 RoPE 通常对每个 attention head 使用一半维度。
+- self.blocks
+- 多层 Vision Transformer Block。
+- 每一层处理 patch 特征，支持 gradient_checkpointing 以节省显存。
+- self.merger_list & self.merger
+- - merger_list 用于 deepstack 特征的 patch 融合。
+- - merger 用于最终特征融合。
+- self.deepstack_visual_indexes
+- - 指定哪些层需要 deepstack 特征提取。
+  - DeepStack 就是从视觉 Transformer 的中间层提取多尺度、不同感受野的 patch 特征，并通过 PatchMerger 做空间融合，用于增强模型对局部与全局信息的感知
+### 过程
+- grid_thw:(N, 3)，记录 [时间 patch 数, 高度 patch 数, 宽度 patch 数]
+- Patch Embedding：输入 [seq_len, input_dim] → 输出 [seq_len, hidden_size]
+- 加上可学习位置编码
+- 旋转编码计算：rotary_pos_emb
+- cu_seqlens：计算
+- 逐层 Transformer Block
+- deepstack 特征提取
+- 返回hidden_state 和deepstack 特征列表
 ## Text
 配置等同于语言模型
 ## Thinker
