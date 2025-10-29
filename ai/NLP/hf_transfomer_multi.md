@@ -80,6 +80,14 @@
 - conv_out：线性层，把最后的 channels * freq_after_conv 映射到 d_model
 - proj1、act、proj2：输出投影 MLP
 - n_window_infer、conv_chunksize：推理时分块窗口和卷积分割的 chunk 大小
+#### 架构
+- 特征分块（Chunking）： 减小单词计算的长度
+- 填充与对齐（Padding）： 分块后对齐，是的长度统一，以上两步都是为卷积做准备
+- 卷积下采样（Conv2D Feature Extractor）：减少时间分辨率，增加特征表示能力
+- - 经过多层 Conv2D（每层 stride=2）进行时间维下采样，压缩长度、提升通道维度
+  - 通过线性层 nn.Linear 将卷积输出的高维特征展平映射到 d_model
+- 有效帧提取（Masking & Flatten）：将无效的 pad 去掉，即卷积前填入的pad，在卷积之后依然存在
+- 局部注意力分块（Chunk Attention）：Transformer 在每个分块内计算自注意力，避免跨块计算带来的显存消耗
 ### 编码流程
 > 它负责将 原始的 Mel 频谱特征（二维时频图）编码成适合 Transformer 处理的隐藏向量序列
 
