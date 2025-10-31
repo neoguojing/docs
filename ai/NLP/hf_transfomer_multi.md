@@ -163,6 +163,7 @@ self.conv_out = nn.Linear(
 - - class Qwen3OmniMoeVisionPatchMerger(nn.Module):
   - class Qwen3OmniMoeVisionPatchEmbed(nn.Module): 使用conv3d卷积,输入(N, C, Tp, P, P)，输出：(N, D, 1, 1, 1)
   - class Qwen3OmniMoeVisionRotaryEmbedding(nn.Module):
+  - - 为RoPE（旋转位置编码）生成基础的角频率矩阵，用于后续计算正弦/余弦位置编码并对特征进行旋转
   - class Qwen3OmniMoeVisionPatchMerger(nn.Module):
   - class Qwen3OmniMoeVisionBlock(GradientCheckpointingLayer):
   - - class Qwen3OmniMoeVisionAttention(nn.Module):
