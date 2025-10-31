@@ -47,7 +47,7 @@
   - padding_value： 填充值
 - matmul, t()做矩阵乘法或转置
 - sum, mean, max对张量沿指定维度求和、
-- reshape： 改变shape，总元素不变
+- reshape： 改变shape，总元素不变，换一种视角取查看数据
 - transpose： 转置，和.T一致
 - squeeze：删除张量中长度为1的维度
 - unsqueeze：在指定位置增加长度度为1的纬度
@@ -146,6 +146,14 @@ nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
 - H_out = floor( (H_in + 2*pH - dH*(kH-1) -1) / sH ) + 1
 - 输入：(B, C_in, H_in, W_in)
 - 输出： (B, C_out, H_out, W_out)
+#### Conv3d
+- 输入：(N, C_in, D, H, W)
+- - N: batch size（批次大小）
+- - C_in: 输入通道数（channels）
+- - D: 深度维度（Depth，例如时间帧、体数据切片）
+- - H: 高度（Height）
+- - W: 宽度（Width）
+- 输出： (N, C_out, D_out, H_out, W_out)
 #### 池化层：
 #### 激活函数
 #### 正则化层：LayerNorm：把每个样本的特征维度标准化到均值 0、方差 1，然后可学习地缩放和平移
