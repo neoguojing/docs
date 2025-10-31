@@ -161,7 +161,7 @@ self.conv_out = nn.Linear(
 ### 类
 - class Qwen3OmniMoeVisionEncoder(Qwen3OmniMoePreTrainedModel):
 - - class Qwen3OmniMoeVisionPatchMerger(nn.Module):
-  - class Qwen3OmniMoeVisionPatchEmbed(nn.Module):
+  - class Qwen3OmniMoeVisionPatchEmbed(nn.Module): 使用conv3d卷积,输入(N, C, Tp, P, P)，输出：(N, D, 1, 1, 1)
   - class Qwen3OmniMoeVisionRotaryEmbedding(nn.Module):
   - class Qwen3OmniMoeVisionPatchMerger(nn.Module):
   - class Qwen3OmniMoeVisionBlock(GradientCheckpointingLayer):
@@ -191,7 +191,7 @@ self.conv_out = nn.Linear(
   - DeepStack 就是从视觉 Transformer 的中间层提取多尺度、不同感受野的 patch 特征，并通过 PatchMerger 做空间融合，用于增强模型对局部与全局信息的感知
 ### 过程
 - grid_thw:(N, 3)，记录 [时间 patch 数, 高度 patch 数, 宽度 patch 数]
-- Patch Embedding：输入 [seq_len, input_dim] → 输出 [seq_len, hidden_size]
+- Patch Embedding：输入 [seq_len, input_dim] → 输出 [seq_len, hidden_size]，将输入映射到隐藏纬度
 - 加上可学习位置编码
 - 旋转编码计算：rotary_pos_emb
 - cu_seqlens：计算
