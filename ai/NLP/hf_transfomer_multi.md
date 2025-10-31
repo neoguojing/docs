@@ -193,7 +193,9 @@ self.conv_out = nn.Linear(
 ### 过程
 - grid_thw:(N, 3)，记录 [时间 patch 数, 高度 patch 数, 宽度 patch 数]
 - Patch Embedding：输入 [seq_len, input_dim] → 输出 [seq_len, hidden_size]，将输入映射到隐藏纬度
-- 加上可学习位置编码
+- 加上可学习位置编码：
+- - 根据当前输入的时空分辨率，对已有的二维/三维位置嵌入矩阵做快速双线性（三线性）插值，使位置编码与输入特征尺寸匹配。
+  - 推理时图片大小变化，必须 对位置编码做插值，以适配新的空间分辨率
 - 旋转编码计算：rotary_pos_emb
 - cu_seqlens：计算
 - 逐层 Transformer Block
