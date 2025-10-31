@@ -47,6 +47,7 @@
   - padding_value： 填充值
 - matmul, t()做矩阵乘法或转置
 - sum, mean, max对张量沿指定维度求和、
+- torch.linspace(start, end, steps)：返回一个包含从 start 到 end 均匀间隔的数值序列 的一维张量
 - reshape： 改变shape，总元素不变，换一种视角取查看数据
 - transpose： 转置，和.T一致
 - squeeze：删除张量中长度为1的维度
