@@ -9,6 +9,9 @@
 - Tracking	跟踪相机怎么动
 - Mapping	决定钉子在哪
 - BA	同时微调“相机”和“钉子”
+- TUM（慕尼黑工业大学）数据集
+- EuRoC（欧洲机器人挑战赛）数据集
+- KITTI 数据集是自动驾驶和室外机器人领域中最具影响力和挑战性的室外大规模数据集
 
 ## 前端（Front-end）/ 视觉里程计（Visual Odometry, VO）
 前端的主要任务是估算相邻时刻之间的运动（即局部、短期的位姿变化）。
@@ -53,3 +56,13 @@
 - MaxFrames,地图保存的最大关键帧数量。,影响内存占用和系统运行速度，通常设置为 0 表示不限制。
 - PnPRuns,运行 PnP 算法的迭代次数。,影响相机位姿估计的精度和速度。
 - Viewer.KeyFrameSize,可视化窗口中关键帧模型的大小。,仅影响 GUI 显示效果。
+### Monocular (单目)
+这是最基础的模式，仅使用一个单目相机进行 SLAM
+### Monocular-Inertial (单目-惯性，简称 Mono-Inertial 或 VI)
+单目相机和 IMU (Inertial Measurement Unit)
+### Stereo (双目)
+两个同步且经过校准的单目相机
+### Stereo-Inertial (双目-惯性)	
+双目相机 + IMU
+### RGB-D
+一个 RGB 相机 + 一个深度传感器
