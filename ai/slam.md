@@ -35,7 +35,7 @@
 
 ## 视觉slam
 ### 通用配置
-#### 摄像头参数
+#### 摄像头参数（内参矩阵和畸变参数）
 - Camera.fx, Camera.fy",焦距 (Focal Length)，以像素为单位。,影响 3D 投影和三角测量精度。
 - Camera.cx, Camera.cy",主点 (Principal Point) 坐标，即图像中心的偏移。,影响 3D 重建的几何中心。
 - Camera.k1, Camera.k2, ...",径向/切向畸变系数。,校正图像失真，确保特征点位置的准确性。
