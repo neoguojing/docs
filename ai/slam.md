@@ -35,9 +35,21 @@
 
 ## 视觉slam
 ### 通用配置
-参数名 (常见),作用,影响
+#### 摄像头参数
 - Camera.fx, Camera.fy",焦距 (Focal Length)，以像素为单位。,影响 3D 投影和三角测量精度。
 - Camera.cx, Camera.cy",主点 (Principal Point) 坐标，即图像中心的偏移。,影响 3D 重建的几何中心。
 - Camera.k1, Camera.k2, ...",径向/切向畸变系数。,校正图像失真，确保特征点位置的准确性。
 - Camera.fps,相机帧率 (Frames per Second)。,决定运动估计的频率，过低可能导致快速运动跟踪失败。
 - Camera.width, Camera.height",图像分辨率。,影响图像处理速度和内存占用。
+#### ORB特征参数
+参数名 (常见),作用,影响
+- ORBextractor.nFeatures,每帧图像提取的最大 ORB 特征点数量。,越多则地图越密，但处理时间越长。
+- ORBextractor.scaleFactor,图像金字塔的尺度因子（例如 1.2）。,决定在不同分辨率（尺度）上提取特征的数量。
+- ORBextractor.nLevels,图像金字塔的层数。,影响 SLAM 系统处理远近不同物体（尺度变化）的能力。
+- ORBextractor.iniThFAST, ORBextractor.minThFAST",FAST 角点检测的阈值。,控制提取出的特征点的质量和数量。
+#### 其他：
+参数名 (常见),作用,影响
+- ThDepth (或类似),深度阈值（用于立体/RGB-D）。,决定哪些特征点可以被初始化为 3D 地图点。
+- MaxFrames,地图保存的最大关键帧数量。,影响内存占用和系统运行速度，通常设置为 0 表示不限制。
+- PnPRuns,运行 PnP 算法的迭代次数。,影响相机位姿估计的精度和速度。
+- Viewer.KeyFrameSize,可视化窗口中关键帧模型的大小。,仅影响 GUI 显示效果。
