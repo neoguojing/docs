@@ -157,6 +157,7 @@ ghcr.io/openclaw/openclaw
 
 ```bash
 export OPENCLAW_IMAGE="ghcr.io/openclaw/openclaw:latest"
+exportOLLAMA_API_KEY="123"
 ./docker-setup.sh
 ```
 
