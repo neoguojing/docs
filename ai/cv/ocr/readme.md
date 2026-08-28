@@ -17,3 +17,37 @@
    ▼
 结构化字段
 ```
+
+```
+                 OCR Pipeline
+                      │
+       ┌──────────────┼──────────────┐
+       ↓              ↓              ↓
+  Detection       Alignment      Recognition
+       │              │              │
+       │              │              ├─ CRNN
+       │              │              ├─ SVTR
+       │              │              └─ Transformer
+       │              │
+       │              ├─ Keypoint
+       │              ├─ Homography
+       │              └─ STN
+       │
+       ├─ DBNet
+       ├─ EAST
+       ├─ CRAFT
+       └─ YOLO（目标检测）
+
+                      ↓
+                  Correction
+                      │
+          ┌───────────┼───────────┐
+          ↓           ↓           ↓
+        Rule       Dictionary   Model
+          │           │           │
+          └───────────┼───────────┘
+                      ↓
+                  Structure
+                      ↓
+                  Final Result
+```
