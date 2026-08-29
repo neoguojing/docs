@@ -92,3 +92,57 @@ class YOLOv8PoseHead(nn.Module):
         # 展平 H 和 W，准备进行后续解码 (Anchor-free 架构标准操作)
         out = out.flatten(2)  # [B, 56, H*W] 
         return out
+
+def decode_pose_predictions(preds, num_classes=1, num_kpts=17):
+    """
+    分离并解码网络前向传播的输出张量
+    :param preds: [B, 56, 8400] 的原始预测张量
+    """
+    # 维度互换以方便操作: [B, 8400, 56]
+    preds = preds.transpose(1, 2)
+    
+    # 1. 切割 Bounding Box 数据 (前 4 位)
+    boxes = preds[..., :4]
+    
+    # 2. 切割分类置信度得分，并执行 Sigmoid 将值域映射到 0~1 之间
+    cls_scores = preds[..., 4 : 4 + num_classes].sigmoid()
+    
+    # 3. 切割关键点数据 (最后 51 位)
+    kpts_raw = preds[..., 4 + num_classes :]
+    
+    # 将关键点重塑为易读形状 [B, 8400, 17, 3]
+    batch_size, num_anchors, _ = kpts_raw.shape
+    kpts_reshaped = kpts_raw.view(batch_size, num_anchors, num_kpts, 3)
+    
+    # 提取 (x, y) 坐标 (实际部署时还需基于 stride 进行反归一化)
+    kpts_coords = kpts_reshaped[..., :2] 
+    
+    # 提取关键点可见性 (遮挡概率)，同样执行 Sigmoid
+    kpts_visibility = kpts_reshaped[..., 2:].sigmoid()
+    
+    return boxes, cls_scores, kpts_coords, kpts_visibility
+
+def compute_oks_loss(pred_kpts, target_kpts, bbox_areas, sigmas_kpt):
+    """
+    计算基于 OKS 的惩罚 Loss
+    :param pred_kpts: 预测坐标 [N, 17, 2] (已匹配上真实框的有效预测)
+    :param target_kpts: 真实坐标 [N, 17, 2]
+    :param bbox_areas: 当前人体的尺度面积 [N]
+    :param sigmas_kpt: 17 维张量，COCO 定义的不同关键点容忍度常数
+    """
+    # 1. 计算两点之间欧氏距离的平方 (Δx² + Δy²)
+    d_squared = torch.sum((pred_kpts - target_kpts) ** 2, dim=-1) # Shape: [N, 17]
+
+    # 2. 根据不同关键点的敏感度(sigma)放大容差限制
+    sigma_squared = (sigmas_kpt * 2) ** 2
+    
+    # 3. 计算 OKS 分母，确保人体在画面大或小时 Loss 尺度统一
+    denominator = 2 * bbox_areas.unsqueeze(1) * sigma_squared + 1e-9
+    
+    # 4. 计算 OKS 相似度 
+    oks = torch.exp(-d_squared / denominator) # Shape: [N, 17]
+    
+    # 5. 网络需要最小化 Loss，因此用 1 减去 OKS
+    loss = 1.0 - oks
+    
+    return loss.mean()
