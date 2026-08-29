@@ -73,3 +73,175 @@ $$\hat{p} = \arg\max_{p} H(p)$$
 | **抗遮挡与鲁棒性** | 易受局部噪点干扰，定位漂移严重 | **极强**（高斯斑块迫使网络学习整体上下文，而非单一像素） |
 | **训练收敛难度** | 困难（容易陷入局部极小值） | **容易**（平滑的高斯分布提供了稳定、指向性明确的梯度） |
 | **最终定位精度** | 像素级（常伴随抖动） | **亚像素级精度**（支持微米级的精细校正） |
+
+
+```
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# =====================================================================
+# 1. 真值生成：绘制“寻宝热力图” (Gaussian Heatmap Generation)
+# =====================================================================
+class GaussianHeatmapGenerator:
+    """将绝对坐标转化为 2D 高斯概率分布矩阵"""
+    def __init__(self, output_size, sigma=2.0):
+        self.h_out, self.w_out = output_size
+        self.sigma = sigma
+
+    def __call__(self, keypoints, img_size):
+        """
+        :param keypoints: [Batch, K, 2] 真实关键点坐标 (x, y)
+        :param img_size: (H_img, W_img) 原始图像尺寸
+        :return: [Batch, K, H_out, W_out] 生成的高斯热力图真值
+        """
+        B, K, _ = keypoints.shape
+        h_img, w_img = img_size
+        
+        # 计算原图到热力图的缩放比例
+        scale_x = self.w_out / w_img
+        scale_y = self.h_out / h_img
+
+        # 创建二维网格坐标系
+        grid_y, grid_x = torch.meshgrid(
+            torch.arange(self.h_out, device=keypoints.device, dtype=torch.float32),
+            torch.arange(self.w_out, device=keypoints.device, dtype=torch.float32),
+            indexing='ij'
+        )
+
+        heatmaps = []
+        for b in range(B):
+            batch_hm = []
+            for k in range(K):
+                # 将原图坐标映射到热力图尺度
+                x_gt = keypoints[b, k, 0] * scale_x
+                y_gt = keypoints[b, k, 1] * scale_y
+                
+                # 计算二维高斯分布: exp(- (dx^2 + dy^2) / 2*sigma^2)
+                d2 = (grid_x - x_gt) ** 2 + (grid_y - y_gt) ** 2
+                hm = torch.exp(-d2 / (2 * (self.sigma ** 2)))
+                batch_hm.append(hm)
+            heatmaps.append(torch.stack(batch_hm))
+            
+        return torch.stack(heatmaps)
+
+# =====================================================================
+# 2. 网络架构：绘制热力图的全卷积网络 (Keypoint U-Net)
+# =====================================================================
+class KeypointUNet(nn.Module):
+    """一个轻量级的 U-Net，用于完整保留图像 2D 空间拓扑结构"""
+    def __init__(self, in_channels=3, num_keypoints=4):
+        super().__init__()
+        # 编码器 (下采样，提取高阶语义)
+        self.enc1 = self._conv_block(in_channels, 32)
+        self.pool1 = nn.MaxPool2d(2)
+        self.enc2 = self._conv_block(32, 64)
+        self.pool2 = nn.MaxPool2d(2)
+        
+        # 解码器 (上采样，结合低层特征恢复空间细节)
+        self.up1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
+        self.dec1 = self._conv_block(64, 32)
+        
+        # 输出层 (1x1 卷积，输出 K 张热力图，不改变尺寸)
+        self.head = nn.Conv2d(32, num_keypoints, kernel_size=1)
+
+    def _conv_block(self, in_c, out_c):
+        return nn.Sequential(
+            nn.Conv2d(in_c, out_c, 3, padding=1),
+            nn.BatchNorm2d(out_c),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_c, out_c, 3, padding=1),
+            nn.BatchNorm2d(out_c),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        e1 = self.enc1(x)
+        e2 = self.enc2(self.pool1(e1))
+        
+        d1 = self.dec1(torch.cat([self.up1(e2), e1], dim=1)) # Skip Connection
+        
+        # 输出 [Batch, K, H, W] 的热力图预测值
+        return torch.sigmoid(self.head(d1))
+
+# =====================================================================
+# 3. 亚像素微调：积分回归器 (Integral Regression / Soft-Argmax)
+# =====================================================================
+class IntegralRegression(nn.Module):
+    """全流程可微的坐标提取模块：通过概率加权求期望，直接获得亚像素精度"""
+    def __init__(self, output_size, img_size):
+        super().__init__()
+        self.h_out, self.w_out = output_size
+        self.h_img, self.w_img = img_size
+        
+        # 预先生成静态坐标网格
+        grid_y, grid_x = torch.meshgrid(
+            torch.arange(self.h_out, dtype=torch.float32),
+            torch.arange(self.w_out, dtype=torch.float32),
+            indexing='ij'
+        )
+        self.register_buffer('grid_x', grid_x)
+        self.register_buffer('grid_y', grid_y)
+
+    def forward(self, heatmaps):
+        B, K, H, W = heatmaps.shape
+        
+        # 将空间维度展平并计算 Softmax，将其转换为概率分布 P(x, y)
+        heatmaps_flat = heatmaps.view(B, K, -1)
+        probs = F.softmax(heatmaps_flat, dim=-1)
+        probs = probs.view(B, K, H, W)
+        
+        # 期望坐标 E(x) = sum(P(x,y) * x), E(y) = sum(P(x,y) * y)
+        pred_x = torch.sum(probs * self.grid_x, dim=[-2, -1])
+        pred_y = torch.sum(probs * self.grid_y, dim=[-2, -1])
+        
+        # 从热力图尺度还原回原始图像尺度
+        pred_x = pred_x * (self.w_img / self.w_out)
+        pred_y = pred_y * (self.h_img / self.h_out)
+        
+        return torch.stack([pred_x, pred_y], dim=-1)
+
+# =====================================================================
+# 4. Pipeline 运行与测试示例
+# =====================================================================
+if __name__ == "__main__":
+    # 配置参数
+    BATCH_SIZE = 2
+    NUM_KEYPOINTS = 4           # 4 个角点
+    IMG_SIZE = (256, 256)       # 输入图像大小
+    HEATMAP_SIZE = (128, 128)   # 网络输出热力图大小 (下采样 2 倍)
+
+    # 初始化模块
+    model = KeypointUNet(in_channels=3, num_keypoints=NUM_KEYPOINTS)
+    gt_generator = GaussianHeatmapGenerator(output_size=HEATMAP_SIZE, sigma=2.0)
+    decoder = IntegralRegression(output_size=HEATMAP_SIZE, img_size=IMG_SIZE)
+    criterion = nn.MSELoss()
+
+    # 模拟数据输入
+    dummy_images = torch.randn(BATCH_SIZE, 3, *IMG_SIZE)
+    # 模拟真实坐标: Batch=2, K=4, (x, y)
+    dummy_gt_coords = torch.tensor([
+        [[20.5, 30.2], [220.1, 35.0], [230.8, 200.5], [15.0, 210.0]], 
+        [[50.0, 50.0], [180.0, 60.0], [190.0, 200.0], [45.0, 190.0]]
+    ])
+
+    print("=== 训练阶段 (Training) ===")
+    # 1. 生成高斯热力图作为 Target
+    target_heatmaps = gt_generator(dummy_gt_coords, IMG_SIZE)
+    
+    # 2. 网络前向传播
+    pred_heatmaps = model(dummy_images)
+    
+    # 3. 计算 MSE Loss 并反向传播
+    loss = criterion(pred_heatmaps, target_heatmaps)
+    loss.backward()
+    print(f"Heatmap 尺寸: {pred_heatmaps.shape}")
+    print(f"MSE Loss 计算结果: {loss.item():.6f}")
+
+    print("\n=== 推理阶段 (Inference) ===")
+    # 4. 利用可微积分回归解码亚像素坐标
+    pred_coords = decoder(pred_heatmaps)
+    
+    print(f"真实坐标 (GT) 示例:\n{dummy_gt_coords[0].numpy()}")
+    print(f"预测坐标 (Pred) 示例 (带小数的亚像素精度):\n{pred_coords[0].detach().numpy()}")
+```
