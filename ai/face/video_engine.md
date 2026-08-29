@@ -21,30 +21,6 @@ VPS（Video Processing System）是一个分布式视频结构化处理平台，
 
 ---
 
-## 二、资源调度与管理（Manager）
-
-### 2.1 负载定义与状态维护
-
-系统并非简单依赖 CPU/内存指标，而是采用**"容量占比"**模型来衡量负载：
-
-- **基于分辨率的容量**：每个 Worker 节点的资源容量根据 GPU 型号预先配置，按视频流的分辨率划分。例如，一张显卡可能支持同时处理 20 路 1080P 视频，或 50 路 720P 视频。
-- **负载计算公式**：
-
-  > 总负载 = (已用 1080P 容量 / 总 1080P 容量) + (已用 720P 容量 / 总 720P 容量) + ...
-
-- **状态同步**：Worker 节点将资源容量、已用资源等信息上报到 Zookeeper，Manager 通过监听 Zookeeper 节点变化维护全局负载视图。`updateNodeStatus` 函数负责在任务分配或释放后更新节点资源使用信息。
-
-### 2.2 四大调度策略
-
-| 策略 | 触发条件 | 核心逻辑 | 目的 |
-|------|---------|---------|------|
-| **Assign（分配）** | 新任务到来 | 在所有可用 Worker 中找出负载最低的节点分配任务 | 初始负载均衡 |
-| **Rebalance（重平衡）** | 最高负载 > 0.8 且 最低 < 0.8 | 将高负载节点的部分任务迁移到低负载节点，持续直到最高负载降至 0.8 以下 | 防止热点，削峰填谷 |
-| **ReChange（腾挪）** | 资源碎片化，无法容纳大任务 | 选中负载最低的节点，将其上的现有任务迁移到其他机器，腾出连续资源空间 | 解决碎片化，接纳大任务 |
-| **Preemption（抢占）** | 高优先级（算法仓）任务资源不足 | 在集群中寻找运行低优先级任务的 Worker，强制终止这些任务释放资源，分配给高优先级任务 | 保障核心业务 SLA |
-
----
-
 ## 三、算法处理核心（C++ & Golang）
 
 ### 3.1 Worker 整体数据处理流水线（Pipeline）
@@ -344,3 +320,107 @@ Worker 内部通过 Go 语言的 Goroutine 和 Channel 实现高并发处理：
 - Go 端定义了一系列数据结构，如 OutputPacket、OutputObject 等，用于封装图像、特征和标注信息
 - 当数据需要从 Go 传递给 Lua 时，StageExecutor 会调用 MarshalPacket 函数，将 Go 的结构体转换为 Lua 能够识别的 table 格式
 - 反之，Lua 脚本处理完的结果（LTable）也会被 Go 端接收并转换回内部结构体，以便进行后续的存储或网络传输
+
+# resource-allocator (RA) 系统架构与设计说明书
+
+## 1. 核心概念与实体关系定义
+
+在 resource-allocator 系统中，核心实体包括 Manager、Node (Slave)、Resource (Task) 以及 Zookeeper。它们之间的逻辑定义与供需关系如下：
+
+### 1.1 实体定义与意义
+
+- **Resource（资源/任务）**：指系统中需要被调度的业务任务（算力需求侧）。在代码与 Zookeeper 目录中，Resource 与 Task 同义。每个 Resource 明确声明了所需的算力配额（如分辨率路数限制 Limits）、算法特征标签 (RequiredLabels) 以及任务优先级。
+
+- **Node（节点/Slave）**：指集群中实际执行计算任务的工作节点（算力供给侧）。每个 Node 向集群上报其最大算力承载上限 (quotas)、硬件标签 (labels) 及运行状态。
+
+- **Manager（调度器/Master）**：系统的决策中心。负责匹配 Node（供给）与 Resource（需求），执行抢占、平衡等调度算法，并将绑定关系写入 Zookeeper。
+
+- **Zookeeper（配置中心）**：系统的中枢总线与解耦媒介。存储全局节点状态与任务绑定信息，通过 Watch 机制实现 Manager 与 Slave 之间的异步解耦通知。
+
+### 1.2 实体间的信息绑定与映射关系
+
+- **供需匹配关系**：Node 决定了算力总池，Resource 消费算力池资源。调度器将 Resource 的 Limits 与 Node 的 quotas 进行匹配计算。
+
+- **多对一绑定映射**：一个 Node 可以同时运行多个 Resource，但受限于该 Node 的 quotas 上限。每一个 Resource 数据结构中均包含一个 AssignedNode 字段，用于记录其被指派的 Node ID。
+
+- **异步驱动关系**：Manager 不直接调用 Slave 接口。Manager 将 AssignedNode 写入 Zookeeper，Slave 通过监听 Zookeeper 节点变动，拉取指派给自身的 Resource 并执行。
+
+## 2. 核心系统架构
+
+- **Manager (Master/Leader)**：通过 Zookeeper 选举产生 Leader。负责接收新任务、计算配额、执行调度，以及在节点宕机时触发重新分配（Reconcile）与重平衡（Rebalance）。
+
+- **Slave (Worker)**：算力提供节点。启动时通过 Zookeeper 注册自身，监听分发给自身的任务变动事件并执行业务。
+
+- **Zookeeper (ZK)**：状态存储中间件。保存集群节点注册信息、任务列表、选举状态及全局通知事件。
+
+- **Operator Slave**：提供运维查询接口，用于监控 Pending 队列和节点状态。
+
+## 3. 资源分配与调度策略
+
+| 调度策略 | 触发条件 | 执行逻辑 |
+|---------|---------|---------|
+| **Assign（直接分配）** | 存在空闲可用节点 | 优先选择负载最小（空闲席位最多）的 Worker 节点分配任务。 |
+| **ReChange（置换释放）** | 无直接空闲节点 | 计算符合条件的 Worker 席位，移动部分现有资源以腾出空间。 |
+| **ExchangeByPriority（高优先抢占）** | 置换失败且当前任务优先级更高 | 强制剥夺低优先级任务占用的席位，将其退回 Pending 状态并分配给高优先级任务。 |
+| **Pending（挂起等待）** | 无可用节点且抢占失败 | 将任务放入 Pending 队列，等待后续资源释放。 |
+| **Reconcile/Rebalance（自愈与平衡）** | 节点上线/下线/宕机 | 按优先级对 Broken 或 Pending 任务重新分配，并重新平衡集群负载。 |
+
+## 4. Zookeeper 拓扑与核心数据结构
+
+### 4.1 目录结构拓扑（/resources/{ClusterID}/）
+
+- **/nodes**：记录所有已注册 Worker 的 NodeSpec 信息。
+- **/resources**：记录所有 Task 的 ResourceSpec 状态与绑定关系。
+- **/election & /leader_id**：维护 Manager 的选主过程及当前 Leader 主机名。
+- **/notifier & /quotas**：广播集群全局资源变更与配额更新通知。
+
+### 4.2 实体结构定义
+
+#### 节点数据结构 (NodeSpec)
+
+```protobuf
+message NodeSpec {
+  string cluster_id = 1;               // 集群 ID
+  string id = 2;                       // 节点唯一 ID
+  map<string, uint64> quotas = 3;      // 节点容量配额 (如分辨率/路数限制)
+  map<string, string> labels = 4;      // 节点标签 (硬件类型、功能标识等)
+  int32 version = 5;                   // 状态版本号
+  NodeStatus status = 6;               // 当前运行状态
+  bytes payload = 7;                   // 附加业务数据
+}
+```
+
+#### 任务数据结构 (ResourceSpec)
+
+```protobuf
+message ResourceSpec {
+  string Id = 1;                       // Task 唯一标识
+  map<string, int> Limits = 2;         // 资源消耗限制 (如 RESOLUTION_1080P: 1)
+  map<string, string> RequiredLabels = 3; // 所需匹配的节点特征标签
+  string AssignedNode = 4;             // 指派的 Worker 节点 ID
+  int32 Priority = 5;                  // 任务优先级
+  bytes Payload = 6;                   // 业务载荷 (如 RTSP 视频流地址)
+}
+```
+
+## 5. 完整运行流程示例（以 engine_video_process_service_test_1 为例）
+
+### 阶段一：Worker 节点注册
+
+1. Worker 进程启动，调用 `s.join(false)`。
+2. 在 `/resources/engine_video_process_service_test_1/nodes/vps-object_snapshot-1646296705472111645` 下创建节点。
+3. 写入序列化数据：
+   - `quotas`: `{"RESOLUTION_1080P": 4, "RESOLUTION_2K": 4}`
+   - `labels`: `{"hardware": "nv_p4", "objectType": "OBJECT_SNAPSHOT"}`
+
+### 阶段二：新任务创建与调度
+
+1. Client 提交任务 `10002022030014415467801` 至 Manager。
+2. Manager 调用 `addResourceWithOption`，经 Scheduler 评估后，匹配至 Worker `vps-object_snapshot-1646296705472111645`。
+3. Manager 使用 `ZkSafeCreate` 创建 ZK 路径 `/resources/engine_video_process_service_test_1/resources/10002022030014415467801`。
+4. 将任务数据中的 `AssignedNode` 字段更新为目标 Worker ID `vps-object_snapshot-1646296705472111645`。
+
+### 阶段三：任务拉取与执行
+
+1. Worker 节点的 `Slave.Run()` 主循环触发 watch 事件。
+2. Worker 通过 `s.getResources()` 拉取分发给自身的任务数据，读取 Payload 中的 RTSP 流地址开始执行。
