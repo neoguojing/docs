@@ -433,3 +433,51 @@
 - 3×3 叠两层等于 5×5，参数更少能力更强
 - 小步长保细节，大步长降维度，补零控输出尺寸
 - BatchNorm 放卷积后激活前，Dropout 推理要关闭
+
+```
+class ClassicCNN(nn.Module):
+    def __init__(self):
+        super(ClassicCNN, self).__init__()
+        
+        # --- 特征提取部分 ---
+        # 第一个卷积层：输入1通道(灰度图)，输出32个特征图，卷积核大小3x3，填充1保持尺寸不变
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
+        
+        # 第二个卷积层：输入32通道，输出64个特征图，卷积核大小3x3，填充1
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+        
+        # 最大池化层：窗口大小2x2，步长2，将特征图的高和宽各缩小一半
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        # --- 分类器部分 ---
+        # 经过两次池化后，28x28的图像会变成7x7。
+        # 输入维度 = 64(通道数) * 7(高) * 7(宽) = 3136
+        self.fc1 = nn.Linear(64 * 7 * 7, 128)  # 第一个全连接层：3136 -> 128
+        
+        # 第二个全连接层（输出层）：128 -> 10 (对应0-9共10个数字类别)
+        self.fc2 = nn.Linear(128, 10)
+
+    def forward(self, x):
+        """
+        定义前向传播过程，即数据在神经网络中的流动路径
+        """
+        # 第一层卷积 -> ReLU激活 -> 池化
+        # 输入: [batch_size, 1, 28, 28] -> 输出: [batch_size, 32, 14, 14]
+        x = self.pool(torch.relu(self.conv1(x)))
+        
+        # 第二层卷积 -> ReLU激活 -> 池化
+        # 输入: [batch_size, 32, 14, 14] -> 输出: [batch_size, 64, 7, 7]
+        x = self.pool(torch.relu(self.conv2(x)))
+        
+        # 将二维特征图展平为一维向量，以便输入全连接层
+        # view(-1, ...) 中的 -1 表示自动计算 batch_size 维度
+        x = x.view(-1, 64 * 7 * 7)
+        
+        # 第一个全连接层 -> ReLU激活
+        x = torch.relu(self.fc1(x))
+        
+        # 输出层（不加激活函数，因为 CrossEntropyLoss 内部会自动处理 Softmax）
+        x = self.fc2(x)
+        
+        return x
+```
