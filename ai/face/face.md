@@ -91,7 +91,8 @@ Similarity Transform / Affine Transform
 
 ### 输出
 例如 112×112 标准人脸
-
+### 算法
+基于标准人脸和关键点，计算变化举证，然后执行放射变换
 ---
 
 ## 6. 帧选择
