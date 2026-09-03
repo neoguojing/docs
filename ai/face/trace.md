@@ -369,7 +369,7 @@ class CascadeTracker:
         track.confidence = max(track.confidence, det.confidence)
         track.missed_frames = 0
 ```
-
+```
 graph TB
     subgraph 视频流与跟踪层
         Stream[多路视频流接入] --> Tracker[目标跟踪器 Tracker]
@@ -414,6 +414,7 @@ graph TB
     classDef external fill:#f5f5f5,stroke:#616161,stroke-width:1px;
     class StreamManager,Evaluator,CacheManager,TriggerCtrl core;
     class Stream,Tracker,Downstream,GPUPool external;
+```
 
 ## 概念
 - 卡尔曼滤波器（Kalman Filter, KF）**是一种用于线性动态系统状态估计的递归算法，特别适合噪声和不确定性环境下的状态预测和估计
