@@ -73,7 +73,7 @@ bbox、score、class
 - Roll：左右歪头
 
 ### 方法
-- landmark + 几何方法
+- landmark + 几何方法： 基于Pnp算法，通过关键点和预设的3d点位，使用算法求解相机姿态
 - 深度学习回归
 
 ---
