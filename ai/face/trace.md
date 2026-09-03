@@ -417,6 +417,67 @@ graph TB
 ```
 
 ```mermaid
+
+graph TD
+    InputFrame[/输入: 视频帧 Frame N/] --> RunTracker[执行目标跟踪 Tracker]
+    RunTracker --> Targets[/输出: 当前帧所有目标/]
+    
+    Targets --> LoopStart{遍历每个目标}
+    
+    %% 第一阶段：初筛
+    LoopStart -->|获取目标 A| ROIFilter{是否在 ROI 区域内?}
+    ROIFilter -- 否 --> Drop1[丢弃目标]
+    ROIFilter -- 是 --> EvalQuality[质量评估器计算得分]
+    
+    EvalQuality --> QualityCheck{得分 >= 阈值?}
+    QualityCheck -- 否 --> Drop2[丢弃该帧目标]
+    
+    %% 第二阶段：缓存与替换
+    QualityCheck -- 是 --> TrackletCheck{属于新目标新ID?}
+    TrackletCheck -- 是 --> MaxNumCheck{当前总目标数 < Max?}
+    MaxNumCheck -- 否 --> Drop3[丢弃: 达到最大并发限制]
+    MaxNumCheck -- 是 --> CreateTracklet[创建新 Tracklet 加入缓存] --> CacheLogic
+    
+    TrackletCheck -- 否 --> CacheLogic[分段选帧缓存逻辑]
+    
+    CacheLogic --> CacheFullCheck{小图缓存已满 Top-N?}
+    CacheFullCheck -- 否 --> AddToCache[将目标切图加入缓存]
+    CacheFullCheck -- 是 --> CompareQuality{新得分 > 缓存最低分?}
+    CompareQuality -- 否 --> Drop4[丢弃: 质量较低]
+    CompareQuality -- 是 --> ReplaceCache[替换掉缓存中最低分的帧]
+    
+    AddToCache --> UpdateScene
+    ReplaceCache --> UpdateScene
+    
+    UpdateScene{新得分是历史最高分?}
+    UpdateScene -- 是 --> SaveScene[保存当前原帧到场景大图]
+    UpdateScene -- 否 --> StateMachine
+    SaveScene --> StateMachine
+    
+    %% 第三阶段：触发器检查
+    StateMachine[进入触发器状态机] --> TriggerCheck{满足任一输出条件?}
+    TriggerCheck -- "不满足" --> NextTarget[处理下一个目标 / 等待下一帧]
+    
+    TriggerCheck -- "1.跟踪丢失结束<br>2.超时大于25s<br>3.快速响应<br>4.周期触发<br>5.极高质量" --> MarkSelect[标记 will_be_selected = true]
+    
+    MarkSelect --> OutputProcess[按质量分倒序排序缓存帧]
+    OutputProcess --> OutputData[/输出: 优选切图Top-N + 场景大图/]
+    
+    OutputData --> CleanUp{轨迹是否已结束?}
+    CleanUp -- 否 --> ResetStatus[重置上次筛选时间与状态] --> NextTarget
+    CleanUp -- 是 --> RemoveTracklet[从缓存池移除该轨迹] --> NextTarget
+    
+    NextTarget --> LoopStart
+    
+    classDef decision fill:#fff3e0,stroke:#e65100,stroke-width:1.5px;
+    classDef process fill:#e3f2fd,stroke:#1565c0,stroke-width:1px;
+    classDef drop fill:#ffebee,stroke:#c62828,stroke-width:1px,stroke-dasharray: 5 5;
+    classDef output fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    
+    class ROIFilter,QualityCheck,TrackletCheck,MaxNumCheck,CacheFullCheck,CompareQuality,UpdateScene,TriggerCheck,CleanUp decision;
+    class EvalQuality,CreateTracklet,ReplaceCache,AddToCache,SaveScene,StateMachine,OutputProcess,ResetStatus,RemoveTracklet process;
+    class Drop1,Drop2,Drop3,Drop4 drop;
+    class InputFrame,Targets,OutputData output;
 ```
 
 ## 概念
