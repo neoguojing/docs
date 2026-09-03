@@ -370,6 +370,50 @@ class CascadeTracker:
         track.missed_frames = 0
 ```
 
+graph TB
+    subgraph 视频流与跟踪层
+        Stream[多路视频流接入] --> Tracker[目标跟踪器 Tracker]
+        Tracker -- 输出带ID的轨迹与坐标 --> StreamManager
+        Stream -- 视频原帧 --> StreamManager
+    end
+
+    subgraph 选帧核心模块 (Frame Selector)
+        StreamManager[多流管理器 Stream Manager] 
+        
+        StreamManager --> Evaluator
+        StreamManager --> CacheManager
+        StreamManager --> TriggerCtrl
+
+        Evaluator[质量评估器 Quality Evaluator]
+        Evaluator -. 包含 .-> FaceQ[人脸质量: 模糊度/姿态/关键点]
+        Evaluator -. 包含 .-> BodyQ[人体质量: 遮挡/完整度]
+
+        CacheManager[轨迹缓存管理器 Tracklet Cache]
+        CacheManager -. 管理 .-> TrackObj[单个目标 Tracklet]
+        TrackObj -. 包含 .-> TargetCrops[Top-N 小图切片]
+        TrackObj -. 包含 .-> SceneFrame[最优质量场景大图]
+        
+        TriggerCtrl[触发调度器 Trigger Controller]
+        TriggerCtrl -. 包含条件 .-> Conditions((1.跟踪结束<br>2.超时筛选<br>3.快速响应<br>4.周期筛选<br>5.高质量触发))
+    end
+
+    subgraph 底层资源
+        GPUPool[(GPU 缓存池 / 显存)]
+        CacheManager <--> GPUPool : 存储降采样大图/特征
+    end
+
+    subgraph 下游业务层
+        Downstream[特征提取 / 人脸比对 / 结构化分析]
+    end
+
+    Evaluator -. 打分 .-> CacheManager
+    CacheManager <--> TriggerCtrl : 状态查询与更新
+    TriggerCtrl -- 组装并输出优选帧 --> Downstream
+    
+    classDef core fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef external fill:#f5f5f5,stroke:#616161,stroke-width:1px;
+    class StreamManager,Evaluator,CacheManager,TriggerCtrl core;
+    class Stream,Tracker,Downstream,GPUPool external;
 
 ## 概念
 - 卡尔曼滤波器（Kalman Filter, KF）**是一种用于线性动态系统状态估计的递归算法，特别适合噪声和不确定性环境下的状态预测和估计
