@@ -371,13 +371,13 @@ class CascadeTracker:
 ```
 ```mermaid
 graph TB
-    subgraph 视频流与跟踪层
+    subgraph Layer1 [视频流与跟踪层]
         Stream[多路视频流接入] --> Tracker[目标跟踪器 Tracker]
         Tracker -- 输出带ID的轨迹与坐标 --> StreamManager
         Stream -- 视频原帧 --> StreamManager
     end
 
-    subgraph 选帧核心模块 (Frame Selector)
+    subgraph Layer2 [选帧核心模块 Frame Selector]
         StreamManager[多流管理器 Stream Manager] 
         
         StreamManager --> Evaluator
@@ -397,12 +397,12 @@ graph TB
         TriggerCtrl -. 包含条件 .-> Conditions((1.跟踪结束<br>2.超时筛选<br>3.快速响应<br>4.周期筛选<br>5.高质量触发))
     end
 
-    subgraph 底层资源
+    subgraph Layer3 [底层资源]
         GPUPool[(GPU 缓存池 / 显存)]
-        CacheManager <--> GPUPool : 存储降采样大图/特征
+        CacheManager <--> GPUPool : 存储大图与特征
     end
 
-    subgraph 下游业务层
+    subgraph Layer4 [下游业务层]
         Downstream[特征提取 / 人脸比对 / 结构化分析]
     end
 
@@ -414,6 +414,9 @@ graph TB
     classDef external fill:#f5f5f5,stroke:#616161,stroke-width:1px;
     class StreamManager,Evaluator,CacheManager,TriggerCtrl core;
     class Stream,Tracker,Downstream,GPUPool external;
+```
+
+```mermaid
 ```
 
 ## 概念
