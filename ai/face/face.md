@@ -13,7 +13,7 @@ bbox、score、class
 
 ### 常见模型
 Faster R-CNN、RetinaNet、YOLO、RetinaFace、SCRFD
-
+两阶段检测：RPN
 ---
 
 ## 2. 人脸关键点 Landmark
