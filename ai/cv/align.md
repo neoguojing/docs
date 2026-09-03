@@ -129,3 +129,61 @@ def align_face(image, source_keypoints):
     )
     
     return aligned_face
+
+import cv2
+import numpy as np
+
+def order_points(pts):
+    """规范化四点顺序：左上、右上、右下、左下"""
+    rect = np.zeros((4, 2), dtype="float32")
+    x_sorted = pts[np.argsort(pts[:, 0]), :]
+    left_most = x_sorted[:2, :]
+    right_most = x_sorted[2:, :]
+    rect[0] = left_most[np.argsort(left_most[:, 1])[0]]
+    rect[3] = left_most[np.argsort(left_most[:, 1])[1]]
+    rect[1] = right_most[np.argsort(right_most[:, 1])[0]]
+    rect[2] = right_most[np.argsort(right_most[:, 1])[1]]
+    return rect
+
+def align_text(image, box_points):
+    """
+    基于4顶点多边形的透视变换文本截取
+    :param image: 原始图像
+    :param box_points: 任意四边形的4个坐标，shape (4, 2)
+    :return: 拉平并裁剪出的矩形文本行图像
+    """
+    # 1. 规范化四点顺序
+    rect = order_points(np.array(box_points, dtype="float32"))
+    (tl, tr, br, bl) = rect
+
+    # 2. 计算目标矩形的宽与高 (取对应边缘最大值)
+    width_top = np.linalg.norm(tr - tl)
+    width_bottom = np.linalg.norm(br - bl)
+    max_width = max(int(width_top), int(width_bottom))
+
+    height_left = np.linalg.norm(tl - bl)
+    height_right = np.linalg.norm(tr - br)
+    max_height = max(int(height_left), int(height_right))
+
+    # 3. 构造目标标准矩形坐标
+    target_pts = np.array([
+        [0, 0],
+        [max_width - 1, 0],
+        [max_width - 1, max_height - 1],
+        [0, max_height - 1]
+    ], dtype="float32")
+
+    # 4. 计算 3x3 透视变换矩阵
+    M = cv2.getPerspectiveTransform(rect, target_pts)
+
+    # 5. 执行透视变换重采样
+    aligned_text = cv2.warpPerspective(
+        image, 
+        M, 
+        (max_width, max_height),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE # 边缘复制防黑边
+    )
+
+    return aligned_text
+```
