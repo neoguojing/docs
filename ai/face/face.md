@@ -12,8 +12,10 @@
 bbox、score、class
 
 ### 常见模型
-- Faster R-CNN： 两阶段检测，RPN负责生成描框
-- RetinaNet、YOLO、RetinaFace、SCRFD
+- Faster R-CNN： 两阶段检测，RPN负责生成描框，ROI head对描框预测和微调
+- RetinaNet，RetinaFace ：单阶段检测
+- YOLO
+- SCRFD
 
 ---
 
