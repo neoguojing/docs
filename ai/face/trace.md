@@ -237,6 +237,140 @@ $L(D2)$ 未被访问，保持为 0。
 *   T2 ↔ D1 (权重 7)
 **全局最大总收益：15**。算法完美避开了局部贪心可能导致的“T1强占D1导致T2只能匹配极差的D2（总收益仅10）”的灾难性分配。
 
+# 级联多目标跟踪 (MOT) 系统执行流程与伪代码
+
+级联多目标跟踪（MOT）系统通过目标检测、卡尔曼滤波（状态估计）与匈牙利算法（最大权匹配）的深度结合，解决目标相互遮挡和特征形变导致的光流断裂问题。
+
+## 1. 核心执行流程
+
+*   **检测 (Detection)：** 通过视觉模型提取当前帧画面的所有目标边界框（BBox）及其对应的特征向量（Align Feature）。
+*   **预测 (Prediction)：** 利用卡尔曼滤波器，将上一帧留存的所有活跃轨迹基于运动惯性向前推演，计算出目标在当前帧的预测坐标。
+*   **分组与匹配 (Association)：** 将已知轨迹按置信度划分为高置信度（`set_high`）与低置信度（`set_low`）两组。优先计算 `set_high` 与新检测框的相似度矩阵，通过 GraphKM 进行二分图最优分配；未匹配的目标进入第二轮，与 `set_low` 进行挽救匹配。
+*   **更新与融合 (Update)：** 对匹配成功的轨迹，利用实际检测框修正卡尔曼预测状态，并将新老特征按 0.9 : 0.1 的动量比例进行融合平滑。
+*   **生命周期 (Lifecycle)：** 连续未匹配的轨迹置信度按 0.85 衰减，低于阈值则彻底销毁；未被任何现有轨迹认领的新检测框，则被赋予新 ID 生成独立轨迹。
+
+---
+
+## 2. 完整数值推演
+
+设定场景：
+*   **帧 $T_1$**：存在轨迹 T1（中心 $x=100$，速度 $v=10$）和 T2（中心 $x=200$，速度 $v=5$）。
+*   **帧 $T_2$**：视觉检测器输出目标 D1（$x=112$）和 D2（$x=206$）。
+
+**阶段 A：卡尔曼预测**
+*   T1 预测位置：$100 + 10 = 110$
+*   T2 预测位置：$200 + 5 = 205$
+
+**阶段 B：构建相似度矩阵**
+系统综合距离与特征生成代价矩阵（分值越高越匹配）：
+
+| 轨迹 / 检测 | D1 ($x=112$) | D2 ($x=206$) |
+| :--- | :--- | :--- |
+| **T1 (预=$110$)** | 0.9 (距离 2) | 0.1 (距离 96) |
+| **T2 (预=$205$)** | 0.2 (距离 93) | 0.85 (距离 1) |
+
+**阶段 C：GraphKM 最优分配**
+算法锁定全局最大权重和为 1.75（$0.9 + 0.85$）。输出正确配对：**T1 ↔ D1**，**T2 ↔ D2**。
+
+**阶段 D：卡尔曼状态更新**
+设卡尔曼增益 $K=0.6$。T1 的最终修正位置为 $110 + 0.6 \times (112 - 110) = 111.2$。完成位置纠偏与特征更新。
+
+---
+
+## 3. 完整级联匹配伪代码
+
+```python
+class Track:
+    def __init__(self, id, bbox, feature, confidence):
+        self.id = id
+        self.state = bbox
+        self.feature = feature
+        self.confidence = confidence
+        self.kf = KalmanFilter()
+        self.missed_frames = 0
+        
+    def is_high_confidence(self):
+        return self.confidence > 0.5
+
+class CascadeTracker:
+    def __init__(self):
+        self.tracks = []
+        self.next_id = 1
+        self.decay_rate = 0.85
+        self.match_thresh = 0.4
+        self.feat_momentum = 0.9
+
+    def step(self, frame_detections):
+        '''
+        处理单帧输入，返回当前活跃的目标轨迹
+        '''
+        # 1. 预测阶段 (Predict)
+        for track in self.tracks:
+            track.state = track.kf.predict(track.state)
+            track.missed_frames += 1
+
+        # 2. 轨迹分组
+        set_high = [t for t in self.tracks if t.is_high_confidence()]
+        set_low  = [t for t in self.tracks if not t.is_high_confidence()]
+
+        # 3. 第一次级联匹配 (高置信度组)
+        cost_matrix_high = TargetBase.compute_similarity(set_high, frame_detections)
+        matches_a, uninit_trk_a, uninit_det_a = GraphKM.solve(cost_matrix_high, self.match_thresh)
+
+        # 提取第一次未匹配的检测框
+        rem_detections = [frame_detections[i] for i in uninit_det_a]
+
+        # 4. 第二次级联匹配 (低置信度组挽救)
+        cost_matrix_low = TargetBase.compute_similarity(set_low, rem_detections)
+        matches_b, uninit_trk_b, uninit_det_b = GraphKM.solve(cost_matrix_low, self.match_thresh)
+
+        # 5. 状态更新与特征融合 (Update)
+        matched_track_ids = set()
+
+        # 更新第一轮匹配结果
+        for trk_idx, det_idx in matches_a:
+            self._update_track(set_high[trk_idx], frame_detections[det_idx])
+            matched_track_ids.add(set_high[trk_idx].id)
+
+        # 更新第二轮匹配结果
+        for trk_idx, rem_det_idx in matches_b:
+            self._update_track(set_low[trk_idx], rem_detections[rem_det_idx])
+            matched_track_ids.add(set_low[trk_idx].id)
+
+        # 6. 未匹配轨迹衰减与清理 (Decay & Delete)
+        surviving_tracks = []
+        for track in self.tracks:
+            if track.id not in matched_track_ids:
+                track.confidence *= self.decay_rate  # 置信度衰减
+                if track.confidence >= 0.1:          # 未跌破死亡阈值则保留
+                    surviving_tracks.append(track)
+            else:
+                surviving_tracks.append(track)
+        
+        self.tracks = surviving_tracks
+
+        # 7. 生成新轨迹 (Generate)
+        for rem_det_idx in uninit_det_b:
+            det = rem_detections[rem_det_idx]
+            new_track = Track(self.next_id, det.bbox, det.feature, det.confidence)
+            self.tracks.append(new_track)
+            self.next_id += 1
+
+        # 返回当前帧仍符合输出条件的轨迹
+        return [t for t in self.tracks if t.is_high_confidence()]
+
+    def _update_track(self, track, det):
+        '''内部辅助函数：更新匹配成功的轨迹状态'''
+        # 卡尔曼滤波修正位置
+        track.state = track.kf.update(track.state, det.bbox)
+        # 特征 EMA 平滑融合
+        track.feature = self.feat_momentum * track.feature + (1 - self.feat_momentum) * det.feature
+        # 置信度重置/提升
+        track.confidence = max(track.confidence, det.confidence)
+        track.missed_frames = 0
+```
+
+
 ## 概念
 - 卡尔曼滤波器（Kalman Filter, KF）**是一种用于线性动态系统状态估计的递归算法，特别适合噪声和不确定性环境下的状态预测和估计
 ### 追踪
