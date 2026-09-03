@@ -369,7 +369,7 @@ class CascadeTracker:
         track.confidence = max(track.confidence, det.confidence)
         track.missed_frames = 0
 ```
-```
+```mermaid
 graph TB
     subgraph 视频流与跟踪层
         Stream[多路视频流接入] --> Tracker[目标跟踪器 Tracker]
