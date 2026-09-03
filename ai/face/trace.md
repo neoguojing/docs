@@ -370,7 +370,7 @@ class CascadeTracker:
         track.missed_frames = 0
 ```
 ```mermaid
-graph TB
+flowchart TB
     subgraph Layer1 [视频流与跟踪层]
         Stream[多路视频流接入] --> Tracker[目标跟踪器 Tracker]
         Tracker -- 输出带ID的轨迹与坐标 --> StreamManager
@@ -399,15 +399,16 @@ graph TB
 
     subgraph Layer3 [底层资源]
         GPUPool[(GPU 缓存池 / 显存)]
-        CacheManager <--> GPUPool : 存储大图与特征
     end
 
     subgraph Layer4 [下游业务层]
         Downstream[特征提取 / 人脸比对 / 结构化分析]
     end
 
+    %% 跨模块连线（放置在子图外部，符合 GitHub 解析器最佳安全实践）
+    CacheManager <-->|存储大图与特征| GPUPool
     Evaluator -. 打分 .-> CacheManager
-    CacheManager <--> TriggerCtrl : 状态查询与更新
+    CacheManager <-->|状态查询与更新| TriggerCtrl
     TriggerCtrl -- 组装并输出优选帧 --> Downstream
     
     classDef core fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
