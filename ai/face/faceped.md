@@ -40,3 +40,97 @@
 > **其次是质量把控：** 选出的高价值帧会并行进入质量评估网络。人脸分支会计算关键点、姿态角和模糊度；人体分支则评估完整度和遮挡情况。
 >
 > **最后是属性提取与清洗：** 基于前面的质量评估结果进行**过滤**，剔除侧脸、模糊、严重遮挡的废片。只有满足阈值的高质量目标，才会送入人体分类网络提取属性（如衣着颜色等），最终输出高质量的结构化数据供业务端使用。”
+
+
+# 人脸人体关联匹配 (Face-Body Association) 算法总结
+
+在 FacePed (人脸人体) Pipeline 中，人脸人体关联（通常称为 Cupid 模块）负责解决“画面中的哪张脸属于哪个身体”的身份绑定问题。以下是工业界解决该问题的核心算法链路及底层原理总结。
+
+## 一、 工业界常用关联策略（按算力成本由低到高）
+
+在实际工程中，通常采用**级联匹配 (Cascade Matching)** 策略：先用极低算力的“空间几何关联”快速绑定大部分简单样本，再将剩余的困难样本（Hard Cases）送入“深度特征匹配”进行精准绑定，以兼顾精度与实时吞吐量。
+
+### 1. 空间几何关联 (Heuristic / 规则法)
+* **适用场景:** 人员稀疏、无严重遮挡。
+* **核心逻辑:** 
+  * 校验人脸 BBox 是否落在人体 BBox 的上半部分（包含关系）。
+  * 计算人脸中心点到人体顶部中心点的欧式距离。
+  * 校验人脸框与人体框的宽高比例约束。
+
+### 2. 基于人体关键点 (Pose-based Association)
+* **适用场景:** 有一定遮挡，且 Pipeline 已包含人体关键点检测模块。
+* **核心逻辑:** 利用人体骨骼点定位头部关键点（Nose, Eyes, Ears），判断人脸 BBox 与头部关键点的重叠程度。
+
+### 3. 深度特征匹配 (Appearance / Re-ID)
+* **适用场景:** 密集人群（如早高峰地铁站）、严重遮挡、跨镜追踪。
+* **核心逻辑:** 提取人脸和人体的深度特征并进行度量学习（Metric Learning），通过计算余弦相似度分配 ID。
+
+### 4. 端到端联合检测 (End-to-End Joint Detection)
+* **适用场景:** 算法架构前沿演进。
+* **核心逻辑:** 修改目标检测器的预测头，在预测人体 BBox 时直接回归出该人体的人脸 BBox，实现天然的 ID 绑定。
+
+---
+
+## 二、 核心模块：Re-ID (行人重识别) 与特征提取
+
+Re-ID 是复杂场景下关联匹配的底座，必须通过模型训练来提取具备强判别性的“视觉指纹”，并修复跨域衰减（Domain Gap）。
+
+### 1. 为什么必须用 Re-ID？
+* **弥补人脸死角:** 当人脸因背影、侧身、低头、口罩被遮挡而失效时，依靠整体穿着打扮兜底。
+* **修复断裂轨迹:** 在跨摄像头或目标被短暂遮挡后，通过“长什么样”重新缝合目标跟踪（MOT）的断裂轨迹。
+
+### 2. 经典 Baseline 架构 (Bag of Tricks, BoT)
+* **高分辨率特征:** 剥离全连接层，修改下采样层 Stride，保留细粒度纹理。
+* **BNNeck (批归一化瓶颈):** 核心创新。在全局特征后插入 BatchNorm1d 层。BNNeck 之前的特征计算 Triplet Loss（空间度量），BNNeck 之后的特征计算 Cross Entropy Loss（分类），避免两种损失函数的优化空间相互干涉。
+
+### 3. PyTorch 核心实现参考
+```python
+import torch.nn as nn
+from torchvision.models.resnet import resnet50
+
+class BaselineReID(nn.Module):
+    def __init__(self, num_classes=1000):
+        super().__init__()
+        resnet = resnet50(pretrained=True)
+        # 修改 stride 提升分辨率
+        resnet.layer4[0].conv2.stride = (1, 1)
+        resnet.layer4[0].downsample[0].stride = (1, 1)
+        
+        self.backbone = nn.Sequential(*list(resnet.children())[:-2])
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        
+        # BNNeck
+        self.bottleneck = nn.BatchNorm1d(2048)
+        self.bottleneck.bias.requires_grad_(False)
+        
+        # Classifier
+        self.classifier = nn.Linear(2048, num_classes, bias=False)
+
+    def forward(self, x):
+        global_feat = self.gap(self.backbone(x)).view(x.shape[0], -1)
+        feat = self.bottleneck(global_feat)
+        if self.training:
+            return self.classifier(feat), global_feat
+        return feat # 推理输出特征用于计算相似度
+```
+
+---
+
+## 三、 核心算法：二分图匹配与代价分配
+
+提取出空间距离或深度特征相似度后，需要通过图论算法完成最终的“一对一”完美匹配。
+
+### 1. 核心概念
+将“人脸集合”和“人体集合”分别作为二分图的两侧顶点，以它们之间的空间距离或特征差异作为“代价 (Cost)”，目标是寻找全局总代价最小的连线方案。
+
+### 2. 匈牙利算法 (Hungarian Algorithm)
+* **解决问题:** 在多项式时间 $O(n^3)$ 内求解二分图的最优分配（带权匹配）问题，跳出局部贪心陷阱，求得全局最优。
+* **算法核心:**
+  * **等价变换:** 矩阵某行/列同加减一个常数，最优匹配组合不变。
+  * **行/列归约:** 在代价矩阵中刻意制造大量 `0`（即零代价候选）。
+  * **Kőnig 定理:** 尝试用最少直线覆盖所有 `0`。当直线数等于矩阵维度 $N$ 时，即找到了 $N$ 个独立的 `0` 元素，这些坐标构成了全局代价最小的完美匹配。
+
+### 3. 其他相关匹配算法
+* **KM 算法 (Kuhn-Munkres):** 专门用于求解带权二分图的最优权完美匹配，时间复杂度 $O(V^3)$。
+* **Hopcroft-Karp 算法:** 高效的无权二分图最大匹配算法，结合了 BFS 和 DFS。
+* **最小费用最大流 (MCMF):** 将匹配问题抽象为网络流模型，能灵活处理两侧数量不对等的非完美分配场景。
