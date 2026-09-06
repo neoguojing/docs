@@ -169,6 +169,157 @@ Worker 节点的处理流程是串行的，分为四个主要阶段，数据在�
 
 ## 四、Lua 执行引擎（Algo-Worker）
 
+> gopher-lua 本质上是用纯 Go 语言从零“复刻”了一个 Lua 虚拟机，它将 Lua 脚本解析后，完全依托 Go 原生的数据结构和运行机制来解释执行，从而实现了与 Go 程序的无缝嵌入且零 C 语言依赖。
+
+# Lua 执行引擎 (Algo-Worker) 架构设计文档
+
+核心系统基于 `gopher-lua` 构建，利用 Go 的 Goroutine 和 Channel 实现 DAG（有向无环图）的并发调度。每个 Stage 拥有独立的 Lua 虚拟机以保证无锁并发。本文档通过 UML 图解与业务调用实例，详细说明其设计与流转机制。
+
+## 一、 静态架构：UML 类图与依赖关系
+
+本节展示系统核心结构与类之间的静态关联。
+
+```mermaid
+classDiagram
+    %% 定义核心组件
+    class DecodeExecutor {
+        +Channel~DecodedFrame~ frameCh
+        +decodeImage()
+    }
+
+    class AppExecutor {
+        -Channel~DecodedFrame~ frameCh
+        -Map~String, StageExecutor~ stages
+        -Channel~Packet~ outputCh
+        +BuildDAG()
+        +Run()
+        +writeFrame(frame)
+    }
+
+    class StageExecutor {
+        +String stageID
+        +Channel~Packet~ inputCh
+        +Channel~Packet~ nextStageCh
+        +Channel~Packet~ outputCh
+        -lua.LState luaVM
+        +Run()
+        -processPacket(Packet)
+        -marshalToLuaTable(Packet) lua.LTable
+        -unmarshalFromLua(lua.LTable) Packet
+    }
+
+    class OutputExecutor {
+        +Channel~Packet~ analyzeResultCh
+        +Channel~AlertEvent~ alertEventCh
+        +processOutput()
+        -DrawRect()
+        -pushToKafka()
+    }
+
+    class LuaScript {
+        <<Script>>
+        +process(lua_table) 
+    }
+
+    %% 定义依赖与关联关系
+    DecodeExecutor ..> AppExecutor : 生产 DecodedFrame
+    AppExecutor "1" *-- "n" StageExecutor : 管理与构建 DAG 拓扑
+    StageExecutor o-- LuaScript : 1对1独占执行
+    StageExecutor ..> StageExecutor : 通过 nextStageCh 传递 Packet
+    StageExecutor ..> OutputExecutor : 通过 outputCh 传递 分析结果
+```
+
+### 模块依赖关系解析
+
+1. **组合关系 (Composition)：`AppExecutor` -> `StageExecutor`**
+   `AppExecutor` 是生命周期管理者。它在初始化时读取 `pipeline.json`，实例化多个 `StageExecutor`，并构建出它们之间的 DAG（有向无环图）拓扑连接。
+2. **状态独占依赖：`StageExecutor` -> `LuaScript (VM)`**
+   为了避免并发数据竞争（Data Race），每个 `StageExecutor` 内部封装了一个 **完全独立** 的 `lua.LState`（Lua 虚拟机）。多个协程运行不同的 Stage 时，它们依赖各自的 VM 执行脚本，**无锁且线程安全**。
+3. **数据流依赖 (Channel 通信)：**
+   * **输入依赖：** `AppExecutor` 依赖 `DecodeExecutor` 提供的 `frameCh` 获取视频流原始帧。
+   * **级联依赖：** 前置 `StageExecutor` 通过向 `nextStageCh` 写入数据，触发下游 `StageExecutor` 的执行。
+   * **输出依赖：** 尾部 `StageExecutor` 生成目标数据后，将数据推入 `outputCh`，由 `OutputExecutor` 统一接管。
+
+---
+
+## 二、 动态运行时：UML 时序图与调用流程
+
+系统采用 **“生产者-消费者”** 流水线模型。以下展现一帧图像从输入到触发报警事件的完整生命周期。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant D as DecodeExecutor
+    participant A as AppExecutor
+    participant S1 as StageExecutor(过滤)
+    participant VM1 as Lua VM(stage1.lua)
+    participant S2 as StageExecutor(检测)
+    participant VM2 as Lua VM(stage2.lua)
+    participant O as OutputExecutor
+    participant K as Kafka
+
+    D->>A: 1. 推送 DecodedFrame (入队 frameCh)
+    activate A
+    A->>A: 2. writeFrame: 封装为 Go Packet
+    A->>S1: 3. 压入 Stage1 Input Channel
+    deactivate A
+
+    activate S1
+    S1->>S1: 4. marshal: Packet -> Lua Table
+    S1->>VM1: 5. 执行 process(lua_table)
+    VM1-->>S1: 6. 返回 ("next", 处理后数据)
+    S1->>S2: 7. 压入 Stage2 Next Channel
+    deactivate S1
+
+    activate S2
+    S2->>S2: 8. marshal: Packet -> Lua Table
+    S2->>VM2: 9. 执行 process(lua_table)
+    note right of VM2: 调用底层C++算子识别到目标
+    VM2-->>S2: 10. 返回 ("output", 目标检测数据)
+    S2->>O: 11. 压入 OutputExecutor Channel
+    deactivate S2
+
+    activate O
+    O->>O: 12. DrawRect() 绘制矩形框, 压缩小图
+    O->>K: 13. 转换为 AlertEvent/ObjectInfo 推送 Kafka
+    deactivate O
+```
+
+### 完整调用逻辑举例讲解
+
+**【场景设定】**：我们正在运行一个安防监控 Pipeline，包含两个 Lua 编排阶段：
+* **Stage 1 (过滤阶段)**：根据 ROI（感兴趣区域）过滤掉不在多边形内的物体。
+* **Stage 2 (报警阶段)**：如果检测到是“人”且停留时间超过 5 秒，则输出事件。
+
+**【执行流演练】**：
+
+1. **入口驱动 (Steps 1-3)**：
+   视频流通过 `DecodeExecutor` 解码出第 100 帧画面。`AppExecutor` 监听到这一帧，将其包装成底层的通用结构 `videoprocess.Packet`，并推入 DAG 图的起点——`Stage 1` 的输入通道（Channel）。
+2. **第一阶段：过滤转换 (Steps 4-7)**：
+   `Stage 1` 内部的 Go 协程被唤醒。
+   * **调用准备**：Go 引擎将 `Packet` 序列化为 Lua 原生的 `Table` 结构。
+   * **VM 交互**：调用 VM1 中的 Lua 脚本 `process` 函数。Lua 脚本提取坐标发现该目标在 ROI 区域内。
+   * **流转决策**：Lua 脚本返回字符串 `"next"` 和附带数据的 Table。Go 引擎捕获返回值，将其还原为 `Packet`，并路由抛入 `Stage 2` 的输入通道。
+3. **第二阶段：规则引擎判定 (Steps 8-11)**：
+   `Stage 2` 内部的 Go 协程接收到数据。
+   * **VM 交互**：进入 VM2 的 `process` 函数。Lua 脚本通过查询内部缓存状态，发现该 Track ID 对应的目标已经存在了 6 秒（触发了 5 秒阈值的 Rule 接口）。
+   * **流转决策**：Lua 脚本这次返回字符串 `"output"` 以及封装好的 `OutputObject`（包含坐标、类型、时间戳）。Go 引擎将其路由写入 `OutputExecutor` 的 Channel。
+4. **统一输出组装 (Steps 12-13)**：
+   `OutputExecutor` 协程拿到结果，执行高昂的 I/O 操作：
+   * 将特征数据（Feature）进行加密。
+   * 利用原图进行裁剪（小图）并在全景图上 `DrawRect` 画框。
+   * 组装成最终的 `AlertEvent` 协议，推送到 Kafka，供下游的 Java 业务系统消费。
+
+---
+
+## 三、 架构优势总结
+
+通过此架构设计，系统实现了关注点分离：
+* **底层引擎（Go）**：负责繁重的基础工作，如视频解码、图像画框压缩、Kafka 网络通信、并发协程调度及内存管理。
+* **业务编排（Lua）**：负责易变的业务逻辑，如多边形过滤、停留时间计算、报警字段组装。
+
+开发者改动 Lua 脚本后无需重启或重新编译 Go 核心框架，实现了极高的系统定制化和灵活性，非常适合应对视频分析系统中的长尾算法编排需求。
+
 ### 4.1 配置体系
 
 | 配置文件 | 职责 |
