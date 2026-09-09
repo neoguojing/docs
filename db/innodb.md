@@ -393,11 +393,104 @@ InnoDB 的表是“索引组织表”，即数据文件本身就是一棵聚簇�
 
 
 ## 5. 并发与一致性 (事务)
-*   **ACID 保障**：Atomicity (Undo)、Consistency (约束+事务)、Isolation (MVCC+Lock)、Durability (Redo Log)。
-*   **隔离级别**：InnoDB 默认隔离级别为 **RR (Repeatable Read)**。普通 `SELECT` 是一致性非锁定读；`SELECT ... FOR UPDATE` 是锁定读。
-*   **MVCC (多版本并发控制)**：解决读写并发相互阻塞问题。
-    *   **机制**：当前数据行隐藏字段 (`DB_TRX_ID`, `DB_ROLL_PTR`) → 顺指针找 Undo Log 中的历史版本快照 → 结合 Read View 判断该版本对当前事务是否可见。
-*   **锁机制**：用于写写冲突或锁定读。含 Record Lock (行锁)、Gap Lock (间隙锁)、Next-Key Lock、Intention Lock (意向锁)。
+本文档系统拆解了 MySQL InnoDB 引擎如何通过日志、锁与 MVCC 机制，在保证高并发性能的同时，死守数据一致性的底线。
+
+## 1. 核心基石：ACID 是什么与为什么
+
+| 特性 | 是什么 (What) | 底层支撑 (How) |
+| :--- | :--- | :--- |
+| **Atomicity (原子性)** | 事务是最小执行单位，要么全成功，要么全回滚。 | **Undo Log（回滚日志）**：记录数据的逻辑变化。若回滚，逆向执行逻辑操作恢复数据。 |
+| **Durability (持久性)** | 事务一旦提交，数据永不丢失（即使宕机）。 | **Redo Log（重做日志） + WAL 机制**：修改先写内存，提交时日志强制刷盘，数据页异步刷盘。 |
+| **Isolation (隔离性)** | 并发事务相互独立，中间状态互不干扰。 | **锁机制 (Locks) + 多版本并发控制 (MVCC)**。 |
+| **Consistency (一致性)**| 数据库从一个合法状态转为另一个合法状态。 | **AID 的共同结果** + 业务层面的约束（如外键、唯一键）。 |
+
+## 2. 并发异常与隔离级别 (Isolation Levels)
+
+在多事务并发时，如果不加控制，会出现以下三种典型问题：
+
+*   **脏读 (Dirty Read)**：事务 A 读到了事务 B **未提交**的修改。如果 B 回滚了，A 读到的就是“脏”数据。
+*   **不可重复读 (Non-Repeatable Read)**：事务 A 在两次查询同一行数据期间，事务 B **修改**并提交了该数据，导致 A 两次读到的值不一致。（侧重于数据被**修改**）。
+*   **幻读 (Phantom Read)**：事务 A 按条件查询出一批数据，事务 B 在此期间**插入/删除**了符合该条件的新数据。事务 A 再次查询时，发现多出（或少了一批）原本不存在的“幻影”数据。（侧重于数据记录的**增减**）。
+
+**InnoDB 的隔离级别映射（默认 RR）：**
+
+| 隔离级别 | 脏读 | 不可重复读 | 幻读 | 底层实现核心手段 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Read Uncommitted (RU)** | ❌ 发生 | ❌ 发生 | ❌ 发生 | 无特殊控制 |
+| **Read Committed (RC)** | ✅ 避免 | ❌ 发生 | ❌ 发生 | 每次 `SELECT` 均生成新的 Read View |
+| **Repeatable Read (RR)** | ✅ 避免 | ✅ 避免 | ✅ 避免(InnoDB特有)| **首次** `SELECT` 生成固定 Read View + **Gap Lock 间隙锁** |
+| **Serializable (串行化)** | ✅ 避免 | ✅ 避免 | ✅ 避免 | 读写全部加表级/行级排他锁，强排队 |
+
+## 3. 读写互不阻塞的魔法：MVCC (多版本并发控制)
+
+MVCC 主要解决**一致性非锁定读**（普通 SELECT）的并发问题，避免了读写相互排队。
+
+### 3.1 版本链的物理构建 (Undo Log)
+InnoDB 行数据包含隐藏列：`DB_TRX_ID` (最后修改事务ID) 和 `DB_ROLL_PTR` (回滚指针)。修改时，旧数据化作 Diff 存入 Undo Log，形成链表。
+
+```mermaid
+graph TD
+    Current[当前物理内存数据行<br/>id=1, name='Bob', TRX_ID=105] 
+    Undo1[Undo Log 记录<br/>id=1, name='Alice', TRX_ID=102]
+    Undo2[Undo Log 记录<br/>id=1, name='Init', TRX_ID=80]
+    
+    Current -- "DB_ROLL_PTR (指针)" --> Undo1
+    Undo1 -- "DB_ROLL_PTR (指针)" --> Undo2
+```
+
+### 3.2 Read View 可见性算法
+事务进行快照读时，会生成包含当前活跃事务 ID 列表 (`m_ids`) 的视图。
+**判断规则（顺着版本链重构数据）：**
+1. 记录的 `TRX_ID` = 当前事务 ID ➜ 自己改的，**可见**。
+2. 记录的 `TRX_ID` < `m_ids` 最小值 ➜ 老早提交的，**可见**。
+3. 记录的 `TRX_ID` > `m_ids` 最大值 ➜ 查询后才开启的新事务改的，**不可见**。
+4. 记录的 `TRX_ID` 在两者之间 ➜ 若在 `m_ids` 列表中说明未提交，**不可见**；不在则**可见**。
+
+## 4. 强一致性防御：锁机制 (Locks)
+
+当执行修改 (UPDATE/DELETE) 或 当前读 (`SELECT ... FOR UPDATE`) 时，MVCC 失效，必须依赖锁。
+
+### 4.1 锁的种类
+*   **Intention Lock (意向锁)**：表级锁。加行锁前自动加在表上，用于快速判断表内是否含有行锁，将探测复杂度从 O(N) 降为 O(1)。
+*   **Record Lock (行锁)**：锁在具体的**聚簇索引节点**上，保护该行不被其他事务修改。
+*   **Gap Lock (间隙锁)**：**RR 级别专用于防幻读**。锁住两条记录之间的“空隙”，严禁其他事务在此区间 `INSERT`。
+*   **Next-Key Lock (临键锁)**：`Record Lock + Gap Lock`，锁住记录本身及其左侧间隙（左开右闭区间）。
+
+### 4.2 临键锁 (Next-Key Lock) 示例图解
+假设索引列存在值：`10, 20, 30`。执行 `SELECT * FROM t WHERE val = 20 FOR UPDATE;`
+
+```text
+ 锁定区间示意图：
+ (-∞) ------ (10) ====== [20] ====== (30) ------ (+∞)
+              |           |           |
+              |<-Gap 锁-> |           |
+              |<-Record 锁|           |
+              |                       |
+              |<--- Next-Key 锁区间 -> | 
+```
+*不仅锁住 20，还锁住 (10, 20) 和 (20, 30) 的间隙，彻底封死插入 15 或 25 的可能，避免幻读。*
+
+## 5. 底层硬核实现解密
+
+### 5.1 内存空间与位图压缩 (Bitmap)
+InnoDB 不会为每一行创建一个锁对象（太费内存）。锁信息挂在**数据页 (Page)** 的哈希表中，值是一个 `lock_rec_t` 结构体，后跟一个**位图 (Bitmap)**。页内哪行被锁，对应位就置为 `1`。锁 1 行和锁 100 行内存开销几乎一样。
+
+### 5.2 崩溃恢复与 LSN
+日志序列号 (LSN) 贯穿系统。重启时，若数据页（`FIL_PAGE_LSN`）落后于磁盘上的 Redo Log 尾部 LSN，InnoDB 将自动通过重放 Redo Log 修复脏页。
+
+### 5.3 死锁探测 (Wait-For Graph)
+后台维持一张等待图，节点为事务，边为锁等待。一旦出现环路（Cycle），立即触发死锁回滚。
+
+```mermaid
+graph LR
+    TrxA((事务 A)) -- "等待行锁 X" --> TrxB((事务 B))
+    TrxB -- "等待间隙锁" --> TrxC((事务 C))
+    TrxC -- "等待行锁 Y" --> TrxA
+    
+    classDef dead fill:#ff9999,stroke:#cc0000,stroke-width:2px;
+    class TrxA,TrxB,TrxC dead;
+```
+*检测到环路，InnoDB 会计算 Undo 量，自动 `ROLLBACK` 成本最小的事务（如事务 C），打破僵局。*
 
 ## 6. 持久化与日志
 *   **Redo Log (引擎层)**：实现 **WAL (预写日志)**。记录物理修改，循环写入。核心用于 **Crash Recovery (崩溃恢复)**，保证已提交且未刷盘的数据不丢失。
