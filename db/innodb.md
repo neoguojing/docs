@@ -545,9 +545,9 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-    BP[Buffer Pool (内存脏页 16KB)] -->|1. 内存拷贝| DWBM[Doublewrite Buffer (内存)]
-    DWBM -->|2. 顺序写入| DWBD[共享表空间 DWB 区域 (磁盘)]
-    DWBM -->|3. 离散写入| IBD[.ibd 数据文件 (磁盘)]
+    BP["Buffer Pool (内存脏页 16KB)"] -->|1. 内存拷贝| DWBM["Doublewrite Buffer (内存)"]
+    DWBM -->|2. 顺序写入| DWBD["共享表空间 DWB 区域 (磁盘)"]
+    DWBM -->|3. 离散写入| IBD[".ibd 数据文件 (磁盘)"]
 ```
 * **恢复逻辑：** 若第 3 步崩溃导致页损坏，重启时会从共享表空间的 DWB 区域提取完整副本覆盖损坏页，再应用 Redo Log。
 
