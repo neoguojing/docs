@@ -583,24 +583,24 @@ Binlog 是实现读写分离和高可用架构的核心。
 
 ```mermaid
 graph LR
-    subgraph Master (主库)
-        Binlog[Binlog 文件]
-        DumpThread(Dump 线程)
+    subgraph Master["Master (主库)"]
+        Binlog["Binlog 文件"]
+        DumpThread("Dump 线程")
         Binlog --> DumpThread
     end
     
-    subgraph Slave (从库)
-        IOThread(I/O 线程)
-        RelayLog[Relay Log (中继日志)]
-        SQLThread(SQL 线程)
-        DB[(数据文件)]
+    subgraph Slave["Slave (从库)"]
+        IOThread("I/O 线程")
+        RelayLog["Relay Log (中继日志)"]
+        SQLThread("SQL 线程")
+        DB[("数据文件")]
         
         IOThread --> RelayLog
         RelayLog --> SQLThread
         SQLThread --> DB
     end
     
-    DumpThread -- 1. 发送 Binlog 事件 --> IOThread
+    DumpThread -->|"1. 发送 Binlog 事件"| IOThread
 ```
 
 1. **主库 Dump 线程：** 监听 Binlog 变更，推送给从库。
