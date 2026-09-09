@@ -493,11 +493,119 @@ graph LR
 *检测到环路，InnoDB 会计算 Undo 量，自动 `ROLLBACK` 成本最小的事务（如事务 C），打破僵局。*
 
 ## 6. 持久化与日志
-*   **Redo Log (引擎层)**：实现 **WAL (预写日志)**。记录物理修改，循环写入。核心用于 **Crash Recovery (崩溃恢复)**，保证已提交且未刷盘的数据不丢失。
-*   **Undo Log (引擎层)**：记录逻辑修改。用于 **事务回滚** 和提供 **MVCC 历史版本快照**。
-*   **Binlog (Server 层)**：记录逻辑/语句变更。持续追加写入，主要用于 **主从复制** 和 **数据恢复 (PITR)**。
-*   **两阶段提交**：协调 Redo 和 Binlog 的写入 (`Prepare` → 写 Binlog → `Commit`)，确保引擎层和 Server 层状态绝对一致。
-*   **Doublewrite Buffer**：脏页刷盘前先顺序写入该区域，防止宕机引发部分页写入 (Partial Page Write) 导致数据页不可逆损坏。
+本文档详细拆解了 MySQL（以 InnoDB 引擎为主）的核心日志系统、保障机制以及关键的运行流程。
+
+---
+
+## 1. 三大核心日志体系拆解
+
+MySQL 的高可用和 ACID 特性依赖于底层的日志系统，最核心的包含以下三种：
+
+| 特性 | Redo Log (重做日志) | Undo Log (回滚日志) | Binlog (归档日志) |
+| :--- | :--- | :--- | :--- |
+| **所属层级** | InnoDB 引擎层 | InnoDB 引擎层 | MySQL Server 层 |
+| **记录格式** | **物理日志**<br>（例如："第 N 号表空间的第 M 个数据页偏移量 X 修改为 Y"） | **逻辑日志**<br>（例如：记录与执行 SQL 相反的操作） | **逻辑日志**<br>（Statement 原始 SQL 或 Row 行变更记录） |
+| **核心作用** | **Crash Recovery (崩溃恢复)**<br>保证已提交事务的持久性 (WAL机制) | **事务回滚** 与 **MVCC** (多版本并发控制) | **主从复制** 与 **PITR** (基于时间点的数据恢复) |
+| **写入方式** | 固定大小，**循环覆盖写入** (Ring Buffer) | 事务提交后由 Purge 线程逐渐回收 | **持续追加写入**，文件满后切换新文件 |
+
+### 1.1 Redo Log 的 WAL (Write-Ahead Logging) 机制
+* **核心思想：** 磁盘的顺序 I/O 速度远高于随机 I/O。修改数据时，先在内存 (Buffer Pool) 中修改（产生脏页），并将修改操作**顺序追加**记录到 Redo Log 中。
+* **循环写入算法：** Redo Log 是环形结构，包含 `write pos` (当前写入位置) 和 `checkpoint` (已刷盘的安全点)。当 `write pos` 追上 `checkpoint` 时，表示日志已满，必须强制阻塞，等待脏页刷盘向前推进 `checkpoint`。
+
+### 1.2 Undo Log 与 MVCC 链
+* 每次修改记录，InnoDB 都会生成一条 Undo Log。
+* 记录上隐藏着两个关键字段：`trx_id`（修改该行的事务 ID）和 `roll_pointer`（指向 Undo Log 的回滚指针）。
+* 通过指针串联形成**历史版本链条**，实现 MVCC（多版本并发控制），使得读写不冲突。
+
+---
+
+## 2. 核心保障机制
+
+### 2.1 内部两阶段提交 (Two-Phase Commit, 2PC)
+为了保证引擎层的 Redo Log 和 Server 层的 Binlog 状态绝对一致，防止崩溃导致主从数据不一致，MySQL 引入了两阶段提交机制。
+
+```mermaid
+sequenceDiagram
+    participant Engine as InnoDB 引擎层
+    participant Server as Server 层
+
+    Engine->>Engine: 1. 写入 Redo Log<br>(状态设为 Prepare)
+    Engine-->>Server: Prepare 完成
+    Server->>Server: 2. 写入 Binlog<br>(追加到文件)
+    Server-->>Engine: Binlog 写入完成，发起 Commit
+    Engine->>Engine: 3. 修改 Redo Log 状态<br>(状态设为 Commit)
+```
+
+**崩溃恢复仲裁逻辑：**
+* 若在步骤 1 和 2 之间崩溃：Redo Log 是 `PREPARE` 但无对应 Binlog，重启后**回滚**。
+* 若在步骤 2 和 3 之间崩溃：Redo Log 是 `PREPARE` 且 Binlog 完整，重启后**继续提交**。
+
+### 2.2 Doublewrite Buffer (双写缓冲区)
+**解决痛点：** Partial Page Write (部分页写入)。InnoDB 页为 16KB，系统页为 4KB，若刷盘时断电导致 16KB 页只写了一部分，页结构被破坏，Redo Log 将无法修复物理损坏的页。
+
+```mermaid
+graph TD
+    BP[Buffer Pool (内存脏页 16KB)] -->|1. 内存拷贝| DWBM[Doublewrite Buffer (内存)]
+    DWBM -->|2. 顺序写入| DWBD[共享表空间 DWB 区域 (磁盘)]
+    DWBM -->|3. 离散写入| IBD[.ibd 数据文件 (磁盘)]
+```
+* **恢复逻辑：** 若第 3 步崩溃导致页损坏，重启时会从共享表空间的 DWB 区域提取完整副本覆盖损坏页，再应用 Redo Log。
+
+---
+
+## 3. 核心运行流程全解
+
+### 3.1 数据写入（更新）过程
+执行一条 `UPDATE` 语句的完整生命周期：
+1. **Server 层解析优化：** 验证权限，分析语法，生成执行计划。
+2. **Buffer Pool 检查：** 检查数据页是否在内存中。若不在，从磁盘加载。
+3. **写 Undo Log：** 将旧数据记录到 Undo Log，用于回滚和 MVCC。
+4. **更新内存数据：** 修改 Buffer Pool 中的数据，产生“脏页”。
+5. **2PC 阶段一：** 生成 Redo Log 并刷盘，状态置为 `PREPARE`。
+6. **2PC 阶段二：** Server 层生成并追加写入 Binlog。
+7. **2PC 阶段三：** InnoDB 将 Redo Log 状态改为 `COMMIT`。事务完成。后台线程择机将脏页通过 DWB 刷入磁盘。
+
+### 3.2 崩溃恢复过程 (Crash Recovery)
+断电重启后的自救过程：
+1. **检查与修复数据页：** 检查 Doublewrite Buffer，若有部分写入导致的损坏页，先使用完整副本覆盖修复。
+2. **扫描 Redo Log 重做：** 从最新的 Checkpoint 向前重演。
+3. **2PC 仲裁应用：** 遇到 `COMMIT` 状态的记录直接应用；遇到 `PREPARE` 状态的记录，拿着 XID 去核对 Binlog 决定是提交还是回滚。
+
+### 3.3 数据查询与 MVCC
+1. **执行计划生成：** Server 层优化器生成最优查询路径。
+2. **内存读取：** 执行器向引擎要数据，优先查询 Buffer Pool。
+3. **MVCC 介入：** 
+   * 若数据行存在排他锁，InnoDB 会通过 `roll_pointer` 顺着 Undo Log 找到历史版本链。
+   * 结合事务启动时的 Read View，找到当前事务可见的安全版本，实现“读写不互斥”。
+
+### 3.4 主从复制过程
+Binlog 是实现读写分离和高可用架构的核心。
+
+```mermaid
+graph LR
+    subgraph Master (主库)
+        Binlog[Binlog 文件]
+        DumpThread(Dump 线程)
+        Binlog --> DumpThread
+    end
+    
+    subgraph Slave (从库)
+        IOThread(I/O 线程)
+        RelayLog[Relay Log (中继日志)]
+        SQLThread(SQL 线程)
+        DB[(数据文件)]
+        
+        IOThread --> RelayLog
+        RelayLog --> SQLThread
+        SQLThread --> DB
+    end
+    
+    DumpThread -- 1. 发送 Binlog 事件 --> IOThread
+```
+
+1. **主库 Dump 线程：** 监听 Binlog 变更，推送给从库。
+2. **从库 I/O 线程：** 接收事件并追加到本地的 **中继日志 (Relay Log)** 中。
+3. **从库 SQL 线程：** 持续读取 Relay Log 并回放 SQL（或行变更），最终使数据追平主库。
 
 ## 7. 分布式与高可用
 *   **主从复制 (Replication)**：Primary 写 Binlog → Replica 拉取并重放 (Replay)。用于读写分离、高可用、容灾。
