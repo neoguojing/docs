@@ -285,135 +285,137 @@ Cassandra 5.0 引入的 SAI 彻底改变了非主键查询的格局。SAI 将索
 
 # 5. 并发、一致性与事务
 
-## 5.1 多副本
+# Apache Cassandra 架构与一致性机制深度解析
 
-假设：
+Cassandra 采用完全去中心化（Masterless）的对等网络架构，抛弃了传统关系型数据库的主从模型。它明确选择 **AP（高可用 + 分区容错）** 作为基础设计，通过牺牲部分强一致性来换取极致的高可用、线性横向扩展能力以及低延迟的读写性能。
 
-```text
-Replication Factor = 3
+## 1. 核心架构与角色
 
-        Partition
-        /   |   \
-       N1   N2   N3
+集群由地位相等的节点组成一个逻辑环（Token Ring），节点间通过 **Gossip（八卦）协议** 每秒交换状态信息。这种设计消除了单点故障，也没有固定的主节点。
+
+### Coordinator（协调节点）
+
+Coordinator 是一个**逻辑角色**，而非物理存在的固定节点。客户端可以连接集群中的任意一个节点发起读写请求，该节点即刻成为本次请求的 Coordinator。它的职责是：
+
+1. 根据一致性哈希算法计算出数据分布在哪些真实节点上。
+2. 将请求并行派发给这些目标节点。
+3. 等待足够数量的副本返回结果（根据一致性级别），再响应客户端。
+
+## 2. 多副本与一致性哈希 (Consistent Hashing)
+
+为了保证高可用，数据必须冗余存储（Replication）。Cassandra 利用一致性哈希将数据映射到环上，并通过虚拟节点（VNodes）技术实现数据的均匀分布与平滑扩缩容。
+
+### RF = 3 时的哈希环与寻址过程
+
+假设集群有 4 个节点，Token 范围划分如下：
+
+```
+                  [Node A: 负责 Token 01-25]
+                 /                          \
+                /                            \
+[Node D: 负责 Token 76-100]      [Node B: 负责 Token 26-50]
+                \                            /
+                 \                          /
+                  [Node C: 负责 Token 51-75]
 ```
 
-同一份数据保存多个副本。
+**写入动作示例**：客户端请求写入 `Key = "user_123"`。
 
-目的：
+1. **哈希计算**：Coordinator 计算 `Hash("user_123") = 35`。
+2. **顺时针落盘**：Token 35 落在 Node A (25) 和 Node B (50) 之间，顺时针遇到的第一个节点是 **Node B**，Node B 成为主副本。
+3. **副本分布**：因 `RF = 3`，数据会自动保存在顺时针接下来的 3 个节点：**Node B**（第一副本）、**Node C**（第二副本）、**Node D**（第三副本）。
+4. **并行写入**：Coordinator 会并行向 B、C、D 发送写入指令。
 
-- 高可用
-- 容灾
-- 数据冗余
+## 3. 存储引擎：LSM-Tree 写入与读取路径
 
-## 5.2 可调一致性
+Cassandra 的高性能不仅依赖于网络架构，更依赖于其底层的 LSM-Tree 存储引擎。
 
-常见 Consistency Level：
+### 写入路径 (Write Path)
 
-```text
-ONE
-QUORUM
-ALL
-LOCAL_QUORUM
-EACH_QUORUM
-...
+1. **Commit Log**：数据首先追加写入提交日志，确保数据的持久性（Durability）。
+2. **Memtable**：数据写入内存表（Memtable），此时数据在内存中按主键排序。
+3. **SSTable**：当 Memtable 达到阈值，会 Flush 到磁盘生成不可变的排序字符串表（SSTable）。
+4. **响应客户端**：只要满足一致性级别的节点完成了 Commit Log 和 Memtable 的写入，即可向客户端返回成功。
+
+### 读取路径 (Read Path)
+
+1. **检查缓存**：优先检查 Row Cache（行缓存）。
+2. **Bloom Filter**：通过布隆过滤器快速判断数据是否可能存在于某个 SSTable 中，避免无效的磁盘 I/O。
+3. **多源合并**：如果缓存未命中，Coordinator 会同时查询 Memtable 和相关的 SSTables，根据时间戳合并出最新结果返回给客户端。
+
+## 4. 可调一致性 (Tunable Consistency)
+
+Consistency Level (CL) 是 Cassandra 的精髓：它定义了 Coordinator 必须等待多少个副本节点确认，才能向客户端返回"成功"。
+
+| Consistency Level | 等待节点数 | 延迟与可用性 | 一致性保证 |
+| :--- | :--- | :--- | :--- |
+| **ONE** | 仅 1 个节点 | 延迟极低，可用性最高 | 最弱，极易读到旧数据 |
+| **QUORUM** | 全局多数派：floor(RF / 2) + 1 | 延迟中等，容忍少数节点宕机 | 强（若配合 QUORUM 读） |
+| **LOCAL_QUORUM** | 仅 Coordinator 所在 DC 的多数派 | 规避跨地域延迟，高可用 | 数据中心内部强一致 |
+| **ALL** | 所有副本节点 | 延迟高，任意节点宕机即失败 | 绝对强一致 |
+
+### QUORUM 与 LOCAL_QUORUM 跨机房示例
+
+假设集群跨越北京机房（3个节点）和纽约机房（3个节点），总 `RF = 6`，北京机房 `RF = 3`。
+
+- **使用 QUORUM（全局多数派）**：需要 `6 / 2 + 1 = 4` 个节点确认。即使北京 3 个节点秒回，也必须等待至少 1 个纽约节点跨洋确认。200ms 的跨国延迟会直接拖垮写入性能。
+- **使用 LOCAL_QUORUM（本地多数派）**：只需本地 `3 / 2 + 1 = 2` 个节点确认。北京的 Coordinator 收到本地 2 个节点确认即可瞬间（可能只需 2ms）返回成功，系统会在后台异步将数据同步到纽约机房。
+
+## 5. 最终一致性与三层修复机制
+
+当使用 `LOCAL_QUORUM` 或 `ONE` 写入时，部分节点可能因网络抖动漏写数据。Cassandra 采用最终一致性模型，主动接纳不一致，并依赖三种机制修复数据：
+
+1. **Hinted Handoff（提示移交）**：写入时，若目标节点短暂不可达，Coordinator 会在本地暂存写请求元数据（Hint），待该节点恢复后主动推送补写。
+2. **Read Repair（读时修复）**：在 Quorum 读过程中，若发现参与响应的副本间数据版本不一致，Coordinator 在返回最新结果的同时，异步发起后台修复，将最新值同步至陈旧副本。
+3. **Anti-Entropy（反熵修复）**：基于 **Merkle Tree（哈希树）** 的全量/增量校验。通常通过 `nodetool repair` 手动触发，作为兜底手段保障跨数据中心数据收敛。
+
+### Merkle Tree 结构与比对示例
+
+Merkle Tree 是一种倒置树，叶子节点是真实数据块的 Hash，父节点是子节点 Hash 组合后的 Hash。
+
+```
+       [Node 1 的树 (含最新 C)]               [Node 2 的树 (含旧 C')]
+              Root_1                              Root_2
+             /      \                            /      \
+        Hash_AB    Hash_CD                  Hash_AB    Hash_C'D
+        /    \      /    \                  /    \      /    \
+      H(A)  H(B)  H(C)  H(D)              H(A)  H(B)  H(C') H(D)
 ```
 
-例如 RF=3：
+- **对比根节点**：`Root_1 != Root_2`，说明数据有差异。
+- **向下对比**：左分支 `Hash_AB` 相同，说明 A、B 完全一致，无需再查。
+- **精准定位**：右分支不同，继续向下查，发现 `H(D)` 一致，但 `H(C) != H(C')`。
+- **精准修复**：Coordinator 精确锁定只有数据块 C 不一致，只需在网络中传输几十字节的 C 的真实数据覆盖掉 C' 即可，避免了全表扫描和海量数据传输。
 
-```text
-ONE       → 1 个副本响应
-QUORUM    → 2 个副本响应
-ALL       → 3 个副本响应
-```
+## 6. 冲突解决：Last Write Wins (LWW)
 
-注意：
+在无主架构中，没有全局锁。当并发更新同一条数据时，Cassandra 采用 **Last Write Wins (LWW)** 策略：
 
-> **Consistency Level 不是说只向这么多个副本发送请求，而是 Coordinator 等待多少个副本确认后向客户端返回。**
+- 每次写入必须携带一个精确到微秒的 **Timestamp**。
+- 无论网络传输的先后顺序如何，节点在合并数据时，时间戳最大的数据永远覆盖较小的数据。
+- **删除操作（Tombstone）**：删除实际上是插入一个带有最新时间戳的"墓碑"标记。读取时若墓碑时间戳大于旧数据，则判定为已删除。
 
-## 5.3 最终一致性
+## 7. 事务与条件更新：Paxos 与 LWT
 
-普通 Cassandra 数据采用最终一致性模型。
+Cassandra 追求高吞吐，不支持传统的 `BEGIN ... COMMIT` 跨行/跨表 ACID 事务。但对于必须依赖旧状态的条件更新（Compare-And-Set），提供 **Lightweight Transactions (LWT)**。
 
-不同副本短时间内可能不一致：
+LWT 基于 **Paxos 共识算法** 保证线性一致性，确保并发安全。这需要 4 次网络往返（Round-trips），延迟通常是普通写入的 4 倍以上，仅限极其严苛的并发修改场景（如库存扣减、计数器）使用。
 
-```text
-N1 → V2
-N2 → V1
-N3 → V2
-```
+**LWT 执行过程示例**：
 
-之后通过副本同步机制趋于一致。
+账户 `balance = 50`。客户端 X 想在 `balance == 50` 时更新为 `100`；客户端 Y 想更新为 `80`。
 
-## 5.4 冲突解决
+1. **Prepare（准备与承诺）**：Coordinator X 生成提议号 T1 发给所有副本。副本承诺"不再接受比 T1 更老的提议"。
+2. **Read（读取现状）**：Coordinator X 读出当前真实状态 `balance = 50`。（此时若 Coordinator Y 带着 T2 > T1 杀入，副本会接受 Y，导致 X 的后续操作被拒绝）。
+3. **Propose（提出提议）**：Coordinator X 在本地比对 `balance == 50` 成立，向副本发起更新指令：设为 100。
+4. **Commit（正式提交）**：多数派副本接受提议后，Coordinator X 发送 Commit 落盘。客户端 X 收到成功响应。客户端 Y 的条件更新因不满足前置条件或提议号被拦截，返回 `[applied] = false`。
 
-Cassandra 使用：
+## 8. 批处理 (Batch)
 
-> **Last Write Wins（LWW）**
+Cassandra 的 Batch **不能替代传统业务的事务**，它不具备隔离性（Isolation），执行中途其他客户端可能读到部分已更新的数据。
 
-基于 timestamp 判断新旧：
-
-```text
-V1 @ T1
-V2 @ T2
-
-T2 > T1
- ↓
-V2 wins
-```
-
-## 5.5 事务
-
-Cassandra **不是传统关系数据库式的 ACID 事务数据库**。
-
-不适合：
-
-```text
-BEGIN
-  UPDATE A
-  UPDATE B
-COMMIT
-```
-
-这种跨 Partition 的传统事务。
-
-### LWT
-
-需要条件更新时，可以使用 Lightweight Transaction：
-
-```sql
-UPDATE users
-SET balance = 100
-WHERE id = 1
-IF balance = 50;
-```
-
-LWT 基于 **Paxos**，提供线性一致性的 Compare-And-Set 能力。
-
-特点：
-
-```text
-普通写
-  ↓
-高吞吐
-
-LWT
-  ↓
-Paxos
-  ↓
-更强一致性
-  ↓
-更高延迟 / 更低吞吐
-```
-
-> **LWT 是特殊场景下的强一致操作，不应该把 Cassandra 当成传统事务数据库使用。**
-
-## 5.6 Batch
-
-Cassandra 支持 Batch，但：
-
-> **Batch ≠ 跨 Partition ACID Transaction。**
-
-Batch 更适合将相关写操作作为一个批次提交，而不是替代复杂业务事务。
+- **Unlogged Batch（纯网络优化）**：强制要求放入同一个 Batch 的所有操作必须属于**同一个 Partition Key**。这保证所有操作发往同一个物理节点，将多次网络请求打包为一次，极大提升性能。
+- **Logged Batch（保障原子性）**：适用于必须同时更新多张表（如主表和物化视图）的场景。Coordinator 先将整个批次写入系统的 `batchlog` 表。即使 Coordinator 崩溃，集群其他节点也会扫描 `batchlog` 继续重试未完成的写入，确保这批数据最终都被成功写入（Atomicity），但不保证同时生效。
 
 ---
 
