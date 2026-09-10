@@ -214,53 +214,73 @@ SSTable
 
 # 4. 索引与查询
 
-## 4.1 数据如何定位？
+# Cassandra 索引、查询机制与一致性 Hash 深度解析
 
-```text
-Partition Key
-      ↓
-Hash
-      ↓
-Token
-      ↓
-Token Ring
-      ↓
-Replica Nodes
-```
+Apache Cassandra 是一款专为高吞吐写入和极致可用性设计的分布式 NoSQL 数据库。其底层架构深度依赖 LSM-Tree 存储模型与一致性 Hash 路由机制。理解其数据定位、查询限制及索引演进，是掌握 Cassandra 核心设计哲学的关键。
 
-Cassandra 使用一致性 Hash 将数据分布到集群节点。
+## 一、 数据定位：一致性 Hash 与 Token Ring
 
-## 4.2 为什么 Partition Key 很重要？
+Cassandra 摒弃了传统哈希取模算法，采用一致性 Hash（Consistent Hashing）来解决集群动态扩缩容时的数据迁移风暴。
 
-Partition Key 决定：
+### 1. Token Ring（哈希环）与路由机制
+Cassandra 默认使用 `Murmur3Partitioner`，将哈希空间映射为一个从 $-2^{63}$ 到 $2^{63}-1$ 的连续哈希环。
+- **路由过程**：当数据写入时，系统对 `Partition Key` 进行 Hash 计算得出一个 Token 值。该 Token 落在环上后，系统顺时针寻找，遇到的第一个节点即为该数据的主副本（Primary Replica）。
 
-1. 数据存储在哪些节点
-2. 查询需要访问哪些节点
-3. 数据是否均匀分布
-4. 是否产生热点 Partition
+### 2. 虚拟节点（VNodes）的负载均衡
+早期设计中，每个物理节点仅拥有一个 Token，极易导致数据倾斜。Cassandra 引入 VNodes 机制，将一个物理节点拆分为多个（通常为 256 个）虚拟节点均匀散布在环上。
+- **扩容平滑**：新节点加入时，均匀地从全网所有节点接管一小段 Token 范围内的数据，无需全量迁移。
+- **故障恢复**：节点宕机时，重建数据的负载被均匀分摊到集群的多个物理节点上，避免次生灾难。
 
-因此：
+### 3. 多副本拓扑与容灾
+数据定位到首个节点后，Cassandra 会根据 `NetworkTopologyStrategy` 继续顺时针遍历哈希环，智能跳过同一机架（Rack）或数据中心（DC）的节点，将副本存放在物理隔离的节点上，确保跨可用区的容灾能力。
 
-> **设计 Cassandra 表时首先考虑业务查询模式，而不是追求一个通用的数据模型。**
+---
 
-## 4.3 查询特点
+## 二、 查询引擎：LSM-Tree 下的读写路径
 
-适合：
+Cassandra 的查询限制源于其底层 LSM-Tree 架构，这决定了其“写入极快，读取依赖精确定位”的特性。
 
-```text
-WHERE partition_key = ?
-```
+### 1. 极速的 Write Path
+写入请求到达时，首先以 Append-Only 方式顺序追加到磁盘的 `CommitLog`，确保断电不丢数据；随后写入内存中的 `MemTable`。
+- **特点**：整个过程仅涉及内存操作与磁盘顺序写，无随机 I/O，写入性能极高。
+- **落盘**：MemTable 写满后刷入磁盘生成不可变的 `SSTable`，后台通过 Compaction 机制定期合并并清理 Tombstones（删除标记）。
 
-以及 Partition 内基于 Clustering Key 的范围查询。
+### 2. 复杂的 Read Path
+当执行 `WHERE partition_key = ?` 时，单节点内的检索流程高度优化：
+1. **Bloom Filter**：首先检查目标 Partition 是否可能存在于当前 SSTable 中，若返回 False 则直接跳过，极大减少无效磁盘 I/O。
+2. **Partition Key Cache & Index**：在内存 Key Cache 和磁盘 Partition Index 中查找目标 Partition Key 的字节偏移量。
+3. **SSTable 扫描**：直接跳转到文件对应位置，读取并返回数据。
 
-不擅长：
+---
 
-- JOIN
-- 多表关联
-- 任意条件查询
-- 大量跨 Partition 查询
-- 复杂事务
+## 三、 索引与查询：从主键到 SAI 的演进
 
+Cassandra 强制要求“查询驱动建模（Query-Driven Modeling）”，即一个查询语句对应一张表，严禁跨 Partition 的复杂查询。
+
+### 1. Partition Key 与 Clustering Key 的协同
+- **Partition Key**：决定数据去往哪台机器。查询必须包含完整的 Partition Key，否则 Coordinator 节点必须向全网所有节点广播查询（Scatter-Gather 模式），导致极高的网络开销和全表扫描。
+- **Clustering Key**：决定数据在机器本地 SSTable 内部的排序存放。结合 Partition Key，系统可在磁盘上执行高效的顺序范围读取（Range Scan）。
+
+### 2. 二级索引（2i）的局限
+传统二级索引（2i）在每个节点本地维护独立的隐藏表。若查询不包含 Partition Key，Cassandra 必须向所有节点发起查询并合并结果。此外，每次写入都会触发索引文件的重新构建，导致严重的写放大（Write Amplification）和磁盘 I/O 饱和。因此，2i 仅推荐在已知 Partition Key 的前提下使用。
+
+### 3. Storage-Attached Indexing (SAI) 的破局
+Cassandra 5.0 引入的 SAI 彻底改变了非主键查询的格局。SAI 将索引信息直接附加到存储数据的 SSTable 上，而非独立的隐藏表。
+- **性能提升**：SAI 在写入时将数据在内存中索引，随 MemTable 一起 Flush，避免了 2i 的写放大问题。
+- **查询灵活性**：支持对非主键列进行等值查询、数值范围查询及 CONTAINS 语义，甚至支持向量搜索（Vector Search），大幅降低了数据模型反范式化的心智负担。
+
+---
+
+## 四、 核心设计哲学总结
+
+| 维度 | 设计优良的查询 | 设计糟糕的查询 |
+| :--- | :--- | :--- |
+| **查询条件** | 包含完整的 Partition Key | 仅包含非 Key 字段，或跨 Partition 过滤 |
+| **网络开销** | O(1) 路由，直接转发给目标节点 | Scatter-Gather，全网广播并内存合并 |
+| **磁盘 I/O** | 命中 Bloom Filter，读取连续磁盘块 | 触发全表扫描，大量无效读取 |
+| **节点负载** | 随机哈希保证请求均匀分散 | 产生热点（Hotspot），单节点流量过载 |
+
+> **核心原则**：Cassandra 的强大在于其将复杂性下沉到了架构层。开发者必须顺应其“以查询定模型”的哲学，合理利用 VNodes 保证数据均匀，借助 Clustering Key 优化本地读取，并在 Cassandra 5.0+ 环境中积极拥抱 SAI 以获得更灵活的查询能力，同时坚决避免在生产环境使用 `ALLOW FILTERING`。
 ---
 
 # 5. 并发、一致性与事务
