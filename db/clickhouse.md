@@ -537,201 +537,116 @@ SELECT user_id, sum(amount) FROM events GROUP BY user_id;
 
 ## 4. 索引与查询
 
-### 4.1 ClickHouse 的索引思想
+## 1. ClickHouse 的索引思想
+ClickHouse 与 MySQL 最大区别之一，在于它**不是依赖 B+Tree 索引进行大量点查**，而是通过**排序 + 稀疏主键索引 + Data Skipping** 极大程度减少扫描数据。
 
-ClickHouse 与 MySQL 最大区别之一：
+可以把它想象成一个极度强调“批量排除”的巨型物流仓库，直接把不相关的货架推开，保留可能的范围。
 
-> **不是依赖 B+Tree 索引进行大量点查，而是通过排序 + 稀疏主键索引 + Data Skipping 减少扫描数据。**
-
-核心流程：
-
-```text
-SQL
- ↓
-Partition Pruning
- ↓
-Primary Key / Sparse Index
- ↓
-Data Skipping
- ↓
-读取需要的列
- ↓
-向量化执行
- ↓
-Aggregation / Join
- ↓
-Result
-```
+**典型查询核心流程：**
+SQL -> Partition Pruning (分区裁剪) -> Primary Key / Sparse Index (主键/稀疏索引) -> Data Skipping (数据跳跃过滤) -> 读取需要的列 -> 向量化执行 -> Aggregation / Join -> Result
 
 ---
 
-### 4.2 Sparse Primary Key Index
+## 2. 稀疏主键索引 (Sparse Primary Key Index) 与 Granule
 
-假设：
-
-```sql
-ORDER BY (event_time, user_id)
-```
-
-数据已经按照这个顺序排序。
-
-ClickHouse 使用稀疏索引定位可能的数据范围，而不是给每一行建立索引。
-
-因此：
+ClickHouse 绝对不会为每一行数据创建索引（海量数据下会撑爆内存）。它使用的是**稀疏主键索引**。
+* **排序是基石：** 数据在写入时，必须先按照 `ORDER BY` 排好队。
+* **Granule (颗粒)：** 排好序的数据被切分成一个个固定大小的包裹（默认 8192 行一个 Granule）。
+* **稀疏路标：** 索引只记录每个包裹的“第一行数据”。查询时，系统通过这些路标判断目标数据**有没有可能**在这个包裹里。
 
 ```text
-Index
- ↓
-定位可能相关的 Granule
- ↓
-跳过大量无关数据
+[ 稀疏主键索引 (内存中的路标) ]       [ 物理数据文件 (按 ORDER BY 排序) ]
+                                 
+(路标 1) ID=1, Time=08:00  -----> [ Granule 1 ] 包含 ID: 1~100 的连续数据
+(路标 2) ID=101, Time=09:00 ----> [ Granule 2 ] 包含 ID: 101~200 的连续数据
+(路标 3) ID=201, Time=10:00 ----> [ Granule 3 ] 包含 ID: 201~300 的连续数据
 ```
+
+**查询执行过程 (例: `WHERE ID = 150`)：**
+1. 查阅路标：150 大于 101，且小于 201。
+2. 锁定范围：目标只可能存在于 Granule 2 中。
+3. 数据跳跃：直接跳过 Granule 1 和 Granule 3 (Skip)，只从磁盘加载 Granule 2。
 
 ---
 
-### 4.3 Granule
+## 3. Data Skipping Index (数据跳跃索引)
 
-Part 内部进一步划分为 Granule。
+一张表只能有一个物理排序规则 (`ORDER BY`)。当我们经常需要用**非主键列**进行过滤时，为了避免全表扫描，可以使用 Data Skipping Index 为它们贴上“防拆标签”。
 
-可以理解为：
+### 3.1 minmax (极值索引)
+* **适用场景：** 数据分布有一定局部连续性，或者经常需要按范围查询的非主键字段（如时间、价格、年龄）。
+* **示例：**
+  ```sql
+  CREATE TABLE orders (
+      tenant_id String,
+      event_time DateTime,
+      total_amount Float64,
+      -- 为 total_amount 建立极值索引，每 2 个 Granule 生成一个极值区间
+      INDEX amt_idx total_amount TYPE minmax GRANULARITY 2
+  ) ENGINE = MergeTree()
+  ORDER BY (tenant_id, event_time); 
+  ```
+* **效果：** 当查询 `WHERE total_amount > 10000` 时，若某个块记录的 `max(total_amount)` 仅为 5000，则直接跳过该数据块。
 
-```text
-Part
- ├── Granule 1
- ├── Granule 2
- ├── Granule 3
- └── ...
-```
+### 3.2 set (集合索引)
+* **适用场景：** 枚举值较少、常用于 `IN` 查询的字段（如状态码、商品类目）。
+* **示例：**
+  ```sql
+  INDEX status_idx status TYPE set(100) GRANULARITY 1
+  ```
+* **效果：** 查询 `WHERE status = 'FAILED'` 时，若索引中的集合里没有该值，则跳过该 Granule。
 
-索引主要帮助判断：
-
-> 某个 Granule 有没有可能包含目标数据？
-
-如果不可能：
-
-```text
-Skip
-```
-
----
-
-### 4.4 Data Skipping Index
-
-除了主键索引，还可以使用 Data Skipping Index。
-
-常见类型：
-
-- minmax
-- set
-- bloom_filter
-- ngrambf_v1
-- tokenbf_v1
-
-例如：
-
-```text
-Granule
-min(time) = 10:00
-max(time) = 10:10
-```
-
-查询：
-
-```sql
-WHERE time > 11:00
-```
-
-则该 Granule 可以直接跳过。
+### 3.3 bloom_filter (布隆过滤器)
+* **适用场景：** 基数极大（不重复值非常多）的离散型字段，如 `user_id`、`订单号`，常用于点对点匹配。
+* **示例：**
+  ```sql
+  INDEX user_idx user_id TYPE bloom_filter GRANULARITY 1
+  ```
+* **效果：** 查询 `WHERE user_id = 'U123456'` 时，布隆过滤器快速验证。如果过滤器判定“绝对没有”，则直接跳过整个 Granule。
 
 ---
 
-### 4.5 ORDER BY 如何设计？
+## 4. ORDER BY 如何设计？
 
-这是 ClickHouse 最重要的设计问题之一。
+这是 ClickHouse 性能的生死线，**切忌照搬 MySQL 的索引思维**。
 
-例如查询经常：
+假设查询通常是：`WHERE tenant_id = ? AND event_time BETWEEN ? AND ?`
+建议设计：`ORDER BY (tenant_id, event_time)`
 
-```sql
-WHERE tenant_id = ?
-  AND event_time BETWEEN ? AND ?
-```
-
-可以考虑：
-
-```sql
-ORDER BY (tenant_id, event_time)
-```
-
-原则：
-
-> **让高频过滤条件尽量出现在 ORDER BY 前部，并结合实际查询模式设计。**
-
-不要简单按照：
-
-```text
-MySQL 索引思维
-```
-
-设计 ClickHouse ORDER BY。
+**设计原则：**让高频过滤条件尽量出现在 ORDER BY 前部。
+就像整理衣柜，先按“主人 (tenant_id)”分，再按“季节 (event_time)”分。因为查询通常针对特定主人，这样 ClickHouse 能瞬间排除掉其他主人的所有数据，让跳跃效率最大化。
 
 ---
 
-### 4.6 查询执行
+## 5. 查询执行流程
 
-典型流程：
+典型流程如下，其核心思想是**尽可能减少需要读取和处理的数据量**：
 
-```text
-SQL
- ↓
-Parser
- ↓
-Analyzer / Planner
- ↓
-Query Plan
- ↓
-Read From Storage
- ↓
-Filter
- ↓
-Aggregation / Join / Sort
- ↓
-Distributed Merge
- ↓
-Result
-```
-
-其中最重要的是：
-
-> **尽可能减少需要读取和处理的数据量。**
+1. **SQL**
+2. **Parser** (解析)
+3. **Analyzer / Planner** (分析/计划)
+4. **Query Plan** (查询计划)
+5. **Read From Storage** (底层存储读取 - 应用稀疏索引与Skipping Index)
+6. **Filter** (精确过滤)
+7. **Aggregation / Join / Sort** (聚合计算 / 连接 / 排序)
+8. **Distributed Merge** (分布式节点结果合并)
+9. **Result** (返回结果)
 
 ---
 
-### 4.7 为什么 SELECT * 很慢？
-
-因为列式数据库的优势是：
+## 6. 为什么 SELECT * 是绝对的性能杀手？
 
 ```text
-SELECT a
+【 行式存储 (如 MySQL InnoDB) 】      【 列式存储 (如 ClickHouse) 】
+文件按“行”打包。查 1 个字段也要读全行。    文件按“列”切分。查哪个字段就只读哪个文件。
+
+数据块 1: [ID=1, Name=A, Age=20]      ID文件  : [1, 2, 3] -> SELECT ID 极快
+数据块 2: [ID=2, Name=B, Age=25]      Name文件: [A, B, C] 
+数据块 3: [ID=3, Name=C, Age=30]      Age文件 : [20, 25, 30] 
 ```
 
-只读取：
-
-```text
-a
-```
-
-而：
-
-```sql
-SELECT *
-```
-
-需要读取大量列。
-
-所以 ClickHouse 查询应该：
-
-> **只查询需要的列。**
-
+* **SELECT a：** 在列式存储中，系统直接去读取单列数据文件，按需读取，数据量极小。
+* **SELECT *：** 系统被迫去分别读取表里的几十甚至几百个列文件，产生巨大的磁盘 I/O。随后在内存中把它们一行一行地“拼接”对齐，疯狂消耗 CPU 和内存，彻底抵消了列式存储的设计红利。
 ---
 
 ## 5. 并发与一致性
