@@ -421,100 +421,181 @@ Cassandra 的 Batch **不能替代传统业务的事务**，它不具备隔离�
 
 # 6. 分布式与高可用
 
-## 6.1 一致性 Hash
+这份文档主要描述了以 Apache Cassandra 为代表的分布式 NoSQL 数据库在**分布式架构与高可用性**方面的核心设计。
 
+## 6.1 一致性 Hash (Consistent Hashing)
+
+**概念详细描述：**
+传统的哈希取模算法（如 `hash(key) % N`）在节点增删时，会导致大量数据重新映射，造成缓存雪崩或极大的数据迁移开销。一致性哈希通过构建一个首尾相连的**哈希环（Token Ring）**，将数据和节点映射到同一个闭环的数值空间（在 Cassandra 默认的 `Murmur3Partitioner` 中，范围是 -2^63 到 2^63-1）。
+*   **Virtual Nodes (VNodes 虚拟节点)：** 现代 Cassandra 引入了虚拟节点技术。物理节点不再只负责环上的一个连续区间，而是负责多个随机分布的 Token 区间。这解决了数据倾斜问题，并在节点扩容/缩容时实现了极速的数据负载均衡。
+
+**核心算法流程：**
+1.  **路由计算：** 客户端发起请求，提供 Partition Key。
+2.  **哈希映射：** 数据库对 Partition Key 使用 Hash 函数计算得到一个哈希值（Token）。
+3.  **顺时针寻址：** 将该 Token 放到哈希环上，**顺时针**寻找遇到的第一个节点，该节点即为该数据的 Primary Replica（主副本）。
+
+**文本图表：一致性 Hash 环与路由**
 ```text
-Partition Key
-      ↓
-    Hash
-      ↓
-    Token
-      ↓
-  Token Ring
-      ↓
-Replica
+                  [Node A] (Token: 0)
+                 /                   \
+               /                       \
+   (Token: 75)                           (Token: 25)
+   [Node D]                               [Node B]
+      \                                     /
+        \                                 /
+         \                               /
+                  [Node C] (Token: 50)
+
+数据路由过程：
+Partition Key: "user_123" 
+  -> Hash("user_123") = Token 15
+  -> 在环上顺时针找，落入 0~25 之间
+  -> 数据存储在 [Node B]
 ```
 
-数据根据 Token 分布到不同节点。
+## 6.2 多主架构 (Masterless / Multi-Master Architecture)
 
-## 6.2 多主架构
+**概念详细描述：**
+受 Amazon Dynamo 论文启发，Cassandra 采用了完全无中心（Decentralized）、去中心化的 P2P 架构。没有主从（Master-Slave）之分，集群中的所有节点（Node）地位完全平等。
 
-Cassandra 没有传统意义上的 Master。
+*   **Coordinator（协调者）：** 这是一个**动态角色**。任何节点都可以接收客户端的读写请求。当节点 A 接收到客户端的请求时，针对该次请求，节点 A 就充当 Coordinator。它负责根据一致性哈希环，找出数据所在的真正副本节点，将请求并发分发给它们，等待足够数量（满足 Consistency Level）的响应后，再将结果返回给客户端。
 
+**文本图表：多主架构与协调者机制**
 ```text
-Node A ←→ Node B
-  ↕          ↕
-Node C ←→ Node D
+                 +-------------+
+                 |   Client    |
+                 +------+------+
+                        | (请求 Key="user_123")
+                        v
+               +-----------------+
+               | Node A (接收方) |  <-- 此时作为 Coordinator
+               +-----------------+
+              /         |         \
+ (转发写请求)/          |          \(转发写请求)
+           v            v            v
+      +--------+   +--------+   +--------+
+      | Node B |   | Node C |   | Node D |
+      +--------+   +--------+   +--------+
+       (副本1)      (副本2)      (副本3)
 ```
 
-任何节点都可以接收请求，并作为：
+## 6.3 Replication Factor (复制因子)
 
-> **Coordinator**
+**概念详细描述：**
+Replication Factor (RF) 定义了集群中同一个数据分片（Partition）在整个集群中拥有的副本总数。
+*   **RF = 1：** 数据只有一份，节点宕机则数据不可用（单点故障）。
+*   **RF = 3：** 生产环境的标准配置。数据被复制到 3 个不同的节点上。结合可调一致性（Tunable Consistency），例如读写一致性级别设置为 `QUORUM` (满足 quorum = floor(RF/2) + 1 = 2)，允许集群中任意 1 个节点宕机而不影响读写。
 
-协调本次读写。
+**副本分布原则：** 系统会尽可能避免将同一个数据的多个副本放在同一个故障域（如同一台机架、同一个机房）。
 
-## 6.3 Replication Factor
+## 6.4 Replication Strategy (复制策略)
 
-例如：
+**概念详细描述：**
+副本应该放在环上的哪些节点？这由复制策略决定。
 
+**1. SimpleStrategy（简单策略）：**
+*   **流程：** 将第一个副本放在由 Partition Key 哈希计算出的 Token 所在的节点上，然后顺时针沿着哈希环放置后续的副本，**不考虑任何网络或机架拓扑结构**。
+*   **适用场景：** 单个数据中心、开发测试环境。
+
+**2. NetworkTopologyStrategy（网络拓扑策略）：**
+*   **概念：** 生产环境必备。它允许跨多个数据中心（Data Center）配置不同的 RF，并具备**机架感知（Rack-Aware）**能力。
+*   **算法流程：** 
+    1. 确定第一个副本的位置（顺时针第一个节点）。
+    2. 继续顺时针遍历环，对于后续的副本，算法会强制跳过与已有副本处于**同一个 Rack（机架）**的节点。
+    3. 直到在不同的 Rack 上集齐了所需数量的副本。这保证了如果整个机架断电或交换机故障，数据依然可用。
+
+**文本图表：NetworkTopologyStrategy 分布**
 ```text
-RF = 3
+Data Center 1 (DC1)                  Data Center 2 (DC2)
+RF = 2                               RF = 1
+
+Rack 1        Rack 2                 Rack 1
+[Node A]      [Node C]               [Node E]
+[Node B]      [Node D]               [Node F]
+
+假设数据落点起于 Node A：
+- 副本 1：Node A (DC1, Rack1)
+- 副本 2：跳过 Node B (同Rack)，选择 Node C (DC1, Rack2)
+- 副本 3：分配给 DC2 的首个节点 Node E
 ```
 
-表示一个 Partition 有 3 个副本。
+## 6.5 Gossip (Gossip 协议 / 流行病协议)
 
-副本可以分布在：
+**概念详细描述：**
+Gossip 是一种分布式的点对点通信协议。因为集群没有 Master 节点来集中管理元数据，所有节点需要一种机制来了解集群的“拓扑结构”和“其他节点的健康状态”。Gossip 就像人类社会中的“八卦”一样，信息通过节点间的随机通信，呈指数级在整个集群中扩散。
 
-- 不同节点
-- 不同 Rack
-- 不同 Data Center
+**算法与通信流程详细描述：**
+Cassandra 的 Gossip 状态由 `Generation`（节点启动时间戳，重启改变）和 `Version`（内部状态版本，递增）标识，以此来判断谁的数据最新。
+1.  **节点选择：** 每秒钟，每个节点会随机选择 1~3 个其他节点进行 Gossip 通信。
+2.  **三次握手协议 (SYN-ACK-ACK2)：**
+    *   **SYN：** 节点 A 向节点 B 发送 `GossipDigestSyn` 消息，包含自己知道的所有集群节点列表、Generation 和最大的 Version 号。
+    *   **ACK：** 节点 B 收到后与自己的状态进行比对。对于 A 比 B 旧的数据，B 准备好新数据；对于 A 比 B 新的数据，B 请求 A 发送。B 将这些封装成 `GossipDigestAck` 发给 A。
+    *   **ACK2：** 节点 A 收到 ACK 后，更新自己的落后状态，并将 B 请求的新状态封装成 `GossipDigestAck2` 发给 B。至此，A 和 B 的状态达成一致。
 
-## 6.4 Replication Strategy
-
-### SimpleStrategy
-
-简单 Token Ring 场景。
-
-不适合复杂生产环境。
-
-### NetworkTopologyStrategy
-
-生产环境常用。
-
-可以按照：
-
-- Data Center
-- Rack
-
-等拓扑选择副本。
-
-## 6.5 Gossip
-
-节点之间通过 Gossip：
-
-- 发现节点
-- 传播节点状态
-- 进行故障检测
-- 维护集群 Membership
-
-## 6.6 故障处理
-
+**文本图表：Gossip 三次握手流程**
 ```text
-Gossip
-  ↓
-发现节点异常
-  ↓
-其他副本继续提供服务
-  ↓
-Hint / Repair 等机制
-  ↓
-副本最终同步
+   Node A (Initiator)                                Node B (Peer)
+         |                                                 |
+         | -------- (1) SYN: 我知道的(节点, Gen, 最大的Version) ----> |
+         |                                                 | (比对状态)
+         | <------- (2) ACK: 你落后的数据实体 + 我需要你发的数据 ----- |
+ (更新自己的状态)                                            |
+         |                                                 |
+         | -------- (3) ACK2: 你请求的最新数据实体 ----------------> |
+         |                                                 | (更新自己的状态)
 ```
 
-因此 Cassandra 可以做到：
+## 6.6 故障处理 (Fault Handling)
 
-> **节点故障时仍然保持较高的可用性。**
+**概念详细描述：**
+在分布式系统中，节点宕机是常态（硬盘损坏、网络分区等）。Cassandra 利用 Gossip 结合多种修复机制来保证极高的高可用性和最终一致性。
 
+**核心算法与流程：**
+
+**1. 故障检测 (Failure Detection - Phi Accrual Failure Detector)**
+*   **算法思想：** 传统的故障检测是二元（Ping-Pong 超时判定），在网络抖动时极易误判。Cassandra 使用 Phi 累积故障检测器。它记录并统计来自某节点心跳（Gossip）到达的时间间隔历史，计算出一个正态分布。
+*   **计算：** 计算出当前时间与上次心跳时间的差值，如果心跳延迟的概率极低（用 Phi 值表示，通常 Phi > 8 表示故障概率超过 99.9%），则将其标记为 DOWN。
+
+**2. Hinted Handoff (提示移交)**
+*   **目的：** 处理短暂的节点不可用。
+*   **流程：** 
+    1. 客户端发起写请求。
+    2. Coordinator 发现需要写入的一个副本节点（如 Node B）宕机。
+    3. Coordinator 不会报错，而是将写入数据（Hint）保存在本地的一个特殊目录中。
+    4. Gossip 发现 Node B 重新上线，Coordinator 会将保存的 Hint 重新发送给 Node B（重放）。
+
+**3. Anti-Entropy Repair (反熵数据修复 / 节点同步)**
+*   **目的：** 处理长期的节点宕机（Hinted Handoff 通常只保存 3 小时，超时后不再重放），或者彻底的数据损坏，确保数据的最终一致性。
+*   **核心算法 (Merkle Tree 默克尔树对比)：**
+    1. 修复过程触发时，需要对比的两个副本节点会在本地为特定的 Token 范围生成 **Merkle Tree（哈希树）**。
+    2. Merkle Tree 的叶子节点是具体数据的哈希，父节点是子节点哈希的组合哈希。
+    3. 两台机器交换 Merkle Tree 的**根哈希（Root Hash）**。
+    4. 如果根哈希一致，说明数据完全一致，流程结束（极低的带宽消耗）。
+    5. 如果不一致，则自顶向下逐层对比，最终精确定位到不一致的那个数据块所在的叶子节点，然后只针对这小部分差异数据进行网络传输和同步。
+
+**文本图表：Hinted Handoff 流程**
+```text
+           [Client]
+              | 写请求
+              v
+       +--------------+
+       | Coordinator  |
+       |  (Node A)    |
+       +--------------+
+         /          \
+  (写成功)           (写失败/超时)
+       v              v
+ +--------+      +--------+
+ | Node C |      | Node B | (处于DOWN状态)
+ +--------+      +--------+
+   (副本)         /
+               /
+(本地持久化)  / 
+[Hint: "属于 NodeB 的未写数据"]
+
+(一段时间后，Node B 恢复，Gossip 传播状态 UP)
+Coordinator A 读取 Hint -> 发送给 Node B -> Node B 追平数据
+```
 ---
 
 # 7. 持久化与恢复
