@@ -482,7 +482,33 @@ HW = min(1000, 980, 950) = 950
   - **Clean Leader Election（默认）**：仅从 ISR 中选举新 Leader，保证数据一致性。
   - **Unclean Leader Election**：当 ISR 为空且 `unclean.leader.election.enable=true` 时，允许从非 ISR 副本选举，以牺牲一致性换取可用性。
   - **Preferred Leader Election**：自动/手动将 Leader 切换回优先副本，恢复集群负载均衡。
+```
+Kafka 的 Leader 是分片（Partition）级别的，绝对不是 Topic 级别的。
 
+一个 Topic 通常会被划分为多个 Partition，这些 Partition 会散布在不同的 Broker 节点上。针对每一个具体的 Partition，Kafka 会维护一组副本（Replicas），其中只有一个是 Leader，其余都是 Follower。客户端的所有读写请求（Producer 发送数据、Consumer 拉取数据）只与 Partition 的 Leader 进行交互，Follower 仅仅在后台默默从 Leader 处同步数据。
+
+Partition Leader 选举流程
+
+与 Zookeeper 或 Etcd 中节点互相投票的机制不同，Kafka Partition 的 Leader 选举是“独裁制”的，由集群中的核心节点 Kafka Controller（控制器） 全权包办，无需副本之间通信投票。核心流程如下：
+
+1. 故障感知： 当某个 Broker 宕机（或网络分区），Zookeeper（或新版 KRaft 的元数据 Quorum）会检测到该 Broker 的心跳超时或 Session 断开。
+
+2. 锁定受影响的分片： Controller 监听到 Broker 下线的事件后，会立即扫描并找出所有以该 Broker 为 Leader 的 Partition 列表。
+
+3. 查阅 ISR 列表： 针对每一个需要重新选举的 Partition，Controller 会从元数据中提取它的 ISR（In-Sync Replicas，已同步副本集合）。ISR 中包含的是当前与原 Leader 数据保持高度同步的存活副本。
+
+4. 选举顺位指定： Controller 默认会查看该 Partition 的 AR（Assigned Replicas，初始分配的所有副本列表）。它会按照 AR 中的顺序进行轮询，挑选出第一个存在于当前 ISR 列表中且活着的副本，直接任命它为新 Leader。
+
+5. 广播生效： 决定新 Leader 后，Controller 会更新元数据，并向所有相关的 Broker 广播 LeaderAndIsr 请求。新的 Leader 开始接受客户端读写，其他存活的 Follower 切换目标，开始向新 Leader 发起数据同步。
+
+极端情况下的选举（Unclean 选举）
+
+如果遇到极其糟糕的情况：ISR 列表里的所有副本都宕机了，此时还能否选出 Leader 取决于 Broker 级别的配置参数 unclean.leader.election.enable：
+
+配置为 false（默认推荐）： 拒绝选举。该 Partition 直接对外停止服务，死等 ISR 中的任意一个副本恢复。这是为了保证数据不丢失（强一致性）。
+
+配置为 true： Controller 会在 OSR（Out-of-Sync Replicas，未同步的落后副本）中挑一个活着的节点强行提拔为 Leader。这牺牲了数据一致性（因为该副本可能落后了很多消息，会导致数据丢失），但换取了系统的高可用性。
+```
 ### 6.3 故障检测与恢复
 
 1. **故障检测**：Broker 通过心跳机制向 Controller 发送心跳，若超过 `session.timeout.ms`（默认 18s）未收到心跳，Controller 判定该 Broker 失效。
