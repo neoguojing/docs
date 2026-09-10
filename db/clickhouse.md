@@ -731,179 +731,71 @@ ALTER TABLE t DELETE WHERE status = 'invalid';
 
 ## 6. 分布式与高可用
 
-### 6.1 ClickHouse 如何扩展？
+# ClickHouse 分布式与高可用核心架构指南
 
-典型架构：
-
-```text
-                Client
-                  ↓
-             Query Node
-                  ↓
-       ┌──────────┼──────────┐
-       ↓          ↓          ↓
-    Shard 1    Shard 2    Shard 3
-       ↓          ↓          ↓
-    Replica     Replica     Replica
-```
-
-两个核心概念：
-
-- **Shard：分片**
-- **Replica：副本**
+ClickHouse 能够支撑 PB 级数据和极致查询性能，其底层的核心支柱分为两个正交的维度：**分布式（扩展算力与存储）**和**高可用（保障服务连续性）**。这两者分别对应 ClickHouse 架构中的 **Shard（分片）** 与 **Replica（副本）**。
 
 ---
 
-### 6.2 Shard
+## 一、 第一支柱：分布式与水平扩展 (Shard)
 
-Shard 用于：
+分片的核心目标是**分而治之**，解决单机存储容量和计算能力的瓶颈。
 
-> **水平切分数据，扩大存储和计算能力。**
+* **计算与存储的横向扩展**：将一份完整的数据按照特定规则（Sharding Key）切分成多份，分别存储在不同的物理节点上。10 亿行数据分散到 10 个节点，查询耗时理论上可缩减至十分之一。
+* **分布式表 (Distributed Table) 的角色**：
+  * Distributed 表本身**不存储任何数据**，它是一个“智能路由”和“代理”。
+  * **写入分发**：根据分片键，计算数据归属的 Shard，并转发数据（生产中通常由外部组件直接写 Local 表以提升性能）。
+  * **查询汇总 (Scatter-Gather)**：接收查询的节点作为 Coordinator（协调节点），将查询下推至各个 Shard 本地执行局部聚合，最后在 Coordinator 节点进行合并（Merge）并返回最终结果。计算尽可能靠近数据。
 
-例如：
+## 二、 第二支柱：高可用与数据冗余 (Replica)
 
-```text
-10亿数据
+副本的核心目标是**数据冗余与故障转移**，解决节点宕机导致的数据丢失和服务不可用。
 
-Shard 1 → 3亿
-Shard 2 → 3亿
-Shard 3 → 4亿
-```
+* **数据镜像**：副本是同一个 Shard 内数据的精确镜像。多个副本之间互为备份。
+* **ReplicatedMergeTree 家族**：高可用集群中必须使用带有 `Replicated` 前缀的表引擎。
+* **多主架构 (Multi-Master)**：副本之间没有绝对的主从节点之分。客户端可以向任意一个 Replica 写入数据，集群会自动完成异步数据同步。
+* **故障转移 (Failover) 与读写分离**：当某节点宕机时，Distributed 表会自动将查询路由到该 Shard 的其他健康副本上，业务无感知。多个副本也可并发承担查询压力。
 
-查询时：
+## 三、 集群大脑：ClickHouse Keeper
 
-```text
-Query
- ↓
-多个 Shard 并行执行
- ↓
-Merge Result
-```
+副本之间的数据一致性、状态同步依赖于轻量级分布式协调服务——**ClickHouse Keeper**（或 ZooKeeper）。Keeper 本身绝对不存储业务数据，只作为指令与状态的“公告板”。
 
----
+* **复制日志 (Replication Log)**：记录数据块写入指令，触发其他副本的数据同步。
+* **元数据管理**：记录已存在的数据块 (Data Parts)，防止重复拉取。
+* **分布式 DDL 协调**：确保 `ON CLUSTER` 级别的建表、改表语句在全集群节点一致执行。
+* **选主与心跳监控**：维护健康副本列表，供 Distributed 表进行路由调度。
 
-### 6.3 Replica
+## 四、 核心工作流：数据写入与复制机制
 
-Replica 用于：
+在互为副本的 Replica A 和 Replica B 中，一次 `INSERT` 写入的完整流转过程如下：
 
-> **数据冗余和高可用。**
+1. **本地落盘 (Replica A)**：客户端向 Replica A 发起写入，A 将数据刷写到本地磁盘，生成新的物理数据块 (Data Part)。
+2. **登记元数据 (Replica A → Keeper)**：A 在 Keeper 中写入一条复制日志：“生成了新数据块，请求同步”。
+3. **监听与发现 (Keeper → Replica B)**：B 监听到 Keeper 的日志变更，收到新日志通知。
+4. **生成任务 (Replica B)**：B 解析日志，将其转化为一个 `GET`（拉取数据）任务放入后台队列。
+5. **点对点传输 (Replica B ← Replica A)**：B 绕过 Keeper，直接通过网络直连 A，将物理数据文件下载到本地临时目录。
+6. **校验与提交 (Replica B)**：B 比对文件 Checksum 无误后，将数据合并入正式目录，同步完成。
 
-例如：
+> **合并 (Merge) 同步策略**：后台 Data Part 的合并由 Keeper 选举出的 Leader 节点分配任务。Leader 在 Keeper 发布 `MERGE` 日志，各副本收到日志后**各自在本地独立执行合并计算**，从而极大节省网络传输带宽。如果某节点合并失败，会退化为直接去健康节点下载已合并的数据。
 
-```text
-Shard 1
- ├── Replica 1
- └── Replica 2
-```
+## 五、 典型物理拓扑架构图
 
-一个节点故障：
-
-```text
-Replica 1 ❌
-Replica 2 ✅
-```
-
-可以继续提供服务。
-
----
-
-### 6.4 Distributed 表
-
-常见架构：
+以下是一个 `3 Shard × 2 Replica` （共6个节点）的典型集群架构：
 
 ```text
-Distributed Table
-      ↓
-┌─────┼─────┐
-↓     ↓     ↓
-S1    S2    S3
-```
-
-Distributed 表主要负责：
-
-- 分发查询
-- 分发写入
-- 汇总结果
-
-真正的数据通常存储在本地 MergeTree 表中。
-
----
-
-### 6.5 分布式查询
-
-例如：
-
-```sql
-SELECT
-    user_id,
-    sum(amount)
-FROM distributed_events
-GROUP BY user_id;
-```
-
-大致：
-
-```text
-Coordinator
-    ↓
-Shard 1 → local aggregation
-Shard 2 → local aggregation
-Shard 3 → local aggregation
-    ↓
-Coordinator
-    ↓
-Merge aggregation
-    ↓
-Final Result
-```
-
-核心思想：
-
-> **尽可能让计算靠近数据，先局部聚合，再汇总。**
-
----
-
-### 6.6 ZooKeeper / ClickHouse Keeper
-
-复制、DDL 等分布式协调场景需要协调服务。
-
-现代 ClickHouse 常见：
-
-```text
-ClickHouse Keeper
-```
-
-用于协调：
-
-- Replica
-- Replication Log
-- 分布式元数据
-- 部分 DDL 协调
-
----
-
-### 6.7 扩容
-
-ClickHouse 横向扩展主要：
-
-```text
-增加 Shard
-```
-
-但是扩容并不意味着历史数据自动完美均衡。
-
-需要考虑：
-
-- 数据重新分布
-- Sharding Key
-- 写入路由
-- 查询路由
-- 历史数据迁移
-
-所以：
-
-> **Sharding Key 是 ClickHouse 分布式设计中的关键。**
-
+               客户端 (Client)
+                     │
+             查询 Distributed 表
+                     │
+     ┌───────────────┼───────────────┐ (查询拆分与下推)
+     ↓               ↓               ↓
+  [Shard 1]       [Shard 2]       [Shard 3]
+  ├── Node 1      ├── Node 3      ├── Node 5
+  └── Node 2      └── Node 4      └── Node 6
+    (互为副本)      (互为副本)      (互为副本)
+         ╲           │           ╱
+          ╲          │          ╱
+           (共享 ClickHouse Keeper)
 ---
 
 ## 7. 持久化与恢复
