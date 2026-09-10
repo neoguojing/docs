@@ -651,125 +651,82 @@ ClickHouse 绝对不会为每一行数据创建索引（海量数据下会撑爆
 
 ## 5. 并发与一致性
 
-### 5.1 ClickHouse 是否支持事务？
-
-ClickHouse 不是传统 OLTP 数据库。
-
-因此：
-
-- 不适合复杂事务
-- 不以多行 ACID 事务为核心
-- 更适合批量 INSERT
-- 更适合追加写
-- UPDATE / DELETE 成本相对高
-
-核心定位：
-
-> **分析优先，而不是事务优先。**
+## 1. 事务与定位：分析优先，而非事务优先
+传统关系型数据库像是一个严谨的“老会计”，依靠强事务（ACID）保证每一笔数据的绝对准确，通过加锁来控制并发。而 ClickHouse 更像是轰鸣的“重型集装箱码头”：
+* **不适合复杂事务**：ClickHouse 不以多行 ACID 事务为核心。如果你需要精细控制“转账失败则回滚”，它不适合。
+* **批量吞吐为王**：最契合 ClickHouse 的操作是**大批量追加写入（Insert）**。
+* **一致性妥协**：在单机和分布式集群中，ClickHouse 追求高可用和**最终一致性**。通过类似 `ReplicatedMergeTree` 的复制机制实现副本同步与故障恢复，而不是要求所有节点毫秒级的强事务同步。
 
 ---
 
-### 5.2 写入并发
-
-多个 INSERT 可以并发执行：
-
-```text
-Client A → Part A
-Client B → Part B
-Client C → Part C
-```
-
-后台再：
-
-```text
-A + B + C
- ↓
-Merge
-```
-
-这种模型避免大量写请求直接修改同一份历史数据。
+## 2. 写入并发：无锁化的“独立小锅”机制
+ClickHouse 支持极高的写入并发，因为它**避免了锁竞争**。
+* **传统数据库缺陷**：多个并发请求如果修改同一份历史数据，必须排队争抢行锁或表锁。
+* **ClickHouse 方案**：Client A、B、C 并发写入时，ClickHouse 会为它们分别生成独立的微小数据块（Part A, Part B, Part C）。客户端各自写自己的数据，互不干扰。等数据落盘后，后台的合并引擎（Merge）再默默将这些“小数据块”拼装成大的数据文件。
 
 ---
 
-### 5.3 UPDATE / DELETE
-
-ClickHouse 支持 UPDATE / DELETE，但不要按照 MySQL 的思维大量使用。
-
-因为列式存储 + Part 机制下，修改历史数据可能需要较大的数据重写成本。
-
-因此典型设计是：
-
-```text
-业务数据
- ↓
-追加写
- ↓
-版本字段 / 状态字段
- ↓
-查询时选择最终状态
-```
-
-例如：
-
-```text
-ReplacingMergeTree
-```
-
-用于某些去重/最终状态场景。
+## 3. UPDATE / DELETE：追加写代替修改
+在列式存储中，数据被高度压缩并紧密排列。此时去执行行级别的 UPDATE 或 DELETE，相当于把一堵压实的墙敲碎重建，需要巨大的数据重写成本。
+* **核心思路：只写不改**。当业务数据发生变化（如订单状态从“未付款”变为“已付款”）时，不要去修改历史记录，而是直接追加一条新版本的数据。
+* **桌面清理大师 `ReplacingMergeTree`**：
+  由于采用追加写，表中会同时存在同一 ID 的多个版本。`ReplacingMergeTree` 引擎会在后台不定期的 Merge 操作中，清理掉旧版本，仅保留最新状态。
+  > **注意**：这种去重不是实时的。为了强制实时去重，可以在查询时添加 `FINAL` 关键字，但这会引发全量比对，严重拖垮性能。
 
 ---
 
-### 5.4 一致性
+## 4. 告别 FINAL：高效查询最新状态的平替方案
+放弃沉重的 `FINAL` 关键字，我们可以利用 ClickHouse 强大的查询层计算能力，瞬间提取最新状态：
 
-单机和分布式场景需要分别考虑。
-
-ClickHouse 更强调：
-
-```text
-高吞吐
-高可用
-最终整理
+### 方案一：`argMax` 函数（精准狙击）
+寻找时间戳（或版本号）最大时，对应的目标字段值。适合只需要查询部分字段最新状态的场景，性能极佳。
+```sql
+SELECT
+    id,
+    argMax(status, update_time) AS current_status,
+    argMax(amount, update_time) AS final_amount,
+    max(update_time) AS latest_time
+FROM orders
+GROUP BY id;
 ```
 
-而不是：
-
-```text
-强事务一致性
+### 方案二：`LIMIT 1 BY` 语法（分组掐尖）
+先按版本倒序，再按目标字段分组取第一条。完美支持 `SELECT *` 获取宽表中所有字段的最终状态。
+```sql
+SELECT *
+FROM orders
+ORDER BY update_time DESC
+LIMIT 1 BY id;
 ```
-
-使用 ReplicatedMergeTree 等复制机制可以实现副本同步和故障恢复能力。
+> **原理对比**：`FINAL` 是在底层存储层强行触发物理合并，开销巨大；而 `argMax` 和 `LIMIT BY` 只是在内存中进行聚合与过滤，速度快几个数量级。
 
 ---
 
-### 5.5 ReplacingMergeTree
+## 5. 数据删除与修改的四种流派
+ClickHouse 根据不同场景，提供了四种不同量级的修改/删除机制：
 
-典型：
-
-```text
-id=1 version=1
-id=1 version=2
+### ① 分区级操作（最快、最推荐）
+基于 Partition 的物理清理，瞬间完成，零 CPU/内存负担。适合清理过期日志。
+```sql
+ALTER TABLE t DROP PARTITION '2026-09-01';
 ```
 
-写入：
+### ② 引擎自带的“假动作”（顺应追加写天性）
+用 `INSERT` 替代 UPDATE/DELETE：
+* **ReplacingMergeTree**：插入同主键新数据覆盖老数据。
+* **CollapsingMergeTree**：插入主键相同但“符号列”为 `-1` 的记录，利用查询聚合 `SUM(字段 * 符号)` 抵消旧记录，或等待后台 Merge 物理消除。
 
-```text
-两条记录都可能暂时存在
+### ③ 轻量级删除（Lightweight Deletes，版本 22.8+）
+适用于常规的业务逻辑删除。底层维护系统列 `_row_exists`，删除时将其标为 `0`。查询时自动过滤，后台 Merge 时才真正物理清理。
+```sql
+DELETE FROM t WHERE id = 123;
 ```
 
-后台 Merge：
-
-```text
-Merge
- ↓
-根据规则保留最终版本
+### ④ 传统 Mutation 操作（异步重写，开销极大）
+适用于低频数据清洗或合规物理删除（如 GDPR）。操作会被放入队列，后台读取原数据块、剔除数据后，重新压缩生成全新数据块。
+```sql
+ALTER TABLE t DELETE WHERE status = 'invalid';
 ```
-
-因此：
-
-> **ReplacingMergeTree 的“去重”不是传统唯一索引意义上的实时去重。**
-
-必要时可以使用 `FINAL` 获取最终结果，但 `FINAL` 可能增加查询成本。
-
 ---
 
 ## 6. 分布式与高可用
