@@ -43,29 +43,718 @@ Mapping 定义了文档及其包含的字段如何被存储和索引。
 
 ## 2. 存储引擎
 
-### Lucene 的角色
-Elasticsearch 本身不直接处理数据的底层存储，而是委托给底层的 Apache Lucene。Lucene 负责倒排索引的构建、段的合并、文件的读写等核心存储逻辑。ES 在其之上封装了分布式协调、REST API、集群管理等能力。
+# Elasticsearch 底层磁盘存储
 
-### 段 (Segment) 的概念
-Lucene 的存储单元是段 (Segment)。每个段是一个独立的、**不可变**的倒排索引。
-- **不可变性**：段一旦写入磁盘，就不会被修改。删除或更新操作实际上是标记删除或写入新段。这避免了锁竞争，极大提升了并发读性能。
-- **按大小合并**：随着写入增加，小段会不断合并为大段，以回收删除标记的空间并提升查询效率。
+> 核心主线：**JSON → Memory Buffer + Translog → Refresh → Segment → Flush/fsync → 磁盘**
+>
+> Segment 内部按用途拆成多套结构：**FST/Term Dictionary 查词、Postings 找 DocID、Stored Fields 取原文、Doc Values 做排序/聚合**。
 
-### 写入流程
-1. **请求进入**：文档写入主分片。
-2. **内存缓冲区 (In-Memory Buffer)**：文档首先写入内存缓冲区，此时不可搜索。
-3. **Translog 写入**：同时写入事务日志 (Translog) 并 `fsync` 到磁盘，保证崩溃恢复。
-4. **刷新 (Refresh)**：默认每 1 秒，内存缓冲区的内容被写入文件系统缓存 (OS Page Cache) 并生成一个新的段（此时可搜索）。这是**近实时 (NRT)** 的代价。
-5. **提交 (Flush / Commit)**：定期或 Translog 过大时，OS Page Cache 中的段被 `fsync` 到物理磁盘，同时清空 Translog。
+## 1. 整体结构
 
-### Translog 的作用
-Translog 是 Elasticsearch 保证数据持久化和事务性的关键。由于 Refresh 只是将数据放入 OS Cache，如果此时节点宕机，内存中的数据会丢失。Translog 记录了所有未持久化到段文件的操作，节点重启时通过重放 Translog 恢复数据。
+ES 的一个 Shard 底层对应一个 Lucene Index。Lucene 不直接以 JSON 文件保存数据，而是把数据组织成多个不可变的 Segment；每个 Segment 有自己的词典、倒排、Stored Fields、Doc Values 等文件。fileciteturn0file0L297-L325
 
-### 合并策略 (Segment Merge)
-后台线程会异步触发段合并。合并过程会将多个小段合并为一个大段，同时物理删除被标记为删除的文档。合并策略通常基于段的大小和数量，可通过 `index.merge.policy` 调整。
+```text
+ES Index
+└── Shard 0
+    └── Lucene
+        ├── Segment _0
+        │   ├── .tip/.tim   Term Index + Term Dictionary
+        │   ├── .doc/.pos   Postings
+        │   ├── .fdx/.fdt   Stored Fields
+        │   └── .dvm/.dvd   Doc Values
+        └── Segment _1
+            └── 同上
+```
 
-### 近实时搜索 (NRT)
-Elasticsearch 的搜索延迟通常在 1 秒左右，这取决于 `refresh_interval` 配置。如果业务允许，可以调大该值（如 30s）以提升写入吞吐；对于实时性要求极高的场景，可手动调用 `_refresh` API，但会严重影响性能。
+典型目录可概括为：
+
+```text
+<data>/nodes/0/indices/<index_uuid>/<shard>/
+├── index/          # Lucene Segment 文件
+│   ├── segments_N  # 当前 Commit 的 Segment 清单
+│   ├── _0.tip
+│   ├── _0.tim
+│   ├── _0.doc
+│   ├── _0.pos
+│   ├── _0.fdx
+│   ├── _0.fdt
+│   ├── _0.dvm
+│   └── _0.dvd
+└── translog/       # ES 事务日志
+    ├── translog-*.tlog
+    └── translog.ckp
+```
+
+> **注意**：具体文件名、Codec、文件组合会随 Lucene 版本、字段类型和配置变化；`.cfs` 可能把小 Segment 的多个文件封装起来。
+
+---
+
+## 2. 用同一组数据理解所有结构
+
+统一使用 3 个文档：
+
+```text
+DocID 1: {"product":"MacBook Pro", "price":15000}
+DocID 2: {"product":"MacBook Air", "price":8000}
+DocID 3: {"product":"iPad Pro",    "price":6000}
+```
+
+假设 `product` 分词后得到：
+
+```text
+Doc1 → macbook, pro
+Doc2 → macbook, air
+Doc3 → ipad, pro
+```
+
+于是：
+
+```text
+Term Dictionary
+────────────────
+air
+ipad
+macbook
+pro
+
+Postings
+────────────────
+air    → [Doc2]
+ipad   → [Doc3]
+macbook→ [Doc1, Doc2]
+pro    → [Doc1, Doc3]
+```
+
+后面所有例子都基于这 3 个 DocID，不再更换数据。
+
+---
+
+## 3. Segment：不可变的小型索引
+
+Segment 是 Lucene 的基本存储/检索单元。一个 Segment 可以独立完成查询，写入后基本不可修改。
+
+```text
+Segment _0
+├── Term Dictionary : air, ipad, macbook, pro
+├── Postings        : term → DocID
+├── Stored Fields   : DocID → 原始字段
+└── Doc Values      : field → values
+```
+
+如果更新 Doc1：
+
+```text
+旧 Segment _0
+Doc1 price=15000  → 标记删除
+
+新 Segment _1
+Doc1 price=12000  → 新写入
+```
+
+后台 Merge：
+
+```text
+Segment _0 + Segment _1
+          ↓
+      Segment _2
+          ↓
+旧 Doc1 被物理清除
+```
+
+**为什么不可变？**
+
+避免频繁修改大型倒排结构，降低读写竞争；同时便于利用 OS Page Cache。删除/更新通过新 Segment + 删除标记实现，最终由 Merge 回收。
+
+---
+
+## 4. Term Dictionary + FST：先找到“词”
+
+### 4.1 Term Dictionary
+
+`.tim` 保存 Segment 中有序的 Term，并组织成 Block。
+
+```text
+.tim
+
+Block A:
+  air
+  ipad
+
+Block B:
+  macbook
+  pro
+```
+
+查询 `macbook` 时，不应该从头扫描整个 `.tim`。
+
+### 4.2 Term Index / FST
+
+`.tip` 是 Term Index，使用 FST 等结构压缩保存“Term → `.tim` 中 Block 的定位信息”。
+
+为了统一举例，假设：
+
+```text
+air     → .tim Block A
+ipad    → .tim Block A
+macbook → .tim Block B
+pro     → .tim Block B
+```
+
+可以抽象成：
+
+```text
+                FST (.tip)
+                   │
+         ┌─────────┴─────────┐
+         │                   │
+       "a/i"               "m/p"
+         │                   │
+         ▼                   ▼
+     Block A              Block B
+         │                   │
+         ▼                   ▼
+      .tim:A              .tim:B
+   air, ipad          macbook, pro
+```
+
+FST 的关键不是“保存完整词典”，而是**用紧凑状态机快速把查询词定位到 `.tim` 的相应范围**。
+
+例如：
+
+```text
+查询 "macbook"
+    ↓
+FST (.tip)
+    ↓
+定位 Block B
+    ↓
+.tim Block B
+    ↓
+确认 macbook
+    ↓
+得到该 Term 对应的 Postings 信息
+```
+
+### 4.3 FST 为什么省内存？
+
+假设 Term Dictionary 有几十 GB：
+
+```text
+完整词典
+几十 GB
+   │
+   └── 不可能全部常驻内存
+
+FST
+较小的压缩索引
+   │
+   └── 常驻/高效访问
+          ↓
+       定位 .tim
+```
+
+**面试关键词：**
+
+> FST 是 Term Index 的核心结构，通过共享状态/路径并携带输出信息，以较小内存开销快速定位 Term Dictionary 中的 Block。
+
+---
+
+## 5. Postings：找到 Term 对应的 DocID
+
+找到 `macbook` 后，还需要知道它在哪些文档：
+
+```text
+Term
+macbook
+   ↓
+Postings
+   ↓
+[Doc1, Doc2]
+```
+
+完整关系：
+
+```text
+.tim
+┌──────────┐
+│ macbook  │
+└────┬─────┘
+     │
+     ▼
+.doc
+┌──────────────────┐
+│ DocID: 1         │
+│ DocID: 2         │
+└──────────────────┘
+```
+
+Postings 不只是 DocID，还可以包含：
+
+```text
+DocID
+Term Frequency
+Position
+Offset / Payload（按索引能力）
+```
+
+例如：
+
+```text
+macbook
+  ├── Doc1, TF=1
+  └── Doc2, TF=1
+
+pro
+  ├── Doc1, TF=1
+  └── Doc3, TF=1
+```
+
+### 为什么压缩？
+
+假设 DocID：
+
+```text
+[100, 103, 104, 109, 110]
+```
+
+可以转成 Delta：
+
+```text
+[100, 3, 1, 5, 1]
+```
+
+再进行 Block/Packed 编码，减少磁盘空间和读取数据量。
+
+因此：
+
+> **Postings 解决的是：这个 Term 出现在哪些 DocID？**
+
+---
+
+## 6. Stored Fields：拿 DocID 找回原文
+
+搜索 `macbook`：
+
+```text
+macbook
+   ↓
+Postings
+   ↓
+[Doc1, Doc2]
+```
+
+如果最终需要返回 JSON，还要：
+
+```text
+DocID
+  ↓
+.fdx
+  ↓
+定位 Stored Fields
+  ↓
+.fdt
+  ↓
+取出字段
+```
+
+统一例子：
+
+```text
+.fdx
+┌─────────────────────┐
+│ Doc1 → Chunk A      │
+│ Doc2 → Chunk A      │
+│ Doc3 → Chunk B      │
+└─────────────────────┘
+
+.fdt
+┌─────────────────────────────────────┐
+│ Chunk A                              │
+│   Doc1 → MacBook Pro, 15000         │
+│   Doc2 → MacBook Air, 8000          │
+├─────────────────────────────────────┤
+│ Chunk B                              │
+│   Doc3 → iPad Pro, 6000             │
+└─────────────────────────────────────┘
+```
+
+实际 Stored Fields 会采用二进制编码和分块压缩，不是简单的一行一个 JSON。
+
+所以：
+
+```text
+查询 macbook
+    ↓
+Postings → [1,2]
+    ↓
+.fdx → 找到 Doc1/Doc2 所在 Chunk
+    ↓
+.fdt → 读取并解压 Chunk
+    ↓
+返回 _source / Stored Fields
+```
+
+**一句话：**
+
+> Stored Fields 解决“已经找到 DocID，怎么把需要返回的字段取出来”。
+
+---
+
+## 7. Doc Values：按字段计算，而不是按文档取原文
+
+现在执行：
+
+```text
+AVG(price)
+```
+
+如果从 `.fdt` 读取：
+
+```text
+Doc1 → JSON → 解析 price
+Doc2 → JSON → 解析 price
+Doc3 → JSON → 解析 price
+```
+
+效率低。
+
+Doc Values 提前按列组织：
+
+```text
+.dvd
+
+price
+────────
+Doc1 → 15000
+Doc2 →  8000
+Doc3 →  6000
+```
+
+另一个字段：
+
+```text
+product.keyword
+────────────────
+Doc1 → MacBook Pro
+Doc2 → MacBook Air
+Doc3 → iPad Pro
+```
+
+`.dvm` 提供字段的元数据、定位和编码信息，`.dvd` 保存实际 Doc Values 数据。
+
+因此：
+
+```text
+AVG(price)
+    ↓
+.dvm
+    ↓
+定位 price 列
+    ↓
+.dvd
+    ↓
+[15000, 8000, 6000]
+    ↓
+AVG = 9666.67
+```
+
+**一句话：**
+
+> Stored Fields 是“按文档取数据”，Doc Values 是“按字段取数据”。
+
+---
+
+## 8. 四种核心结构放在一起
+
+仍然使用：
+
+```text
+Doc1 = MacBook Pro / 15000
+Doc2 = MacBook Air /  8000
+Doc3 = iPad Pro    /  6000
+```
+
+```text
+                    Segment _0
+                        │
+       ┌────────────────┼────────────────┐
+       │                │                │
+       ▼                ▼                ▼
+   Term/FST          Postings       Stored Fields
+   .tip/.tim           .doc          .fdx/.fdt
+       │                │                │
+       │                │                │
+       ▼                ▼                ▼
+ "macbook"         [Doc1,Doc2]     Doc1 → JSON
+                                      Doc2 → JSON
+                                      Doc3 → JSON
+
+                        +
+
+                    Doc Values
+                    .dvm/.dvd
+                        │
+                        ▼
+                price → [15000,8000,6000]
+```
+
+对应查询：
+
+```text
+关键词搜索：
+"macbook"
+  → FST/.tip
+  → Term Dictionary/.tim
+  → Postings/.doc
+  → [Doc1, Doc2]
+
+返回原文：
+[Doc1, Doc2]
+  → .fdx
+  → .fdt
+  → JSON
+
+排序/聚合：
+price
+  → .dvm
+  → .dvd
+  → [15000,8000,6000]
+```
+
+---
+
+## 9. Translog：Segment 之外的“恢复日志”
+
+写入 Doc3：
+
+```text
+                 Doc3
+                  │
+          ┌───────┴────────┐
+          ▼                ▼
+   Memory Buffer        Translog
+          │                │
+          │                └── 顺序追加
+          ▼
+       Refresh
+          │
+          ▼
+     新 Segment
+          │
+          ▼
+      OS Page Cache
+```
+
+Translog 的作用不是负责搜索，而是：
+
+> **在 Lucene Segment 尚未完成持久化时，保证节点异常后可以恢复操作。**
+
+因此：
+
+```text
+Refresh ≠ fsync 到物理盘
+```
+
+Refresh 主要解决：
+
+```text
+“什么时候可以搜索到？”
+```
+
+Translog + 持久化机制解决：
+
+```text
+“节点异常后怎么恢复？”
+```
+
+---
+
+## 10. Refresh / Flush / Merge 一次讲清
+
+### Refresh
+
+```text
+Memory Buffer
+     ↓
+  Refresh
+     ↓
+New Segment
+     ↓
+可搜索
+```
+
+核心：
+
+> **让数据进入搜索视图。**
+
+### Flush / Commit
+
+```text
+Segment / Page Cache
+       ↓
+     fsync
+       ↓
+ Physical Disk
+       ↓
+更新 Commit Point
+       ↓
+segments_N
+```
+
+核心：
+
+> **推动 Lucene 索引持久化，并更新 Commit 状态；Translog 在满足条件后可以被清理。**
+
+### Merge
+
+```text
+Segment _0 ─┐
+Segment _1 ─┼──→ Merge → Segment _3
+Segment _2 ─┘
+```
+
+作用：
+
+- 减少 Segment 数量
+- 合并索引文件
+- 清理已标记删除的文档
+- 回收磁盘空间
+
+---
+
+## 11. 一次完整写入 + 查询
+
+### 写入
+
+```text
+POST /index/_doc/3
+{"product":"iPad Pro","price":6000}
+              │
+              ▼
+        Memory Buffer
+              │
+              ├────────→ Translog
+              │
+          Refresh
+              │
+              ▼
+        Segment _1
+              │
+      ┌───────┼────────┐
+      ▼       ▼        ▼
+    .tim/.tip .doc   .fdt/.fdx
+                      │
+                    .dvd/.dvm
+              │
+              ▼
+         OS Page Cache
+              │
+           Flush
+              │
+            fsync
+              ▼
+        Physical Disk
+```
+
+### 查询
+
+```text
+GET /index/_search
+product:macbook
+          │
+          ▼
+     FST / .tip
+          │
+          ▼
+    Term Dictionary
+       / .tim
+          │
+          ▼
+    Postings / .doc
+          │
+          ▼
+     [Doc1, Doc2]
+          │
+          ▼
+    Query / Score
+          │
+          ▼
+      Fetch阶段
+          │
+          ▼
+     .fdx → .fdt
+          │
+          ▼
+   Doc1 / Doc2 JSON
+```
+
+如果查询是：
+
+```text
+ORDER BY price
+```
+
+则主要利用：
+
+```text
+price
+  ↓
+Doc Values
+  ↓
+.dvm/.dvd
+  ↓
+排序
+```
+
+---
+
+## 12. 最终记忆模型
+
+把 ES/Lucene 磁盘存储压缩成下面这张图：
+
+```text
+                         Lucene Segment
+                               │
+          ┌────────────────────┼────────────────────┐
+          │                    │                    │
+          ▼                    ▼                    ▼
+    Term Index/FST         Postings           Stored Fields
+       .tip                  .doc              .fdx/.fdt
+          │                    │                    │
+          ▼                    ▼                    ▼
+      定位词典              找 DocID              取原文
+          │                    │                    │
+          ▼                    │                    │
+       .tim                   │                    │
+    Term Dictionary           │                    │
+          │                    │                    │
+          └───────────────┬────┘                    │
+                          ▼                         │
+                       DocID ───────────────────────┘
+
+                          +
+
+                      Doc Values
+                       .dvm/.dvd
+                          │
+                          ▼
+                    排序 / 聚合 / 脚本
+```
+
+### 面试一句话
+
+> **Elasticsearch 的一个 Shard 底层是 Lucene Index，数据以不可变 Segment 组织。Segment 内部不是简单保存 JSON，而是分别维护 Term Index/FST + Term Dictionary 用于定位词，Postings 用于从 Term 找 DocID，Stored Fields 用于从 DocID 找回文档字段，Doc Values 用于按字段进行排序和聚合。写入通过 Memory Buffer + Translog，Refresh 产生可搜索 Segment，Flush/fsync 完成持久化，后台 Merge 合并 Segment 并回收删除数据。**
+
+| 结构 | 典型文件 | 统一例子 | 解决什么问题 |
+|---|---|---|---|
+| Term Index / FST | `.tip` | `macbook → Block B` | 快速定位词典 |
+| Term Dictionary | `.tim` | `air, ipad, macbook, pro` | 保存有哪些 Term |
+| Postings | `.doc` | `macbook → [1,2]` | Term → DocID |
+| Stored Fields | `.fdx/.fdt` | `1 → MacBook Pro/15000` | DocID → 原文/字段 |
+| Doc Values | `.dvm/.dvd` | `price → [15000,8000,6000]` | 字段 → 值，排序/聚合 |
+| Segment | 一组上述文件 | `_0` | 独立、不可变的索引单元 |
+| Translog | `.tlog` | `Doc3 写入操作` | 崩溃恢复 |
+| `segments_N` | `segments_N` | `_0,_1` 有效 | Commit 后的 Segment 清单 |
 
 ## 3. 内存与数据结构
 
