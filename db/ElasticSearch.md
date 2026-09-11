@@ -1,105 +1,135 @@
-# Elasticsearch 技术文档
+# Elasticsearch 技术文档（精简重构版）
 
-## 1. 定位与数据模型
-
-### 核心定位与解决的问题
-Elasticsearch 是一个基于 Apache Lucene 构建的分布式、RESTful 风格的搜索与数据分析引擎。它的核心定位是提供近实时的全文检索、结构化搜索、日志分析以及指标监控能力。作为 ELK Stack（Elasticsearch, Logstash, Kibana）的核心组件，它主要解决以下问题：
-- **全文检索**：支持复杂文本匹配、模糊查询、同义词、拼音搜索等。
-- **日志与事件分析**：高吞吐写入海量日志，支持多维度聚合分析。
-- **指标监控**：存储时序数据，支持实时统计与告警。
-- **企业级搜索**：提供跨应用、跨数据源的统一搜索体验。
-
-### 数据模型核心概念
-Elasticsearch 采用面向文档的 NoSQL 数据模型，数据以 JSON 格式存储。核心概念包括：
-- **索引 (Index)**：具有相似特征的文档集合，类似于关系型数据库中的"表"。
-- **文档 (Document)**：索引中的最小数据单元，以 JSON 格式表示，类似于"行"。每个文档都有一个唯一的 `_id`。
-- **字段 (Field)**：文档中的键值对，类似于"列"。
-- **类型 (Type)**：在 7.x 版本前，一个索引下可以有多个类型；从 7.x 开始，一个索引只能有一个类型 `_doc`，8.x 中已彻底移除。
-
-### 与关系型数据库的对比映射
-
-| 关系型数据库 (RDBMS) | Elasticsearch | 说明 |
-| :--- | :--- | :--- |
-| Database | Index | 逻辑上的数据隔离边界 |
-| Table | Type (已废弃) / Index | ES 推荐一个业务对应一个索引 |
-| Row | Document | JSON 格式，无固定 Schema |
-| Column | Field | 支持嵌套对象和数组 |
-| Schema | Mapping | 定义字段类型、分词器等 |
-| Index | Inverted Index | 底层数据结构完全不同 |
-| SQL | Query DSL | 声明式 JSON 查询语言 |
-
-### 映射 (Mapping) 机制
-Mapping 定义了文档及其包含的字段如何被存储和索引。
-- **动态映射 (Dynamic Mapping)**：ES 根据写入文档的字段值自动推断类型（如字符串推断为 `text` + `keyword`）。生产环境中**强烈建议关闭**（设置为 `false` 或 `strict`），以避免类型冲突和映射膨胀。
-- **显式映射 (Explicit Mapping)**：在创建索引时明确定义字段类型、分词器、是否索引等。这是最佳实践。
-- **核心数据类型**：
-  - `text`：用于全文检索，写入时会被分词器拆分。
-  - `keyword`：用于精确匹配、排序和聚合，不分词。
-  - `date`：支持多种格式，内部存储为 UTC 毫秒时间戳。
-  - `nested`：用于对象数组，保持对象内部字段的关联关系。
-
-### 倒排索引的基本概念
-倒排索引是 ES 实现全文检索的核心数据结构。它将文档内容分词后，建立"词项 (Term)"到"文档列表 (Posting List)"的映射。查询时，通过词项直接定位到包含该词的文档 ID，避免了全表扫描。
-
-## 2. 存储引擎
-
-# Elasticsearch 底层磁盘存储
-
-> 核心主线：**JSON → Memory Buffer + Translog → Refresh → Segment → Flush/fsync → 磁盘**
+> 学习主线：**是什么 → 为什么 → 怎么用 → 底层怎么实现 → 分布式与一致性 → 性能与场景**
 >
-> Segment 内部按用途拆成多套结构：**FST/Term Dictionary 查词、Postings 找 DocID、Stored Fields 取原文、Doc Values 做排序/聚合**。
-
-## 1. 整体结构
-
-ES 的一个 Shard 底层对应一个 Lucene Index。Lucene 不直接以 JSON 文件保存数据，而是把数据组织成多个不可变的 Segment；每个 Segment 有自己的词典、倒排、Stored Fields、Doc Values 等文件。fileciteturn0file0L297-L325
-
-```text
-ES Index
-└── Shard 0
-    └── Lucene
-        ├── Segment _0
-        │   ├── .tip/.tim   Term Index + Term Dictionary
-        │   ├── .doc/.pos   Postings
-        │   ├── .fdx/.fdt   Stored Fields
-        │   └── .dvm/.dvd   Doc Values
-        └── Segment _1
-            └── 同上
-```
-
-典型目录可概括为：
-
-```text
-<data>/nodes/0/indices/<index_uuid>/<shard>/
-├── index/          # Lucene Segment 文件
-│   ├── segments_N  # 当前 Commit 的 Segment 清单
-│   ├── _0.tip
-│   ├── _0.tim
-│   ├── _0.doc
-│   ├── _0.pos
-│   ├── _0.fdx
-│   ├── _0.fdt
-│   ├── _0.dvm
-│   └── _0.dvd
-└── translog/       # ES 事务日志
-    ├── translog-*.tlog
-    └── translog.ckp
-```
-
-> **注意**：具体文件名、Codec、文件组合会随 Lucene 版本、字段类型和配置变化；`.cfs` 可能把小 Segment 的多个文件封装起来。
+> 核心记忆：**ES = 分布式搜索/分析引擎；Shard → Lucene Index → Segment；Term → DocID → 文档；Doc Values → 排序/聚合；Translog → 恢复；Refresh → 可搜索；Flush → 持久化；Merge → 回收空间。**
 
 ---
 
-## 2. 用同一组数据理解所有结构
+## 1. 定位与数据模型
 
-统一使用 3 个文档：
+### 1.1 Elasticsearch 是什么？为什么用？
+
+Elasticsearch（ES）是基于 Apache Lucene 的**分布式搜索与数据分析引擎**，提供近实时全文检索、结构化查询、日志分析、指标分析等能力。
+
+| 能力 | 解决什么问题 |
+|---|---|
+| 全文检索 | 分词、模糊查询、同义词等 |
+| 结构化查询 | 精确匹配、范围过滤、排序 |
+| 聚合分析 | 按字段统计、分组、指标计算 |
+| 日志/事件分析 | 海量数据写入与多维查询 |
+| 分布式 | 分片、复制、故障转移 |
+
+**为什么不用 MySQL 直接搜索？**
+
+ES 的核心优势是倒排索引、分布式分片和聚合能力，适合搜索与分析；复杂事务、强一致主数据仍更适合关系型数据库。
+
+典型架构：
 
 ```text
-DocID 1: {"product":"MacBook Pro", "price":15000}
-DocID 2: {"product":"MacBook Air", "price":8000}
-DocID 3: {"product":"iPad Pro",    "price":6000}
+MySQL / PostgreSQL
+       │
+       │ CDC / MQ
+       ▼
+Elasticsearch
+       │
+       ├── 搜索
+       └── 分析
+
+日志 → Logstash / Beats / Agent → ES → Kibana
 ```
 
-假设 `product` 分词后得到：
+---
+
+### 1.2 核心数据模型
+
+ES 是面向文档的 NoSQL 数据模型：
+
+| ES | 类比 RDBMS | 含义 |
+|---|---|---|
+| Index | Table（更接近业务数据集合） | 文档集合 |
+| Document | Row | 一条 JSON 文档 |
+| Field | Column | 文档字段 |
+| Mapping | Schema | 字段类型及索引方式 |
+| Query DSL | SQL | 查询语言 |
+| Shard | — | Index 的物理分片 |
+
+`Type` 在 7.x 起被废弃，8.x 已移除。
+
+---
+
+### 1.3 Mapping：怎么定义字段？
+
+Mapping 决定字段如何被索引和存储。
+
+```json
+PUT products
+{
+  "mappings": {
+    "properties": {
+      "product": {"type": "text"},
+      "product.keyword": {"type": "keyword"},
+      "price": {"type": "integer"},
+      "create_time": {"type": "date"}
+    }
+  }
+}
+```
+
+常用类型：
+
+| 类型 | 用途 |
+|---|---|
+| `text` | 全文搜索，需要分词 |
+| `keyword` | 精确匹配、排序、聚合 |
+| `date` | 时间 |
+| `nested` | 保持对象数组内部字段关联 |
+| 数值类型 | 范围查询、排序、聚合 |
+
+**为什么生产环境建议显式 Mapping？**
+
+避免动态类型推断导致类型冲突和 Mapping 膨胀。
+
+---
+
+## 2. 存储引擎：数据到底怎么落盘？
+
+### 2.1 核心层次
+
+```text
+Elasticsearch Index
+└── Shard
+    └── Lucene Index
+        └── Segment
+            ├── Term Index / FST
+            ├── Term Dictionary
+            ├── Postings
+            ├── Stored Fields
+            └── Doc Values
+```
+
+ES 本身不负责底层索引存储，核心由 Lucene 完成。
+
+**Segment 是 Lucene 的基本索引单元：**
+
+- 写入后基本不可修改
+- 可独立参与查询
+- 更新 = 新文档 + 旧文档删除标记
+- 后台 Merge 合并 Segment，并最终清理删除数据
+
+---
+
+### 2.2 用同一组数据理解全部结构
+
+统一使用：
+
+```text
+Doc1 = {"product":"MacBook Pro", "price":15000}
+Doc2 = {"product":"MacBook Air", "price":8000}
+Doc3 = {"product":"iPad Pro",    "price":6000}
+```
+
+分词：
 
 ```text
 Doc1 → macbook, pro
@@ -107,233 +137,51 @@ Doc2 → macbook, air
 Doc3 → ipad, pro
 ```
 
-于是：
+得到：
 
 ```text
 Term Dictionary
-────────────────
 air
 ipad
 macbook
 pro
 
 Postings
-────────────────
-air    → [Doc2]
-ipad   → [Doc3]
-macbook→ [Doc1, Doc2]
-pro    → [Doc1, Doc3]
+air      → [Doc2]
+ipad     → [Doc3]
+macbook  → [Doc1, Doc2]
+pro      → [Doc1, Doc3]
 ```
-
-后面所有例子都基于这 3 个 DocID，不再更换数据。
 
 ---
 
-## 3. Segment：不可变的小型索引
+### 2.3 Term Index / FST：怎么快速找到词？
 
-Segment 是 Lucene 的基本存储/检索单元。一个 Segment 可以独立完成查询，写入后基本不可修改。
+**Term Dictionary** 保存 Segment 中有序的 Term。
 
-```text
-Segment _0
-├── Term Dictionary : air, ipad, macbook, pro
-├── Postings        : term → DocID
-├── Stored Fields   : DocID → 原始字段
-└── Doc Values      : field → values
-```
-
-如果更新 Doc1：
-
-```text
-旧 Segment _0
-Doc1 price=15000  → 标记删除
-
-新 Segment _1
-Doc1 price=12000  → 新写入
-```
-
-后台 Merge：
-
-```text
-Segment _0 + Segment _1
-          ↓
-      Segment _2
-          ↓
-旧 Doc1 被物理清除
-```
-
-**为什么不可变？**
-
-避免频繁修改大型倒排结构，降低读写竞争；同时便于利用 OS Page Cache。删除/更新通过新 Segment + 删除标记实现，最终由 Merge 回收。
-
----
-
-## 4. Term Dictionary + FST：先找到“词”
-
-### 4.1 Term Dictionary
-
-`.tim` 保存 Segment 中有序的 Term，并组织成 Block。
-
-```text
-.tim
-
-Block A:
-  air
-  ipad
-
-Block B:
-  macbook
-  pro
-```
-
-查询 `macbook` 时，不应该从头扫描整个 `.tim`。
-
-### 4.2 Term Index / FST
-
-`.tip` 是 Term Index，使用 FST 等结构压缩保存“Term → `.tim` 中 Block 的定位信息”。
-
-为了统一举例，假设：
-
-```text
-air     → .tim Block A
-ipad    → .tim Block A
-macbook → .tim Block B
-pro     → .tim Block B
-```
-
-可以抽象成：
-
-```text
-                FST (.tip)
-                   │
-         ┌─────────┴─────────┐
-         │                   │
-       "a/i"               "m/p"
-         │                   │
-         ▼                   ▼
-     Block A              Block B
-         │                   │
-         ▼                   ▼
-      .tim:A              .tim:B
-   air, ipad          macbook, pro
-```
-
-FST 的关键不是“保存完整词典”，而是**用紧凑状态机快速把查询词定位到 `.tim` 的相应范围**。
-
-例如：
+**Term Index / FST** 是 Term Dictionary 的索引，用较小的内存快速定位 Term 所在范围。
 
 ```text
 查询 "macbook"
-    ↓
-FST (.tip)
-    ↓
-定位 Block B
-    ↓
-.tim Block B
-    ↓
-确认 macbook
-    ↓
-得到该 Term 对应的 Postings 信息
+      ↓
+ FST / .tip
+      ↓
+定位 .tim 的 Block
+      ↓
+Term Dictionary
+      ↓
+macbook
 ```
 
-### 4.3 FST 为什么省内存？
+**为什么需要 FST？**
 
-假设 Term Dictionary 有几十 GB：
-
-```text
-完整词典
-几十 GB
-   │
-   └── 不可能全部常驻内存
-
-FST
-较小的压缩索引
-   │
-   └── 常驻/高效访问
-          ↓
-       定位 .tim
-```
-
-**面试关键词：**
-
-> FST 是 Term Index 的核心结构，通过共享状态/路径并携带输出信息，以较小内存开销快速定位 Term Dictionary 中的 Block。
+Term Dictionary 可能非常大，不能完整放入内存；FST 通过共享路径压缩索引，减少内存并加速定位。
 
 ---
 
-## 5. Postings：找到 Term 对应的 DocID
+### 2.4 Postings：Term 怎么找到文档？
 
-找到 `macbook` 后，还需要知道它在哪些文档：
-
-```text
-Term
-macbook
-   ↓
-Postings
-   ↓
-[Doc1, Doc2]
-```
-
-完整关系：
-
-```text
-.tim
-┌──────────┐
-│ macbook  │
-└────┬─────┘
-     │
-     ▼
-.doc
-┌──────────────────┐
-│ DocID: 1         │
-│ DocID: 2         │
-└──────────────────┘
-```
-
-Postings 不只是 DocID，还可以包含：
-
-```text
-DocID
-Term Frequency
-Position
-Offset / Payload（按索引能力）
-```
-
-例如：
-
-```text
-macbook
-  ├── Doc1, TF=1
-  └── Doc2, TF=1
-
-pro
-  ├── Doc1, TF=1
-  └── Doc3, TF=1
-```
-
-### 为什么压缩？
-
-假设 DocID：
-
-```text
-[100, 103, 104, 109, 110]
-```
-
-可以转成 Delta：
-
-```text
-[100, 3, 1, 5, 1]
-```
-
-再进行 Block/Packed 编码，减少磁盘空间和读取数据量。
-
-因此：
-
-> **Postings 解决的是：这个 Term 出现在哪些 DocID？**
-
----
-
-## 6. Stored Fields：拿 DocID 找回原文
-
-搜索 `macbook`：
+找到 `macbook` 后：
 
 ```text
 macbook
@@ -343,898 +191,1080 @@ Postings
 [Doc1, Doc2]
 ```
 
-如果最终需要返回 JSON，还要：
+Postings 不只保存 DocID，还可以保存：
+
+- Term Frequency
+- Position
+- Offset / Payload（取决于索引能力）
+
+DocID 通常采用 Delta + Block/Packed 等方式压缩：
 
 ```text
-DocID
-  ↓
-.fdx
-  ↓
-定位 Stored Fields
-  ↓
-.fdt
-  ↓
-取出字段
-```
-
-统一例子：
-
-```text
-.fdx
-┌─────────────────────┐
-│ Doc1 → Chunk A      │
-│ Doc2 → Chunk A      │
-│ Doc3 → Chunk B      │
-└─────────────────────┘
-
-.fdt
-┌─────────────────────────────────────┐
-│ Chunk A                              │
-│   Doc1 → MacBook Pro, 15000         │
-│   Doc2 → MacBook Air, 8000          │
-├─────────────────────────────────────┤
-│ Chunk B                              │
-│   Doc3 → iPad Pro, 6000             │
-└─────────────────────────────────────┘
-```
-
-实际 Stored Fields 会采用二进制编码和分块压缩，不是简单的一行一个 JSON。
-
-所以：
-
-```text
-查询 macbook
-    ↓
-Postings → [1,2]
-    ↓
-.fdx → 找到 Doc1/Doc2 所在 Chunk
-    ↓
-.fdt → 读取并解压 Chunk
-    ↓
-返回 _source / Stored Fields
+[100,103,104,109,110]
+      ↓ Delta
+[100,3,1,5,1]
+      ↓
+压缩存储
 ```
 
 **一句话：**
 
-> Stored Fields 解决“已经找到 DocID，怎么把需要返回的字段取出来”。
+> Postings 解决 **Term → DocID**。
 
 ---
 
-## 7. Doc Values：按字段计算，而不是按文档取原文
+### 2.5 Stored Fields：DocID 怎么取回文档？
 
-现在执行：
+搜索得到：
+
+```text
+macbook → [Doc1, Doc2]
+```
+
+如果需要返回 `_source`：
+
+```text
+DocID
+ ↓
+.fdx：定位
+ ↓
+.fdt：读取 Stored Fields
+ ↓
+返回文档字段
+```
+
+**一句话：**
+
+> Stored Fields 解决 **DocID → 文档字段**。
+
+它适合 Fetch 阶段，而不是排序/聚合。
+
+---
+
+### 2.6 Doc Values：为什么排序/聚合不读 `_source`？
+
+例如：
 
 ```text
 AVG(price)
 ```
 
-如果从 `.fdt` 读取：
+如果逐个读取 JSON：
 
 ```text
-Doc1 → JSON → 解析 price
-Doc2 → JSON → 解析 price
-Doc3 → JSON → 解析 price
+Doc1 → JSON → price
+Doc2 → JSON → price
+Doc3 → JSON → price
 ```
 
-效率低。
+效率较低。
 
-Doc Values 提前按列组织：
+Doc Values 按列组织：
 
 ```text
-.dvd
-
 price
-────────
+────────────
 Doc1 → 15000
 Doc2 →  8000
 Doc3 →  6000
 ```
 
-另一个字段：
-
-```text
-product.keyword
-────────────────
-Doc1 → MacBook Pro
-Doc2 → MacBook Air
-Doc3 → iPad Pro
-```
-
-`.dvm` 提供字段的元数据、定位和编码信息，`.dvd` 保存实际 Doc Values 数据。
-
 因此：
 
 ```text
 AVG(price)
     ↓
-.dvm
+Doc Values
     ↓
-定位 price 列
+[15000,8000,6000]
     ↓
-.dvd
-    ↓
-[15000, 8000, 6000]
-    ↓
-AVG = 9666.67
+9666.67
 ```
 
 **一句话：**
 
-> Stored Fields 是“按文档取数据”，Doc Values 是“按字段取数据”。
+> Stored Fields 是 **按文档取**；Doc Values 是 **按字段取**，主要用于排序、聚合和脚本。
+
+Doc Values 主要位于磁盘并依赖 OS Page Cache，避免把大量字段数据塞入 JVM Heap。
 
 ---
 
-## 8. 四种核心结构放在一起
+### 2.7 四种核心结构必须分清
 
-仍然使用：
+| 结构 | 典型文件 | 方向 | 解决什么问题 |
+|---|---|---|---|
+| Term Index / FST | `.tip` | Term → Dictionary Block | 快速找词 |
+| Term Dictionary | `.tim` | — | 保存 Term |
+| Postings | `.doc/.pos` | Term → DocID | 找匹配文档 |
+| Stored Fields | `.fdx/.fdt` | DocID → 字段 | Fetch 原文 |
+| Doc Values | `.dvm/.dvd` | Field → Values | 排序/聚合 |
 
-```text
-Doc1 = MacBook Pro / 15000
-Doc2 = MacBook Air /  8000
-Doc3 = iPad Pro    /  6000
-```
-
-```text
-                    Segment _0
-                        │
-       ┌────────────────┼────────────────┐
-       │                │                │
-       ▼                ▼                ▼
-   Term/FST          Postings       Stored Fields
-   .tip/.tim           .doc          .fdx/.fdt
-       │                │                │
-       │                │                │
-       ▼                ▼                ▼
- "macbook"         [Doc1,Doc2]     Doc1 → JSON
-                                      Doc2 → JSON
-                                      Doc3 → JSON
-
-                        +
-
-                    Doc Values
-                    .dvm/.dvd
-                        │
-                        ▼
-                price → [15000,8000,6000]
-```
-
-对应查询：
-
-```text
-关键词搜索：
-"macbook"
-  → FST/.tip
-  → Term Dictionary/.tim
-  → Postings/.doc
-  → [Doc1, Doc2]
-
-返回原文：
-[Doc1, Doc2]
-  → .fdx
-  → .fdt
-  → JSON
-
-排序/聚合：
-price
-  → .dvm
-  → .dvd
-  → [15000,8000,6000]
-```
+> 具体文件名和 Codec 会随 Lucene 版本、字段类型和配置变化；`.cfs` 还可能封装多个文件。
 
 ---
 
-## 9. Translog：Segment 之外的“恢复日志”
+## 3. 写入、持久化与 Segment
 
-写入 Doc3：
+### 3.1 写入主流程
 
 ```text
-                 Doc3
-                  │
-          ┌───────┴────────┐
-          ▼                ▼
-   Memory Buffer        Translog
-          │                │
-          │                └── 顺序追加
-          ▼
+客户端写入
+   ↓
+Memory / Indexing Buffer
+   │
+   └──→ Translog
+          ↓
        Refresh
-          │
-          ▼
+          ↓
      新 Segment
-          │
-          ▼
-      OS Page Cache
+          ↓
+    OS Page Cache
+          ↓
+       Flush/fsync
+          ↓
+      Physical Disk
 ```
 
-Translog 的作用不是负责搜索，而是：
+三个问题要分开：
 
-> **在 Lucene Segment 尚未完成持久化时，保证节点异常后可以恢复操作。**
-
-因此：
-
-```text
-Refresh ≠ fsync 到物理盘
-```
-
-Refresh 主要解决：
-
-```text
-“什么时候可以搜索到？”
-```
-
-Translog + 持久化机制解决：
-
-```text
-“节点异常后怎么恢复？”
-```
+| 机制 | 回答的问题 |
+|---|---|
+| Refresh | **什么时候可以搜索？** |
+| Translog | **异常后怎么恢复？** |
+| Flush/fsync | **什么时候完成持久化？** |
+| Merge | **怎么减少 Segment 并回收删除数据？** |
 
 ---
 
-## 10. Refresh / Flush / Merge 一次讲清
+### 3.2 Refresh：为什么是“近实时”？
 
-### Refresh
+Refresh 将内存中的索引数据生成新的 Segment，使其进入搜索视图：
 
 ```text
 Memory Buffer
-     ↓
-  Refresh
-     ↓
+    ↓ Refresh
 New Segment
-     ↓
+    ↓
 可搜索
 ```
 
-核心：
+因此：
 
-> **让数据进入搜索视图。**
+> **Refresh ≠ fsync 到物理盘。**
 
-### Flush / Commit
+默认情况下通常约每秒 Refresh 一次，因此 ES 是 **Near Real-Time（NRT）**，而不是严格实时。
+
+---
+
+### 3.3 Translog：为什么还需要它？
+
+Refresh 后 Segment 可搜索，但仍不能简单理解成“已经完成所有持久化”。
+
+Translog 记录写操作，用于节点异常后的恢复：
+
+```text
+写入
+ ├── Memory Buffer
+ └── Translog
+        ↓
+      异常
+        ↓
+  重放 Translog
+        ↓
+      恢复
+```
+
+---
+
+### 3.4 Flush / Commit：解决什么问题？
 
 ```text
 Segment / Page Cache
-       ↓
-     fsync
-       ↓
- Physical Disk
-       ↓
-更新 Commit Point
-       ↓
-segments_N
+        ↓
+      fsync
+        ↓
+Physical Disk
+        ↓
+Commit Point
 ```
 
-核心：
-
-> **推动 Lucene 索引持久化，并更新 Commit 状态；Translog 在满足条件后可以被清理。**
-
-### Merge
+Commit Point 中维护当前有效的 Segment 信息，例如：
 
 ```text
-Segment _0 ─┐
-Segment _1 ─┼──→ Merge → Segment _3
-Segment _2 ─┘
+segments_N
+    ↓
+当前有效 Segment
+_0
+_1
+_2
+```
+
+满足条件后，旧 Translog 可以清理。
+
+---
+
+### 3.5 Merge：为什么必须合并 Segment？
+
+频繁 Refresh 会产生很多小 Segment：
+
+```text
+_0   _1   _2   _3
+ \    |    |   /
+      Merge
+        ↓
+       _4
 ```
 
 作用：
 
-- 减少 Segment 数量
-- 合并索引文件
-- 清理已标记删除的文档
-- 回收磁盘空间
+1. 减少 Segment 数量
+2. 提升查询效率
+3. 合并索引文件
+4. 清理 Tombstone
+5. 回收磁盘空间
 
 ---
 
-## 11. 一次完整写入 + 查询
+## 4. 内存与底层数据结构
 
-### 写入
+### 4.1 JVM Heap vs OS Page Cache
 
-```text
-POST /index/_doc/3
-{"product":"iPad Pro","price":6000}
-              │
-              ▼
-        Memory Buffer
-              │
-              ├────────→ Translog
-              │
-          Refresh
-              │
-              ▼
-        Segment _1
-              │
-      ┌───────┼────────┐
-      ▼       ▼        ▼
-    .tim/.tip .doc   .fdt/.fdx
-                      │
-                    .dvd/.dvm
-              │
-              ▼
-         OS Page Cache
-              │
-           Flush
-              │
-            fsync
-              ▼
-        Physical Disk
+ES 的性能不能只看 JVM Heap：
+
+| 区域 | 主要内容 | 为什么 |
+|---|---|---|
+| JVM Heap | 集群元数据、缓存、Indexing Buffer 等 | ES/JVM 管理 |
+| OS Page Cache | Lucene Segment 文件 | 大量磁盘读取依赖系统缓存 |
+
+核心思想：
+
+> **Heap 负责 ES/JVM 管理的数据；OS Page Cache 负责大量 Lucene 文件的高速访问。**
+
+Heap 通常不应超过物理内存的 50%；同时需要考虑 JVM Compressed Oops 等限制。实际生产配置应结合 ES/JDK 版本与官方建议。
+
+---
+
+### 4.2 常见缓存
+
+| 缓存 | 作用 | 重点 |
+|---|---|---|
+| Node Query Cache | Filter 查询结果 | 不参与评分 |
+| Shard Request Cache | 分片级请求/聚合结果 | Segment 无更新时更有效 |
+| Fielddata Cache | `text` 字段排序/聚合 | 容易大量占用 Heap |
+
+**为什么避免对 `text` 做聚合？**
+
+`text` 主要面向全文搜索；强制使用 Fielddata 会将数据加载到 Heap，容易造成 GC/OOM。需要聚合时通常使用 `keyword`。
+
+---
+
+### 4.3 关键数据结构
+
+| 结构 | 作用 | 为什么 |
+|---|---|---|
+| FST | Term → Term Dictionary 定位 | 节省内存、快速查词 |
+| Skip List | 加速倒排表交集 | 减少无效 DocID 比较 |
+| Delta + FOR/Packed | 压缩 DocID | 减少磁盘/I/O |
+| BKD Tree | 数值、日期、Geo 查询 | 高效范围检索 |
+| Doc Values | 字段列式访问 | 高效排序/聚合 |
+
+---
+
+## 5. 索引与查询：怎么用？
+
+### 5.1 创建索引
+
+```http
+PUT /products
+{
+  "settings": {
+    "number_of_shards": 3,
+    "number_of_replicas": 1
+  },
+  "mappings": {
+    "properties": {
+      "product": {"type": "text"},
+      "price": {"type": "integer"}
+    }
+  }
+}
 ```
 
-### 查询
+创建时核心动作：
 
 ```text
-GET /index/_search
-product:macbook
-          │
-          ▼
-     FST / .tip
-          │
-          ▼
-    Term Dictionary
-       / .tim
-          │
-          ▼
-    Postings / .doc
-          │
-          ▼
-     [Doc1, Doc2]
-          │
-          ▼
-    Query / Score
-          │
-          ▼
-      Fetch阶段
-          │
-          ▼
-     .fdx → .fdt
-          │
-          ▼
-   Doc1 / Doc2 JSON
+Mapping 校验
+    ↓
+确定 Primary Shard / Replica
+    ↓
+初始化 Lucene Index
 ```
 
-如果查询是：
+---
 
-```text
-ORDER BY price
+### 5.2 写入文档
+
+```http
+POST /products/_doc/1
+{
+  "product": "MacBook Pro",
+  "price": 15000
+}
 ```
 
-则主要利用：
+---
+
+### 5.3 查询：Query → Fetch
 
 ```text
-price
+客户端
   ↓
-Doc Values
+协调节点
   ↓
-.dvm/.dvd
+Query Phase
   ↓
-排序
+各 Shard 查询
+  ↓
+DocID + Score / Sort Value
+  ↓
+协调节点汇总
+  ↓
+Fetch Phase
+  ↓
+读取 _source
+  ↓
+返回结果
 ```
+
+**为什么分 Query / Fetch？**
+
+Query 阶段只需要找到候选文档及排序信息，不必立即传输完整文档，可以减少网络和数据传输。
 
 ---
 
-## 12. 最终记忆模型
-
-把 ES/Lucene 磁盘存储压缩成下面这张图：
+### 5.4 全文搜索：倒排索引怎么工作？
 
 ```text
-                         Lucene Segment
-                               │
-          ┌────────────────────┼────────────────────┐
-          │                    │                    │
-          ▼                    ▼                    ▼
-    Term Index/FST         Postings           Stored Fields
-       .tip                  .doc              .fdx/.fdt
-          │                    │                    │
-          ▼                    ▼                    ▼
-      定位词典              找 DocID              取原文
-          │                    │                    │
-          ▼                    │                    │
-       .tim                   │                    │
-    Term Dictionary           │                    │
-          │                    │                    │
-          └───────────────┬────┘                    │
-                          ▼                         │
-                       DocID ───────────────────────┘
-
-                          +
-
-                      Doc Values
-                       .dvm/.dvd
-                          │
-                          ▼
-                    排序 / 聚合 / 脚本
+"MacBook Pro"
+      ↓
+Analyzer
+      ↓
+macbook / pro
+      ↓
+FST
+      ↓
+Term Dictionary
+      ↓
+Postings
+      ↓
+Doc1
 ```
 
-### 面试一句话
+倒排索引本质：
 
-> **Elasticsearch 的一个 Shard 底层是 Lucene Index，数据以不可变 Segment 组织。Segment 内部不是简单保存 JSON，而是分别维护 Term Index/FST + Term Dictionary 用于定位词，Postings 用于从 Term 找 DocID，Stored Fields 用于从 DocID 找回文档字段，Doc Values 用于按字段进行排序和聚合。写入通过 Memory Buffer + Translog，Refresh 产生可搜索 Segment，Flush/fsync 完成持久化，后台 Merge 合并 Segment 并回收删除数据。**
+> **Term → Posting List → DocID**
 
-| 结构 | 典型文件 | 统一例子 | 解决什么问题 |
-|---|---|---|---|
-| Term Index / FST | `.tip` | `macbook → Block B` | 快速定位词典 |
-| Term Dictionary | `.tim` | `air, ipad, macbook, pro` | 保存有哪些 Term |
-| Postings | `.doc` | `macbook → [1,2]` | Term → DocID |
-| Stored Fields | `.fdx/.fdt` | `1 → MacBook Pro/15000` | DocID → 原文/字段 |
-| Doc Values | `.dvm/.dvd` | `price → [15000,8000,6000]` | 字段 → 值，排序/聚合 |
-| Segment | 一组上述文件 | `_0` | 独立、不可变的索引单元 |
-| Translog | `.tlog` | `Doc3 写入操作` | 崩溃恢复 |
-| `segments_N` | `segments_N` | `_0,_1` 有效 | Commit 后的 Segment 清单 |
-
-## 3. 内存与数据结构
-# Elasticsearch 内存布局与底层数据结构详解
-
-## 1. 宏观内存布局：JVM 与 OS Page Cache 的平衡
-
-Elasticsearch 的内存并非全部由 JVM 掌控，而是遵循“一半留给 JVM，一半留给操作系统”的设计哲学。
-
-*   **JVM 堆内存（Heap）：** 管理集群元数据、节点/请求缓存（Query/Request Cache）、写入缓冲（Indexing Buffer），以及常驻内存的 Lucene 词项索引（Term Index，基于 FST）。
-    *   **配置红线：** 最大不超过物理内存的 50%，且绝对**不超过 32GB**。超过 32GB 会导致 JVM 指针压缩（Compressed Oops）失效，内存指针占用翻倍，实际可用内存不增反降。
-*   **OS Page Cache（堆外/系统缓存）：** Lucene 严重依赖操作系统的文件系统缓存。段文件（Segments）、词典（Term Dictionary）、倒排表（Postings List）和列式存储（Doc Values）均存储于磁盘，通过 `mmap` 映射入内存。Page Cache 越大，磁盘 I/O 越少，查询越快。
+避免逐文档扫描。
 
 ---
 
-## 2. 核心缓存机制
+### 5.5 BM25：为什么能排序？
 
-| 缓存名称 | 管理者 | 作用与特点 |
-| :--- | :--- | :--- |
-| **Node Query Cache** | JVM | 节点级缓存，基于 LRU 淘汰。**仅缓存 Filter 上下文**（不计算算分）。底层使用 BitSet（0/1 数组）存储文档匹配状态，位运算极速加速高频过滤条件。 |
-| **Shard Request Cache**| JVM | 分片级缓存。直接缓存复杂聚合（Aggregation）的最终结果。若底层 Segment 无更新，相同查询直接返回结果。注意：带有 `now` 等时间函数的查询会导致此缓存失效。 |
-| **Field Data Cache** | JVM | **高危！** 仅在对 `text` 字段强制聚合或排序时触发。将倒排索引实时反转并加载到堆内存，极易导致 OOM。生产环境应严格禁止在 `text` 字段上聚合。 |
+ES 7.x 默认使用 BM25。
 
----
+它综合考虑：
 
-## 3. 核心数据结构与查询加速算法
+- Term Frequency：词出现次数
+- Inverse Document Frequency：词的稀有程度
+- Document Length：文档长度
 
-### FST (有限状态转换器)：内存字典的极限压缩
-**作用：** 作为 Term Index，将海量词条的磁盘偏移量驻留内存。
-**原理与构建示例：** FST 是一种结合了前缀树（Trie）并实现**前缀和后缀双向共享**的自动机，数值被拆分并分布在路径的边上。数据必须按**字典序**插入。
+核心参数：
 
-**示例：插入 `mop` (10), `moth` (20), `pop` (15)**
-1.  **插入 `mop` (10)：** 路径为 `m(10) -> o(0) -> p(0)`。累加得 10。
-2.  **插入 `moth` (20)：** 与 `mop` 共享前缀 `mo`。`mo` 只能共享最小值 10。在 `o` 之后分岔，`t` 边上放剩下的 10，`h` 边放 0。
-    *   查询 `moth`：走 `m(10) -> o(0) -> t(10) -> h(0)`，累加得 20。
-3.  **插入 `pop` (15)：** 独立拉出前缀 `p(15)`。算法发现后缀 `op` 与之前的 `mop` 后缀相同，直接将 `p` 的线连入已有的 `o` 节点。
-    *   查询 `pop`：走新线 `p(15)`，顺着老线 `o(0) -> p(0)`，累加得 15。
+- `k1`：控制词频饱和
+- `b`：控制文档长度归一化
 
-### Skip List (跳表)：加速多条件倒排交集
-**作用：** 快速合并多个查询条件的倒排表（如 `A AND B`）。
-**原理：** 为有序的倒排文档 ID 块建立分层索引。比对时，若目标 ID 大于当前块的最大值，则通过跳表指针直接跳过整个块，将时间复杂度从 $O(N)$ 降至接近 $O(\log N)$。
-
-### FOR (Frame of Reference)：倒排表的位级压缩
-**作用：** 极致压缩 Postings List 占用的磁盘和缓存空间。
-**原理示例：** 压缩 DocID 列表 `[73, 300, 302, 332, 343, 372]`。
-1.  **Delta 编码：** 记录差值转化为 `[73, 227, 2, 30, 11, 29]`。
-2.  **Bit Packing：** 找寻差值中最大值 227，二进制需 8 bits。Lucene 统一分配 8 bits 容量存放这 6 个数字，总计 48 bits（常规 32位整型需 192 bits），空间节省 75%。
-
-### BKD Tree：数值与空间的降维打击
-**作用：** 替代倒排索引，专门处理数值（Integer, Date）和空间地理（Geo）的精准与范围检索。
-**原理：** 在多维度空间中基于中位数不断切分数据块。遇到范围查询（如 `age > 30`）时，直接在树的分支上剪枝，无需遍历和枚举具体 Term。
-
-### Doc Values：聚合排序的列式救星
-**作用：** 解决 JVM OOM，用于非 text 字段的排序、聚合。
-**原理：** 构建倒排索引时，同步在磁盘上生成按列连续排列的文件（正向映射：文档 ID -> 具体值）。计算聚合时，依靠 OS Page Cache 将紧凑的列数组喂给 CPU，完美契合 CPU 预读机制（Prefetch）。
+因此全文搜索通常不仅回答“匹不匹配”，还会回答“哪个更相关”。
 
 ---
 
-## 4. 写入加速与近实时 (Near Real-Time) 机制
+### 5.6 Filter：为什么应该使用 filter？
 
-Elasticsearch 的毫秒级搜索基于以下内存与磁盘的流转机制：
+例如：
 
-1.  **Indexing Buffer：** 写入的文档首先进入堆内存的 Buffer，并记录 Translog (WAL) 防丢失。**此时不可搜索**。
-2.  **Refresh (近实时核心)：** 默认每秒执行一次。将 Buffer 数据刷入操作系统的 Page Cache，生成不可变的 Lucene Segment。**数据一旦进入 OS Cache 即可被搜索**。
-3.  **Flush：** 当 Translog 满或定时触发。执行物理 `fsync`，将 OS Cache 中的 Segment 强制落盘，并清空旧 Translog。
-4.  **Merge (段合并)：** 后台异步将大量 Refresh 产生的小 Segment 合并为大 Segment，并在此刻物理删除 Tombstone（被标记删除）的文档数据。
-
-
-## 4. 索引与查询
-
-### 索引创建流程
-1. **映射解析**：校验 Mapping 合法性，构建内部数据结构。
-2. **分片分配**：根据 `number_of_shards` 和 `number_of_replicas` 在集群节点上分配主分片和副本分片。
-3. **初始化 Lucene**：每个分片初始化独立的 Lucene IndexWriter。
-
-### 查询执行流程 (Query Then Fetch)
-1. **Query Phase**：协调节点将查询分发到所有相关分片。每个分片在本地执行查询，返回匹配的文档 ID 和排序值（不返回文档内容）。
-2. **Fetch Phase**：协调节点根据汇总的文档 ID，再次向相关分片请求完整的文档内容 (`_source`)。
-
-### 查询解析与执行树
-Query DSL 被解析为内部的 `Query` 对象树。Lucene 会进行查询重写 (Query Rewrite)，例如将 `term` 查询优化为常量评分，或将多个 `must` 子句合并。
-
-### 评分机制：BM25
-ES 7.x 默认使用 BM25 算法替代 TF-IDF。BM25 引入了文档长度归一化和词频饱和机制，避免了长文档或高频词带来的评分偏差。公式核心参数：
-- `k1`：控制词频饱和度（默认 1.2）。
-- `b`：控制文档长度归一化程度（默认 0.75）。
-
-### 过滤器缓存 (Filter Cache)
-在 `bool` 查询的 `filter` 上下文中执行的查询不参与评分，且结果会被缓存到 Query Cache 中。对于枚举值、时间范围、状态码等过滤条件，**必须使用 filter**。
-
-### 深度分页问题
-`from + size` 超过 10000 时会被拒绝。因为每个分片需要在内存中排序 `from + size` 条数据，协调节点需汇总 `shards * (from + size)` 条数据。
-- **Scroll API**：适用于全量导出，不适用于实时搜索。
-- **search_after**：适用于实时深度分页，利用上一页最后一条记录的排序值作为游标，避免全局排序。
-
-### 聚合执行原理
-聚合在 Query Phase 执行。每个分片在本地构建聚合树（如 Hash 表、树形结构），返回局部结果。协调节点合并局部结果，生成全局结果。对于高基数聚合，可能触发全局序数 (Global Ordinals) 构建，耗时较长。
-
-## 5. 并发与一致性
-
-Elasticsearch 处理并发的核心哲学是：**不加锁，靠版本；要吞吐，舍强一致。** 作为分布式系统，传统的悲观锁（Pessimistic Locking）会严重拖垮性能，因此 ES 全面拥抱乐观并发控制（OCC）和最终一致性来保障数据正确性。
-
-### 1. 版本控制：乐观并发控制 (OCC)
-ES 假设并发冲突发生的概率极低。写入时它不锁数据，而是带着版本凭证比对，凭证对得上才允许修改。
-- **Internal（内部控制）**：默认机制。较新的 ES 版本依赖 `if_seq_no` 和 `if_primary_term` 联合校验，取代了老的 `_version`。若提交时的序号低于 ES 当前记录，请求将被拒绝（409 Conflict）。
-- **External（外部控制）**：专为数据同步（如 MySQL -> ES）设计。以 MySQL 的时间戳或事务 ID 作为外部版本号。规则是：提交的外部版本号必须**严格大于** ES 当前记录的版本号才允许覆盖，有效解决网络延迟导致的数据乱序覆盖。
-
-### 2. 序列号与生成号
-为了在多节点间准确回放日志和比对数据新旧，ES 设计了双重坐标：
-- **Primary Term (主分片代数)**：每次主分片重新选举，Term 就会 `+1`。彻底防止网络分区恢复后，旧主分片“诈尸”引发脑裂。
-- **Sequence Number (序列号)**：主分片上发生的每一次写操作，都会获得一个分片级全局递增的编号。
-*(通过 `Term + SeqNo`，ES 就能在全球集群中精确定位任何一次修改的绝对顺序。)*
-
-### 3. 读写并发的底层机制
-- **写入的局部串行**：在主分片上，写操作是串行化的。底层 Lucene 的 `IndexWriter` 持有独占锁，同一时刻只有一个线程在往段文件（Segment）里写数据。
-- **读取的全局并发**：读操作可以在主分片或副本分片上执行。副本分片极大分散了读压力，但由于主副同步的毫秒级延迟，可能读到未更新的数据（**最终一致性**）。
-
-### 4. 一致性级别与防脑裂
-- **Quorum 机制**：写操作需要过半数的分片确认才算成功。公式：`(primary + replicas) / 2 + 1`。
-- **wait_for_active_shards**：决定“写入前必须有多少个分片存活”。配置过半机制能有效防止网络分区（脑裂）时将数据写入到脱离大部队的假主分片中。
-
----
-
-## 第二部分：批量操作 _bulk API 深度解析
-
-`_bulk` 是 Elasticsearch 中用于**批量执行 CRUD**操作的核心 API。
-
-### 1. 为什么必须使用 `_bulk`？
-- **消除网络开销**：将上千次 HTTP 请求的 TCP 握手和 Header 解析成本压缩为 1 次。
-- **提升集群吞吐量**：ES 接收后将大包拆分，按路由并发分发给各分片节点，最大化利用集群算力。
-- **优化底层写入**：底层的 Lucene 引擎可以更高效地利用内存缓冲区，减少段文件的频繁刷新和磁盘 I/O。
-
-### 2. `_bulk` 的数据格式 (NDJSON)
-它**不是**一个标准的 JSON 数组，而是 **NDJSON (Newline Delimited JSON)** 格式。每一行都是一个独立的 JSON 对象，且必须以换行符 `\n` 结尾。
-
-**结构说明：**
-请求由“操作元数据行”和紧随其后的“数据正文行”交替组成（`delete` 操作只有元数据行）：
 ```json
-{ "action": { "metadata" } }
-{ "document_data" }
+{
+  "query": {
+    "bool": {
+      "must": {
+        "match": {"product": "macbook"}
+      },
+      "filter": [
+        {"term": {"status": "online"}},
+        {"range": {"price": {"lt": 10000}}}
+      ]
+    }
+  }
+}
 ```
 
-**支持的四种操作 (Action)：**
-- `index`：索引文档（ID 存在则全量替换，不存在则创建）。
-- `create`：创建文档（严格模式，ID 已存在则报错 409）。
-- `update`：局部更新文档。
-- `delete`：删除文档。
+区别：
 
-### 3. 实战代码示例
+| Query | Filter |
+|---|---|
+| 关注相关性 | 关注是否匹配 |
+| 参与评分 | 不参与评分 |
+| 适合全文搜索 | 适合状态、时间、枚举值等条件 |
+
+---
+
+### 5.7 深度分页：为什么不能一直 `from + size`？
+
+假设：
+
+```text
+from = 10000
+size = 20
+```
+
+每个 Shard 都需要准备前 `10020` 个结果，再由协调节点汇总。
+
+分片越多，内存和网络成本越高。
+
+常见方案：
+
+| API | 用途 |
+|---|---|
+| `from + size` | 普通浅分页 |
+| `search_after` | 实时深分页 |
+| `scroll` | 全量导出/批处理 |
+
+---
+
+### 5.8 聚合：怎么统计？
+
+例如：
+
+```text
+按 product.keyword 分组
+        ↓
+各 Shard 本地聚合
+        ↓
+返回局部结果
+        ↓
+协调节点合并
+        ↓
+全局结果
+```
+
+高基数字段可能涉及 Global Ordinals，构建本身可能产生额外开销。
+
+---
+
+## 6. `_bulk`：怎么批量写？
+
+### 6.1 为什么使用 Bulk？
+
+单条写入：
+
+```text
+1000 条数据
+→ 1000 次 HTTP 请求
+```
+
+Bulk：
+
+```text
+1000 条数据
+→ 1 批请求
+→ ES 按 Shard 分发
+```
+
+主要减少：
+
+- 网络请求开销
+- HTTP 解析开销
+- 底层频繁写入开销
+
+---
+
+### 6.2 NDJSON 格式
+
+Bulk 不是 JSON 数组，而是 NDJSON：
+
 ```http
 POST /_bulk
 {"index":{"_index":"users","_id":"1"}}
-{"name":"张三","age":25,"role":"admin"}
+{"name":"张三","age":25}
 {"create":{"_index":"users","_id":"2"}}
-{"name":"李四","age":30,"role":"user"}
+{"name":"李四","age":30}
 {"update":{"_index":"users","_id":"1"}}
 {"doc":{"age":26}}
 {"delete":{"_index":"users","_id":"3"}}
-<此处必须有一个换行符>
 ```
 
-### 4. `_bulk` 的三大避坑指南
-1. **非原子操作（无事务）**：`_bulk` 里的指令是相互独立的。部分失败不会回滚整体操作。**必须**解析返回体检查 `errors: true`，遍历 `items` 数组找出失败项（如 429限流 或 409冲突）并进行重试。
-2. **严格控制批次大小**：包过大会打满节点内存，引发 GC 停顿或 OOM。建议将每个 Bulk 请求控制在 **5MB 到 15MB 之间**（约 1000 - 5000 条数据）。
-3. **严禁内部换行**：单条数据 JSON（例如数据正文行）**内部绝对不能包含换行符 `\n`**。必须序列化为紧凑的一行，否则会导致解析崩溃。
-   
-## 6. 分布式与高可用
+四种操作：
 
-# Elasticsearch 分布式与高可用架构详解
-
-## 一、概述
-
-Elasticsearch（简称 ES）的高可用与分布式架构是一套由"分布式容错 + 数据冗余 + 自动故障转移"构成的完整体系，其核心目标是实现数据不丢失、服务不中断以及故障自动恢复。
+| 操作 | 含义 |
+|---|---|
+| `index` | 创建或全量替换 |
+| `create` | 仅创建，存在则 409 |
+| `update` | 局部更新 |
+| `delete` | 删除 |
 
 ---
 
-## 二、分布式架构与节点角色
+### 6.3 Bulk 为什么不是事务？
 
-ES 采用去中心化架构，对外表现为单一整体，内部通过不同角色的节点协同工作。
+Bulk 中每个 item 独立执行：
 
-### 2.1 节点角色详解
-
-| 节点角色 | 职责说明 | 建议 |
-|---------|---------|------|
-| **Master** | 管理集群元数据、分片分配、节点加入/离开 | 建议 3 个专用节点 |
-| **Data** | 存储数据，执行增删改查 | 生产环境独立部署 |
-| **Coordinating** | 接收请求，分发查询，合并结果 | 所有节点默认都是协调节点 |
-| **Ingest** | 预处理管道，写入前对数据进行转换 | 减轻主节点和数据节点负担 |
-
-### 2.2 生产级节点角色分离架构
-
-在一个生产级的 ES 集群中，为了保证高可用和性能隔离，通常会将节点角色分离。以下是一个典型的 **"3 Master + N Data + 协调节点"** 架构：
-
-```
-                        [ Client / 负载均衡器 ]
-                                |
-                                v
-+-----------------------------------------------------------------------+
-|                      Elasticsearch Cluster                            |
-|                                                                       |
-|  [ Coordinating Nodes ]  <-- 接收请求、分发查询、合并结果 (可复用)      |
-|       (Node C1)   (Node C2)                                           |
-|           |              |                                            |
-|           +--------------+-------------+                             |
-|                          |             |                              |
-|           [ Master Nodes ] (专用主节点，保证集群稳定)                   |
-|           (Node M1)   (Node M2)   (Node M3)                           |
-|              |             |             |                             |
-|              +-------------+-------------+                             |
-|                            |                                           |
-|           [ Data Nodes ] (负责实际数据存储与计算)                        |
-|      +-------------------+-------------------+                         |
-|      |                   |                   |                         |
-|  (Node D1)           (Node D2)           (Node D3)                     |
-|  +-----------+       +-----------+       +-----------+                 |
-|  | Shard 0(P)|       | Shard 1(P)|       | Shard 2(P)|                 |
-|  | Shard 1(R)|       | Shard 2(R)|       | Shard 0(R)|                 |
-|  +-----------+       +-----------+       +-----------+                 |
-+-----------------------------------------------------------------------+
+```text
+item1 ✓
+item2 ✓
+item3 ✗
+item4 ✓
 ```
 
-**核心解析：**
+不会因为 item3 失败而整体回滚。
 
-- **Master 节点（M1-M3）**：作为集群的"大脑"，只负责管理元数据（如创建索引、分配分片）。采用 3 个专用节点可以防止脑裂，保证高可用。
-- **Data 节点（D1-D3）**：作为"苦力"，负责存储数据和执行增删改查。
-- **分片分布（P=主分片，R=副本分片）**：注意观察，**主分片和它的副本绝不会在同一个节点上**。例如 Shard 0 的主分片在 D1，副本在 D3。如果 D1 宕机，D3 上的副本会瞬间接管，实现高可用。
+因此必须：
 
----
+1. 检查 `errors`
+2. 遍历 `items`
+3. 对失败项单独处理
+4. 对 429 等情况进行重试
 
-## 三、数据分片与副本机制（高可用的基石）
-
-分片（Shard）是 ES 分布式存储的最小物理单元，本质是一个独立的 Lucene 索引实例。
-
-### 3.1 主分片（Primary Shard）
-
-- 数据写入的唯一入口
-- 数量在索引创建时固定且不可更改
-- 建议单分片大小控制在 10GB~50GB 之间，以平衡恢复速度与元数据压力
-
-### 3.2 副本分片（Replica Shard）
-
-- 主分片的完整拷贝
-- 副本不仅用于容灾，还能分担读请求压力，提升查询并发能力
-- 副本数量可动态调整，生产环境至少配置 1 个副本
-
-### 3.3 分片分配策略
-
-| 策略 | 说明 |
-|------|------|
-| **主分片** | 创建时固定，不可更改 |
-| **副本分片** | 不会分配到与主分片相同的节点，保证节点故障时数据不丢失 |
-| **Shard Allocation Awareness** | 感知机架、可用区，将副本分散到不同物理位置 |
-
-**严格的分配策略：** ES 的分片分配器会强制保证主分片与其副本绝不部署在同一节点上。结合 Shard Allocation Awareness（机架/可用区感知），ES 还能将副本分散到不同的物理机架或云可用区，从而容忍机房级别的故障。
+批次应控制在合理大小，原文建议约 **5MB～15MB / 批**，实际应根据文档大小、节点资源和吞吐测试调整。
 
 ---
 
-## 四、智能路由与数据定位
+## 7. 并发与一致性
 
-ES 通过固定算法确定文档的物理存储位置：
+### 7.1 OCC：为什么不用悲观锁？
 
-> **路由公式：shard = hash(routing) % number_of_primary_shards**
+ES 主要采用**乐观并发控制（OCC）**：
 
-### 4.1 默认路由
-
-默认使用文档 ID（_id）作为 routing 值，确保数据均匀分布，且查询时能直接定位分片，无需广播。
-
-### 4.2 自定义路由
-
-通过指定 `?routing=user_123`，可以将同一用户的数据集中在同一分片，极大提升针对该用户的跨文档查询性能，避免跨分片查询带来的网络开销。
-
-### 4.3 注意事项
-
-- 修改主分片数或路由键会导致已有数据无法按新规则定位
-- 必须通过 Reindex（重建索引）重新分布数据
-
----
-
-## 五、数据写入与路由机制流程
-
-当客户端写入一条数据时，ES 是如何知道该把它存到哪个节点、哪个分片的？
-
-```
-  [ Client ]
-      |
-      | 1. POST /index/_doc/123?routing=user_456 {"name": "Alice"}
-      v
-  [ Coordinating Node ]
-      |
-      | 2. 计算路由: shard = hash("user_456") % 3 = 1
-      |    (目标: 主分片 Shard 1)
-      v
-  [ Data Node 2 ]  <-- 定位到 Shard 1 (Primary)
-      |
-      | 3. 写入内存 Buffer + 写入 Translog (防丢失)
-      |
-      | 4. 并行转发给副本
-      +-------------------------+
-      |                         |
-      v                         v
-  [ Data Node 3 ]           [ Data Node 1 ]
-  (Shard 1 Replica)         (Shard 1 Replica)
-      |                         |
-      | 5. 副本写入成功           | 5. 副本写入成功
-      +------------+------------+
-                   |
-                   v
-          [ 返回 Client: 成功 ]
+```text
+读取版本
+   ↓
+修改
+   ↓
+提交时检查版本
+   ↓
+版本一致 → 成功
+版本变化 → 409 Conflict
 ```
 
-**核心解析：**
+现代 ES 主要使用：
 
-- **路由公式**：shard = hash(routing) % 主分片数。如果不指定 routing，默认用文档 _id。
-- **Translog 机制**：这是 ES 保证数据不丢失的核心。数据写入内存后，会先写一份预写日志（Translog）到磁盘。即使节点突然断电，重启后也能通过 Translog 恢复数据。
-- **同步复制**：写入请求必须在主分片和至少一个副本分片都写成功后，才会向客户端返回成功。
-
----
-
-## 六、集群状态管理与高可用选举
-
-### 6.1 选举机制
-
-ES 7.x+ 版本采用基于类 Raft 协议的 Voting Configuration 机制。只要超过半数的候选主节点存活，集群就能选出新 Master，维持正常运行。
-
-### 6.2 状态同步
-
-集群状态（包括索引列表、Mapping、分片位置等）仅在 Master 节点更新，并增量同步到所有节点，确保整个集群对拓扑结构的认知一致。
-
----
-
-## 七、故障检测、转移与自愈
-
-当集群发生异常时，ES 的自动故障转移机制会在毫秒到秒级内完成服务切换：
-
-### 7.1 故障检测
-
-节点间通过心跳（Ping）机制检测状态。Master 发现节点失联后，会将该节点上的分片标记为 UNASSIGNED。
-
-### 7.2 自动恢复流程
-
-```
-  [ 正常状态 ]                          [ 故障发生 ]
-  +-----------+       +-----------+     +-----------+       +-----------+
-  | Node D1   |       | Node D2   |     | Node D1   |       | Node D2   |
-  | Shard 0(P)|       | Shard 1(P)|     |  宕机   |       | Shard 1(P)|
-  | Shard 1(R)|       | Shard 2(P)|     |           |       | Shard 2(P)|
-  +-----------+       +-----------+     +-----------+       +-----------+
-
-  [ 自动恢复过程 (Master 节点接管) ]
-
-  1. Master 节点通过 Ping 发现 Node D1 失联。
-  2. Master 将 Node D1 上的 Shard 0(P) 标记为 UNASSIGNED。
-  3. Master 发现 Shard 0 在其他节点有副本 (假设在 Node D3)。
-  4. Master 将 Node D3 上的 Shard 0(R) 提升为新的主分片 Shard 0(P)。
-  5. Master 在 Node D2 或新加入的节点上，为新的 Shard 0(P) 创建副本。
-
-  [ 恢复后状态 ]
-  +-----------+       +-----------+       +-----------+
-  | Node D2   |       | Node D3   |       | Node D4   |
-  | Shard 1(P)|       | Shard 0(P)| <-- 新主分片 |       | Shard 0(R)| <-- 新副本
-  | Shard 2(P)|       | Shard 2(R)|       |           |
-  +-----------+       +-----------+       +-----------+
+```text
+if_seq_no
++
+if_primary_term
 ```
 
-### 7.3 延迟分配（Delayed Allocation）
-
-为防止短暂的网络抖动或节点重启导致大量数据在集群内无效迁移，ES 默认设置了 `index.unassigned.node_left.delayed_timeout`（默认 1 分钟）。在此期间，ES 会等待原节点恢复，若超时未恢复才触发数据重分配。
-
-### 7.4 副本晋升
-
-只要集群中还有副本存在，主分片的故障就能在秒级被接管，对外部服务几乎无感知。
+避免并发更新互相覆盖。
 
 ---
 
-## 八、跨集群复制 (CCR) 与异地容灾
+### 7.2 SeqNo + Primary Term 是什么？
 
-对于地域级容灾或读写分离需求，ES 提供了跨集群复制（CCR）功能。
+| 概念 | 含义 |
+|---|---|
+| Sequence Number | 主分片上的写操作序号 |
+| Primary Term | 主分片发生重新选举后的代数 |
 
-### 8.1 CCR 架构图
-
-```
-  [ 主集群 (Leader) - 北京机房 ]             [ 备集群 (Follower) - 上海机房 ]
-  +-------------------------+               +-------------------------+
-  | Shard 0(P)  Shard 1(P)  |               | Shard 0(R)  Shard 1(R)  |
-  | Shard 2(P)  Shard 3(P)  |               | Shard 2(R)  Shard 3(R)  |
-  +-------------------------+               +-------------------------+
-              |                                           ^
-              |  实时异步复制 (Async Replication)          |
-              +-------------------------------------------+
+```text
+Primary Term = 5
+SeqNo = 100
 ```
 
-### 8.2 核心解析
-
-- **Leader/Follower 架构**：Leader 集群接受写入，并将数据实时异步复制到 Follower 集群。Follower 集群默认只读，可用于就近查询或作为灾备集群。
-- **读写分离与容灾**：主集群负责写入，数据实时同步到备集群。备集群可以提供只读查询服务。
-- **异地多活**：当主集群所在机房整体故障时，可以将备集群提升为 Leader 集群，继续接受写入，实现机房级别的容灾。
+可以用来判断操作的新旧以及主分片代际，避免旧 Primary 恢复后继续写入。
 
 ---
 
-## 九、动态扩缩容与负载均衡
+### 7.3 主副本如何处理读写？
 
-### 9.1 自动 Rebalance
+```text
+写：
+Client
+ ↓
+Primary
+ ↓
+Replica
 
-当新节点加入集群时，Master 会自动触发分片重平衡（Shard Rebalance），将部分分片从负载较高的节点迁移到新节点，以平衡磁盘和 CPU 使用率。
+读：
+Client
+ ↓
+Primary / Replica
+```
 
-### 9.2 流量控制
+副本可以分担查询压力。
 
-可通过 `cluster.routing.rebalance.enable` 控制重平衡的时机（如仅在节点加入/离开时触发），避免在业务高峰期进行大量数据迁移影响性能。
-
-### 9.3 客户端负载均衡
-
-为避免单点故障，客户端请求应通过外部负载均衡器或轮询机制分发到多个协调节点，而非直连单一节点。
-
----
-
-## 十、补充：近实时搜索与数据持久性保障
-
-除了架构层面的高可用，ES 在存储引擎层面也保障了数据的可靠性：
-
-### 10.1 近实时搜索（NRT）
-
-数据写入后先存入内存缓冲区，默认每 1 秒执行一次 Refresh 操作生成 Segment 供搜索，因此存在最多 1 秒的搜索延迟。
-
-### 10.2 Translog 机制
-
-为了防止内存数据在 Refresh 前因宕机丢失，ES 采用预写日志（Translog）。数据写入内存的同时会追加写入 Translog 并 fsync 落盘。即使节点崩溃，重启后也能通过重放 Translog 恢复未持久化的数据，确保数据不丢失。
+但主副同步存在延迟，因此部分读取可能暂时看到旧数据。
 
 ---
 
-## 十一、总结：ES 高可用的三大防线
+## 8. 分布式与高可用
 
-| 防线 | 机制 | 容忍故障范围 |
-|------|------|-------------|
-| **第一道防线** | 副本机制 | 单台机器宕机 |
-| **第二道防线** | 机架/可用区感知 | 交换机故障或机房断电 |
-| **第三道防线** | 跨集群复制 (CCR) | 城市级灾难 |
+### 8.1 节点角色
+
+| 角色 | 主要职责 |
+|---|---|
+| Master | 集群元数据、节点和分片管理 |
+| Data | 存储数据、执行查询和写入 |
+| Coordinating | 接收请求、分发、汇总 |
+| Ingest | 写入前数据预处理 |
+
+所有节点默认都可以承担协调角色。
+
+生产环境常见：
+
+```text
+3 Master
+  +
+N Data
+  +
+Coordinating（按需）
+```
 
 ---
 
-## 十二、关键配置参数速查
+### 8.2 Shard：为什么需要分片？
 
-| 参数名 | 默认值 | 说明 |
-|--------|--------|------|
-| `index.unassigned.node_left.delayed_timeout` | 1m | 节点离开后延迟分配超时时间 |
-| `cluster.routing.rebalance.enable` | all | 控制分片重平衡的时机 |
-| `discovery.zen.ping.unicast.hosts` | - | 初始节点发现列表（7.x） |
-| `cluster.initial_master_nodes` | - | 初始主节点列表（7.x+） |
-## 7. 持久化与恢复
-持久化与恢复
-写入持久化链
-## 8. 性能与场景
+一个 Index 可以拆成多个 Primary Shard：
 
-### 优势场景
-- **全文检索**：电商搜索、站内搜索。
-- **日志分析**：ELK Stack，海量日志的实时聚合。
-- **指标监控**：替代部分 Prometheus 场景，支持高基数标签。
-- **安全分析 (SIEM)**：海量安全事件的关联分析。
+```text
+Index
+├── Shard 0
+├── Shard 1
+└── Shard 2
+```
 
-### 性能调优方向
-- **写入调优**：使用 `_bulk` API（5MB-15MB/批）；写入时关闭副本和 Refresh，完成后开启；使用自动生成 ID（跳过版本查找）；调整 `index.translog.durability=async`。
-- **查询调优**：尽量使用 `filter`；避免深度分页；使用 `search_after`；只返回必要字段 (`_source` filtering)；利用 Routing 减少参与分片数。
-- **集群调优**：合理设置分片大小（10GB-50GB）；预留 50% 内存给 OS Cache；分离 Master 和 Data 节点。
+每个 Shard 本质上是一个独立 Lucene Index。
 
-### 不适合的场景
-- **复杂事务**：不支持 ACID，不支持跨文档事务。
-- **强一致性读**：默认最终一致性，实时读可能读到旧数据。
-- **关系型关联**：不支持 JOIN，反规范化设计导致写入放大。
-- **高频点查**：作为主数据库，KV 查询性能不如 Redis/DynamoDB。
+好处：
 
-### 选型指南
-- **MySQL + ES**：MySQL 作为主库保证事务，ES 作为从库提供搜索和分析。通过 CDC (Canal/Debezium) 同步数据。
-- **纯 ES**：日志、监控、内容管理等无事务要求的场景。
+- 数据水平分布
+- 查询并行
+- 写入并行
+- 节点故障后可通过 Replica 恢复
 
-### 常见性能瓶颈与排查
-- **写入拒绝**：检查 `write` 线程池队列，降低批量大小或增加节点。
-- **查询超时**：检查慢查询日志，优化 DSL，检查 Fielddata 内存占用。
-- **GC 频繁**：检查堆内存使用，减少缓存大小，或升级硬件。
-- **分片不均衡**：检查 Routing 是否倾斜，手动调整 Shard Allocation。
+Primary 数量在 Index 创建时确定；Replica 数量可以动态调整。
 
-### 生态协同
-- **Kibana**：可视化、Dashboard、DevTools、安全管理。
-- **Logstash**：ETL 管道，支持丰富的 Input/Filter/Output 插件。
-- **Beats**：轻量级数据采集器（Filebeat, Metricbeat）。
-- **Elastic Agent**：统一代理，简化部署和管理。
+---
+
+### 8.3 Replica：为什么需要副本？
+
+```text
+Shard 0 Primary
+        ↓
+Shard 0 Replica
+```
+
+副本作用：
+
+1. 高可用
+2. 故障转移
+3. 分担读压力
+
+Primary 与 Replica 不应部署在同一节点；还可以通过 Allocation Awareness 分散到不同机架/可用区。
+
+---
+
+### 8.4 Routing：数据怎么找到 Shard？
+
+核心公式：
+
+```text
+shard = hash(routing) % number_of_primary_shards
+```
+
+默认：
+
+```text
+routing = _id
+```
+
+例如：
+
+```text
+hash("user_456") % 3 = 1
+```
+
+因此写入：
+
+```text
+user_456
+   ↓
+Shard 1
+```
+
+**为什么使用自定义 Routing？**
+
+如果经常查询同一用户的数据：
+
+```text
+routing=user_123
+```
+
+可以让该用户的数据集中在同一 Shard，减少广播查询。
+
+代价是可能产生数据倾斜。
+
+如果 Primary Shard 数量或 Routing 规则发生变化，通常需要 Reindex 重新分布数据。
+
+---
+
+### 8.5 写入流程
+
+```text
+Client
+  ↓
+Coordinating Node
+  ↓
+hash(routing) % primary_shards
+  ↓
+Primary Shard
+  ├── Memory Buffer
+  ├── Translog
+  └── Replica
+        ↓
+      返回成功
+```
+
+---
+
+### 8.6 Master 故障后怎么办？
+
+```text
+Master 集群
+M1  M2  M3
+    ↓
+M1 故障
+    ↓
+剩余节点重新选举
+    ↓
+新 Master
+```
+
+ES 7.x+ 使用 Voting Configuration 等机制，通过多数票选举 Master。
+
+---
+
+### 8.7 节点故障如何恢复？
+
+```text
+D1 宕机
+  ↓
+Master 检测到节点失联
+  ↓
+Shard 0(P) → UNASSIGNED
+  ↓
+Shard 0(R) 晋升为 Primary
+  ↓
+重新创建 Replica
+```
+
+核心是：
+
+> **Replica + 自动故障转移 = 单节点故障下的高可用。**
+
+短暂网络抖动时可以使用 Delayed Allocation，避免立即发生大量无效分片迁移。
+
+---
+
+### 8.8 跨机架 / 跨可用区
+
+```text
+AZ1                AZ2
+Shard 0(P)         Shard 0(R)
+```
+
+通过 Allocation Awareness 让副本分散到不同物理故障域。
+
+这样可以进一步容忍：
+
+```text
+单机故障
+   ↓
+机架故障
+   ↓
+可用区故障
+```
+
+---
+
+### 8.9 CCR：机房级容灾
+
+```text
+Leader Cluster
+      │
+      │ Async Replication
+      ↓
+Follower Cluster
+```
+
+用途：
+
+- 异地容灾
+- 就近查询
+- 读写隔离
+
+Leader 接受写入，Follower 异步复制；主集群发生机房级故障时，可将备集群用于灾备切换。
+
+---
+
+### 8.10 扩容与 Rebalance
+
+新节点加入：
+
+```text
+New Node
+   ↓
+Master 重新评估分配
+   ↓
+Shard Rebalance
+   ↓
+数据迁移
+```
+
+目标：
+
+- 均衡磁盘
+- 均衡 CPU
+- 分散查询/写入压力
+
+高峰期需要控制 Rebalance，避免大量迁移影响业务。
+
+---
+
+## 9. 持久化与恢复
+
+把存储与高可用合在一起理解：
+
+```text
+                写入
+                 ↓
+        ┌────────┴────────┐
+        ↓                 ↓
+ Memory Buffer         Translog
+        ↓                 ↓
+     Refresh            恢复
+        ↓
+     Segment
+        ↓
+   Page Cache
+        ↓
+   Flush/fsync
+        ↓
+   Physical Disk
+
+        +
+     Replica
+        ↓
+   节点故障恢复
+```
+
+所以 ES 的可靠性来自两层：
+
+| 层次 | 机制 | 解决问题 |
+|---|---|---|
+| 节点内 | Translog + 持久化 | 节点重启/崩溃恢复 |
+| 节点间 | Replica | 节点故障 |
+| 故障域 | Allocation Awareness | 机架/AZ 故障 |
+| 集群间 | CCR | 异地灾备 |
+
+---
+
+## 10. 性能与场景
+
+### 10.1 适合什么？
+
+| 场景 | 原因 |
+|---|---|
+| 电商/站内搜索 | 全文检索 + 排序 |
+| 日志分析 | 高吞吐写入 + 聚合 |
+| 指标分析 | 时间/标签查询 + 聚合 |
+| 安全分析 SIEM | 海量事件搜索与关联 |
+| 内容搜索 | 分词、相关性排序 |
+
+---
+
+### 10.2 不适合什么？
+
+| 场景 | 原因 |
+|---|---|
+| 复杂事务 | 不适合作为关系型事务数据库 |
+| 强一致主库 | 默认存在副本同步延迟 |
+| 大量 JOIN | 不擅长关系型关联 |
+| 核心 KV 主库 | 通常不如专用 KV 数据库直接 |
+
+典型架构：
+
+```text
+MySQL
+  ↓ CDC
+Elasticsearch
+  ↓
+搜索 / 分析
+```
+
+即：
+
+> **MySQL 做事实主库，ES 做搜索与分析副本。**
+
+---
+
+### 10.3 写入优化
+
+```text
+1. 使用 _bulk
+2. 控制批次大小
+3. 合理调整 Refresh
+4. 批量导入时可降低 Refresh/Replica 开销
+5. 根据业务评估 Translog durability
+6. 避免不必要的更新
+```
+
+批量导入完成后再恢复正常 Refresh/Replica 配置。
+
+---
+
+### 10.4 查询优化
+
+```text
+1. 精确条件优先使用 filter
+2. 避免深度 from + size
+3. 深分页使用 search_after
+4. 全量导出使用 scroll
+5. 只返回需要的 _source 字段
+6. 合理使用 Routing
+7. 避免 text + Fielddata
+8. 控制高基数聚合
+```
+
+---
+
+### 10.5 分片优化
+
+原文建议：
+
+> 单分片约 **10GB～50GB**，实际应根据数据量、查询模式、恢复时间和节点资源综合确定。
+
+原则：
+
+```text
+分片太少
+→ 并行度不足
+
+分片太多
+→ 查询广播、元数据、Merge、恢复成本增加
+```
+
+---
+
+### 10.6 常见问题排查
+
+| 现象 | 优先检查 |
+|---|---|
+| 写入拒绝 | Write 线程池、批量大小、节点资源 |
+| 查询慢 | Slow Log、DSL、分片数量、聚合 |
+| GC 频繁 | Heap、Fielddata、缓存 |
+| OOM | Fielddata、聚合、请求大小 |
+| 分片不均 | Routing 倾斜、Shard Allocation |
+| 深分页慢 | `from + size` 是否过深 |
+| 聚合慢 | 高基数字段、Global Ordinals、Doc Values |
+
+---
+
+# 11. 最终记忆图
+
+```text
+                    Elasticsearch
+                         │
+                 Distributed Index
+                         │
+                    ┌────┴────┐
+                    │  Shard  │
+                    └────┬────┘
+                         │
+                   Lucene Index
+                         │
+                    ┌────┴────┐
+                    │ Segment │
+                    └────┬────┘
+          ┌──────────────┼──────────────┐
+          ↓              ↓              ↓
+     FST/Term         Postings      Stored Fields
+     找 Term           找 DocID       取文档
+          │              │              │
+          └──────┬───────┘              │
+                 ↓                      │
+               DocID ───────────────────┘
+
+                    +
+               Doc Values
+                    ↓
+              排序 / 聚合
+
+写入：
+Memory Buffer → Translog → Refresh → Segment
+                                   ↓
+                              Page Cache
+                                   ↓
+                              Flush/fsync
+
+后台：
+Segment + Segment → Merge → 更大 Segment + 清理删除数据
+
+分布式：
+Routing → Primary Shard → Replica
+                         ↓
+                  故障转移 / 高可用
+```
+
+---
+
+# 12. 面试一句话
+
+> **Elasticsearch 是基于 Lucene 的分布式搜索与分析引擎。一个 Index 被划分为多个 Shard，每个 Shard 底层是 Lucene Index，并以不可变 Segment 组织数据。全文搜索通过 FST/Term Dictionary 找 Term，再通过 Postings 找 DocID，Fetch 阶段通过 Stored Fields 取文档；排序和聚合主要依赖 Doc Values。写入经过 Memory Buffer + Translog，Refresh 让数据可搜索，Flush/fsync 完成持久化，Merge 合并 Segment 并清理删除数据。分布式层通过 Primary/Replica、Routing、Master 选举和自动故障转移实现水平扩展与高可用。**
+
+---
+
+# 13. 面试高频追问速答
+
+**Q：为什么 ES 搜索快？**
+
+> 倒排索引直接从 Term 定位 DocID，FST 加速词典定位，Postings 使用压缩和跳跃结构减少扫描；查询还可以在多个 Shard 并行执行。
+
+**Q：为什么 Segment 不直接修改？**
+
+> 不可变 Segment 简化并发读写，避免频繁修改大型倒排结构；更新通过新 Segment + 删除标记实现，后台 Merge 再清理。
+
+**Q：Stored Fields 和 Doc Values 有什么区别？**
+
+> Stored Fields 面向 `DocID → 文档字段`，主要服务 Fetch；Doc Values 面向 `Field → Values`，主要服务排序、聚合和脚本。
+
+**Q：Refresh 和 Flush 有什么区别？**
+
+> Refresh 解决“能不能搜索到”；Flush/fsync 解决“数据是否完成持久化”。
+
+**Q：Translog 是干什么的？**
+
+> 记录写操作，用于节点异常后的恢复，不是搜索索引本身。
+
+**Q：为什么不能对 text 聚合？**
+
+> text 面向全文搜索；强制使用 Fielddata 会把数据加载到 JVM Heap，容易造成高内存甚至 OOM。聚合通常使用 keyword。
+
+**Q：为什么需要 Replica？**
+
+> Replica 同时承担容灾和读压力分担；Primary 故障后 Replica 可以晋升。
+
+**Q：Routing 有什么用？**
+
+> 根据 `hash(routing) % primary_shards` 定位 Shard。合理的自定义 Routing 可以减少查询涉及的 Shard，但要防止数据倾斜。
+
+**Q：ES 为什么不是传统数据库？**
+
+> ES 优先解决搜索、分析和水平扩展，不以复杂事务、JOIN 和强一致主数据为核心。
