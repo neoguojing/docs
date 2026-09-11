@@ -1202,40 +1202,8 @@ ES 7.x+ 版本采用基于类 Raft 协议的 Voting Configuration 机制。只�
 | `discovery.zen.ping.unicast.hosts` | - | 初始节点发现列表（7.x） |
 | `cluster.initial_master_nodes` | - | 初始主节点列表（7.x+） |
 ## 7. 持久化与恢复
-
-### 写入持久化链路
-`Index Request` → `Translog (fsync)` → `In-Memory Buffer` → `Refresh (OS Cache)` → `Flush (Disk)`。
-只有 Translog 的 `fsync` 是强持久化保证。
-
-### Refresh 与 Flush 的区别
-- **Refresh**：轻量级，将内存数据转为可搜索的段（在 OS Cache），默认 1s。
-- **Flush**：重量级，将 OS Cache 中的段 `fsync` 到磁盘，清空 Translog，触发 Lucene Commit。
-
-### Checkpoint 机制
-Translog 文件头部记录了 `Checkpoint`，表示已安全持久化到段文件的操作位置。恢复时只需重放 Checkpoint 之后的操作。
-
-### 崩溃恢复流程
-1. 节点重启，加载本地 Lucene 段文件。
-2. 读取 Translog，校验 Checkpoint。
-3. 重放 Checkpoint 之后的 Translog 操作，重建内存状态。
-4. 向 Master 注册，等待分片分配。
-
-### Translog 刷新策略
-- **request**：每次写入都 `fsync` Translog（默认，最安全，性能较低）。
-- **async**：每 5s 或 512MB `fsync` 一次（高性能，可能丢失 5s 数据）。
-
-### 快照与恢复 (Snapshot & Restore)
-基于共享仓库（S3, HDFS, NFS）的增量备份。
-- **快照**：仅备份未备份的段文件，不阻塞读写。
-- **恢复**：优先从本地恢复，不足部分从仓库拉取。
-
-### 索引生命周期管理 (ILM)
-自动化管理数据生命周期：
-- **Hot**：高频写入，使用 SSD。
-- **Warm**：只读，使用 HDD，减少副本。
-- **Cold**：低频访问，冻结索引，使用廉价存储。
-- **Delete**：过期删除。
-
+持久化与恢复
+写入持久化链
 ## 8. 性能与场景
 
 ### 优势场景
