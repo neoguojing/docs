@@ -78,6 +78,26 @@
 - 使用边界：简单任务思考容易出错： 引入中间过程，加大了出错的概率
 - 长任务，思考能将真正需要的上下文挤出窗口
 
+## 推理
+- 瓶颈是：数据搬运，内存墙
+- 训练时通过batch，效率较高，算力是瓶颈
+
+### 70B模型举例
+- 生成一次token要搬运140GB的参数，每token 140gflop
+- H100显存带宽每秒3.35TB,FP16算力，2000Tflops（理论可做上万次）
+- 搬运一次要42ms，每秒24个token，利用率不到1%
+### 优化
+- 量化： 体积压缩，搬运量压缩
+- batching：攒batch，一次打包多个用户请求；continuous batch（流水线batch）
+- KV cache：生成一个token需要利用之前所有token的中间结果，减少cache大小
+- - PageAttention：切成小块，按需分配，减少浪费
+  - MQA/GQA： 从模型架构减少KV数量，压缩cache 大小
+- 内存优化
+- - flash attention: 重新编排计算顺序，利用SRAM（高速缓存），让数据在SRAM里待更久，减少搬运
+  - 投机解码：小模型猜测token，大模型一次验证
+  - HBM带宽：2TB/s -》 3TB/s
+  
+  
 ## nano banana 技术路线：
 - 自回归模型
 - - 一个token 一个token的生成
