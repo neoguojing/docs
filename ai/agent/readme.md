@@ -44,3 +44,16 @@ memgpt
 - pass ^ k : k次尝试稳定做到
   
 ## restfull 接口到信息蒸馏，为输入数据降噪音
+
+## 输出格式问题： llm不是指令执行，是概率预测 Json repair 开源
+- 礼貌性自杀
+- markdown 强迫证
+- 类型混乱
+- 截断式
+- 幻觉补全：
+- 引号问题
+### 如何修复：
+- 给出示例
+- json schema
+- 代码清洗
+- Json repair
