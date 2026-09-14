@@ -43,4 +43,4 @@ memgpt
 - pass @ k： k次尝试至少成功一次
 - pass ^ k : k次尝试稳定做到
   
-
+## restfull 接口到信息蒸馏，为输入数据降噪音
