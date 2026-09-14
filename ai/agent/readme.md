@@ -54,6 +54,18 @@ memgpt
 - 引号问题
 ### 如何修复：
 - 给出示例
-- json schema
+- json schema 校验
 - 代码清洗
 - Json repair
+- promt llm自动修复
+
+## 首token延迟: 
+- 提前加载
+- 增量构建
+- 文件并行
+- 上下文工程
+- prefill： 模型读完prompt ，不变化的部分缓存，promt，变化的放后面
+- p99:
+
+- 
+
