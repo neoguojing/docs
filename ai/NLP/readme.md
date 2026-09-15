@@ -1,6 +1,16 @@
 
 # llm
 
+## 线性注意力机制
+- softmax：不是简单的概率，而是极端的放大差距，注意力集中在极少token；是attention定位信息的关键
+- 替换softmax的指数函数为核函数；利用矩阵乘法的结合律，使得复杂度从n的平方降到了n；先算k*v
+- 缺点：1.softmax的尖锐分布没有了，精确检索下降；2.flash attention足够快；3.并行度不行；4.序列长，反而注意力越小；
+- 第二代：GLA，增加遗忘门，无差别遗忘
+- 第三代： Gated DeltaNet： 定点镲除；
+- 混合架构： Gated DeltaNet 和 Full attention，压缩状态导致信息丢失，QWEN和KIMI
+- 深度推理和多伦交互准确性不达标
+- 选择空间太大，需要试错
+
 ## tokenizer
 - 决定了模型看到的世界长什么样
 - 将原始文本转换为llm能认识的格式（数字）
