@@ -9,6 +9,17 @@
 - Transformer 中 Multi-Head Attention 中有多个 Self-Attention，可以捕获单词之间多种维度上的相关系数 attention score。
 > Input sequence -> Embedding + Positional Encoding -> N x Encoder Layer -> Context
 > Context + Decoder Input -> N x Decoder Layer -> Output probabilities
+
+## 为什么？
+### 解决什么问题？
+- RNN将序列压缩进一个固定向量，信息随距离衰减
+- attention的本质时把逐步压缩记忆变为随时按需检索；信息传递路径从O(n)变为O(1)
+### QKV角色划分
+- 查询，被查询，取出是三种不同功能
+### MULTI HEAD 为什么表达能力强
+- 多子空间并行捕捉不同关系模式
+
+
 ## 参数分布：
 | 层 | 参数 | 维度 |
 |-----|------|------|
