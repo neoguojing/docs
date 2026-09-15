@@ -28,8 +28,9 @@
 - [https://huggingface.co/docs/tokenizers](https://huggingface.co/docs/tokenizers/quicktour)
 
 ## 概念
-
+- 
 ### RLHF (Reinforcement Learning from Human Feedback)：基于人类反馈的强化学习
+- 包括：预训练、SFT，打分模型（Bradley-Terry），PPO奖励
 - 强化学习的核心思想：**通过**学习最优的策略（Policy），使代理（Agent）可以在给定的环境下选择出能够最大化长期奖励的行动序列
 - 代理通过不断尝试和学习，优化其策略，使其能够在不同的状态下做出最佳的决策
 - 核心要素：
