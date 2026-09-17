@@ -143,16 +143,14 @@ $$S=\sum_j\phi(k_j)v_j^T$$
 ### 1.6 BERT / T5 / GPT
 
 | 模型架构 | 典型用途 |
-| --- | --- |
+|---|---|
 | **BERT** (Encoder-only) | MLM、理解、分类、表示 |
 | **T5** (Encoder-Decoder) | Seq2Seq、文本转换 |
 | **GPT** (Decoder-only) | Causal LM、生成 |
 
 GPT 类模型通过：
 
-
-$$P(x)=\prod_tP(x_t\vert{}x_{<t})$$
-
+$$P(x)=\prod_t P(x_t \mid x_{<t})$$
 
 进行 Next Token Prediction。
 Decoder 使用 Causal Mask，保证当前位置不能看到未来 Token。
