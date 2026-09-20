@@ -1,61 +1,456 @@
-构建 Agent 的安全与权限系统，核心原则是从“依赖大模型在 Prompt 中的自觉遵守”**，转向**“建立确定性的物理与逻辑防线”。
+可以。核心问题是上一版把 **Identity / Authorization / Capability / Resource / Sandbox / Audit** 平铺展开了，导致概念很多但主线不明显。
 
-结合 Harness 架构与你提供的安全机制，Agent 安全与权限系统的设计需要考量以下核心维度，并落实具体的实现方案：
+建议压缩成一条主线：
 
-## 一、 系统设计需考量的核心维度
+> **Agent 要安全，本质就是：谁（Identity）通过什么能力（Tool/MCP）对什么资源（Resource）执行什么操作（Action），由 Policy 决定是否允许，再由 Sandbox 限制最大影响范围。**
 
-设计 Agent 安全架构时，必须从“防破坏、防越权、防绕过”三个视角出发，考量以下五个方面：
+下面按这个逻辑重构，FilesystemPermission 只作为一个小例子。
 
-1. **执行环境的隔离性**：大模型生成的代码和系统命令不可预测，必须假设每一次执行都是恶意的或有破坏性的。如何确保生产环境不受影响？
-2. **最小权限原则 (PoLP)**：Agent 在执行特定任务时，是否只拥有完成该任务所需的最小读写或执行权限？如何防止权限扩散？
-3. **多智能体权限边界**：主 Agent 与子 Agent 之间的权限是否应该继承？如何确保专门负责“审查”或“检索”的子 Agent 无法越权修改文件？
-4. **人机协作边界 (HITL)**：对于高风险操作（如删除文件、修改核心配置、动用资金），如何界定“机器自动执行”与“人类授权执行”的边界？
-5. **防御机制的一致性 (防穿透)**：如果系统限制了 Python 运行时的文件写入，Agent 是否能通过调用 Bash 终端或自定义工具绕过这些限制？
+# Agent 安全与权限体系设计
+
+## 1. 核心抽象
+
+Agent 安全可以统一抽象为：
+
+```text
+Principal
+   ↓
+Capability
+   ↓
+Action
+   ↓
+Resource
+   ↓
+Policy → Allow / Deny / Interrupt
+   ↓
+Sandbox / Security Boundary
+   ↓
+Audit
+```
+
+其中：
+
+| 概念             | 含义          | 示例                              |
+| -------------- | ----------- | ------------------------------- |
+| **Principal**  | 谁在操作        | User / Agent / Run              |
+| **Capability** | 通过什么能力访问    | Tool / MCP / API / Shell        |
+| **Action**     | 做什么         | read / write / delete / execute |
+| **Resource**   | 操作什么        | File / DB / API / Secret        |
+| **Context**    | 在什么条件下      | Project / Env / Time            |
+| **Policy**     | 是否允许        | allow / deny / interrupt        |
+| **Sandbox**    | 即使执行，最多影响什么 | FS / Network / Process          |
+
+核心授权模型：
+
+```text
+Authorize(
+    Principal,
+    Capability,
+    Action,
+    Resource,
+    Context
+) → Allow / Deny / Interrupt
+```
+
+**关键点：Tool / MCP 不是 Resource，而是 Capability / Access Path。**
+
+> Resource = 操作对象
+> Capability = 访问资源的能力/路径
 
 ---
 
-## 二、 核心原则与具体实现方案 (如何实现)
+# 2. Agent 安全主要解决什么
 
-### 1. 物理层：安全沙箱与环境隔离 (Safe Sandbox)
+实际上可以归纳成 4 个问题：
 
-* **原则**：代码执行与文件操作必须与生产环境物理隔离。
-* **实现方案**：
-* **容器化部署**：为 Agent 的工具执行层（如 MCP Server、Python 解释器、Bash 终端）分配独立的 Docker 容器或轻量级虚拟机（如 Firecracker）。
-* **资源与网络限制**：在容器级别锁定文件系统读写挂载点（仅挂载特定的 `/workspace`），并限制出站网络访问（或使用代理白名单），防止恶意代码下载或数据外泄。
+### 2.1 Identity：谁在操作？
 
+需要区分：
 
+```text
+User
+  ↓
+Agent
+  ↓
+Run
+  ↓
+Tool / MCP / API
+```
 
-### 2. 拦截层：声明式权限与审查分类 (Declarative ACL & Review)
+例如：
 
-* **原则**：摒弃 Prompt 软约束，采用“拦截器中间件 + 独立模型审查”的双重校验。
-* **实现方案**：
-* **声明式权限中间件 (FilesystemPermission)**：在底层文件操作 API 注入基于 Glob 路径的拦截规则。采用“首匹配生效 (First-match-wins)”机制：高危路径（如 `/secrets/**`、`.env`）前置拦截，泛化路径（如 `/workspace/**`）后置放行。
-* **动作分类器与审查器**：在工具调用请求发出后、执行前，引入分类器（规则引擎或轻量级 LLM）。对于只读命令（如 `ls`, `grep`）直接放行；对于写操作，交由**独立的审查模型**（Reviewer Model）分析其输入参数和意图，而非仅仅审查最终结果。
+```text
+User = neo
+Agent = coding-agent
+Run = run-123
+```
 
+工具调用必须携带身份上下文，方便后续：
 
+* 权限判断
+* 凭证隔离
+* 审计追踪
 
-### 3. 状态层：原生人机回环 (Human-in-the-loop, HITL)
+---
 
-* **原则**：高危操作必须暂停，而非简单拒绝，赋予系统容错与人工兜底的能力。
-* **实现方案**：
-* **Interrupt 挂起机制**：将权限模式设定为三元态（`Allow`, `Deny`, `Interrupt`）。当 Agent 触发如“删除目录”或“写入核心配置”的规则时，系统不直接抛出错误。
-* **状态机持久化**：结合 LangGraph 的 Checkpointer（如 `InMemorySaver` 或 PostgresSaver），将当前的 DAG 执行图和上下文物理挂起。
-* **终端审批**：向用户前端（TUI/GUI）推送审批流，等待人类显式执行 `Approve`（批准）、`Edit`（修改参数后执行）或 `Reject`（拒绝），获取授权后再恢复状态机流转。
+### 2.2 Least Privilege：允许做什么？
 
+权限不能简单定义为：
 
+```text
+Agent = 可以访问文件
+```
 
-### 4. 协作层：子节点权限降级 (Subagent Isolation)
+而应该定义为：
 
-* **原则**：多智能体协作不仅是为了隔离上下文噪音，更是为了隔离和降级权限。
-* **实现方案**：
-* **非继承式权限覆写**：在主 Agent 派生子 Agent（如 Coding Agent 派生 Review Agent）时，不允许默认继承全局读写权限。
-* **硬性锁死**：在创建 Review Agent 的配置中，显式注入全量拒绝的规则（如 `mode="deny", operations=["write"], paths=["/**"]`）。即使大模型产生幻觉试图调用编辑工具，也会被底层拦截，从架构上锁死爆炸半径。
+```text
+谁
+对什么 Resource
+执行什么 Action
+在什么 Context
+可以做什么
+```
 
+例如 Coding Agent：
 
+```text
+/workspace/**       read + write
+repo-A              git write
+database-A          query
+production          deny
+shell                sandbox only
+```
 
-### 5. 路由层：防 Bash 穿透的后端绑定 (Anti-Bypass)
+原则：
 
-* **原则**：安全架构必须逻辑自洽，堵死通过底层命令绕过高级 API 拦截的漏洞。
-* **实现方案**：
-* **复合后端路由约束 (Composite Backend)**：在拥有原生沙箱（支持任意 Bash 命令执行）的系统中，强制要求声明式的权限规则必须绑定在**特定的虚拟路由命名空间**下（如仅对 `/memories/` 或 `/policies/` 生效）。
-* **沙箱执行接管**：限制通过 LLM 直接生成 Bash 脚本操作全局文件系统。如果 Agent 需要编译代码或执行系统命令，必须在权限规则覆盖不到的、已被彻底隔离的专属沙箱后端中执行，确保路径管控的语义一致性。
+```text
+Effective Permission
+= User Permission
+  ∩ Agent Policy
+  ∩ Resource Policy
+  ∩ Environment Boundary
+```
+
+---
+
+### 2.3 Permission Bypass：能不能绕过权限？
+
+这是 Agent 安全中特别重要的问题。
+
+假设：
+
+```text
+File Tool
+    ↓
+Policy
+    ↓
+禁止写 /etc/*
+```
+
+但 Agent 还有：
+
+```text
+Shell
+Python
+MCP
+Custom Tool
+```
+
+于是：
+
+```text
+write_file("/etc/a") → Deny
+
+shell("echo x > /etc/a") → Allow
+```
+
+这就是**权限穿透 / Permission Bypass**。
+
+本质：
+
+> **同一个 Resource 存在多个 Access Path，但这些路径没有遵守同一套安全策略。**
+
+所以不能只保护某一个 Tool。
+
+---
+
+# 3. 如何解决权限穿透
+
+核心方案只有两个层次。
+
+## 3.1 统一 Policy Gateway
+
+所有高风险能力进入统一授权层：
+
+```text
+                ┌─ Tool
+Agent ─ Policy ─┼─ MCP
+                ├─ API
+                └─ Code / Shell
+```
+
+统一判断：
+
+```text
+Principal
++ Capability
++ Action
++ Resource
++ Context
+        ↓
+     Policy
+        ↓
+ Allow / Deny / Interrupt
+```
+
+这样可以避免：
+
+```text
+File Tool 有权限控制
+MCP 没有
+Shell 没有
+Custom Tool 没有
+```
+
+---
+
+## 3.2 Resource 侧再次限制
+
+不能只相信 Agent 层的 Policy。
+
+还应该让 Resource 自己具备安全边界：
+
+```text
+Agent Policy
+      ↓
+Tool Gateway
+      ↓
+Sandbox / Resource ACL
+      ↓
+Resource
+```
+
+例如：
+
+* DB：数据库账号权限
+* API：OAuth Scope / API Scope
+* 文件：Filesystem ACL
+* Secret：Secret Scope
+* Shell：Sandbox
+* Production：网络隔离
+
+这样即使 Agent 层策略出现 Bug，底层 Resource 仍然有保护。
+
+---
+
+# 4. Policy：权限规则如何表达
+
+Policy 可以采用：
+
+* RBAC
+* ABAC
+* ACL
+* Capability-based Authorization
+* Declarative Policy
+
+不需要绑定某一种实现。
+
+例如一个通用规则：
+
+```text
+{
+    principal: "coding-agent",
+    action: "write",
+    resource: "/workspace/**",
+    mode: "allow"
+}
+```
+
+或者：
+
+```text
+{
+    principal: "coding-agent",
+    action: "write",
+    resource: "/production/**",
+    mode: "deny"
+}
+```
+
+Policy Engine 最终解决：
+
+```text
+Can this Principal
+perform this Action
+on this Resource
+under this Context?
+```
+
+---
+
+# 5. FilesystemPermission：一个具体例子
+
+`FilesystemPermission` 可以看作上述 Policy 在**文件系统 Resource**上的一个具体实现。
+
+例如：
+
+```text
+operations:
+    read / write
+
+paths:
+    /workspace/**
+    /etc/**
+
+mode:
+    allow / deny / interrupt
+```
+
+例如：
+
+```text
+read  /workspace/** → allow
+write /workspace/** → allow
+
+write /etc/**       → deny
+
+write /important/** → interrupt
+```
+
+规则通常按照声明顺序匹配：
+
+```text
+Rule 1
+  ↓
+匹配 → 立即决定
+  ↓
+不匹配
+  ↓
+Rule 2
+```
+
+即：
+
+> **first-match-wins**
+
+但这里需要注意：
+
+**FilesystemPermission 只解决 File Tool 这一类访问路径的问题。**
+
+如果 Agent 还有：
+
+```text
+Shell
+Python
+MCP
+Custom Tool
+```
+
+这些路径仍然可能访问文件。
+
+所以它不是完整的 Agent Security，而只是：
+
+```text
+Policy
+  └── Filesystem Policy
+        └── FilesystemPermission
+```
+
+---
+
+# 6. Policy 与 Sandbox 的区别
+
+两者解决不同问题。
+
+### Policy
+
+回答：
+
+> **“允不允许做？”**
+
+例如：
+
+```text
+write /production/db → deny
+```
+
+### Sandbox
+
+回答：
+
+> **“即使执行了，最多能造成多大影响？”**
+
+例如：
+
+```text
+Filesystem → /workspace
+Network    → deny production
+Process    → restricted
+CPU        → 2 cores
+Memory     → 4 GB
+```
+
+因此：
+
+```text
+Policy = 逻辑安全边界
+Sandbox = 运行时安全边界
+```
+
+二者应该同时存在。
+
+---
+
+# 7. 最终架构
+
+完整 Agent Security 可以压缩成：
+
+```text
+User
+ ↓
+Identity
+ ↓
+Agent / Run
+ ↓
+Policy Engine
+ ↓
+Tool Gateway
+ ├── Tool
+ ├── MCP
+ ├── API
+ └── Code / Shell
+ ↓
+Sandbox / Resource ACL
+ ↓
+Resource
+ ↓
+Audit
+```
+
+对应关系：
+
+```text
+Identity   → 谁
+Policy     → 能不能做
+Capability → 通过什么做
+Action     → 做什么
+Resource   → 对什么做
+Sandbox    → 最多影响什么
+Audit      → 谁做过什么
+```
+
+## 8. 面试时一句话总结
+
+> **Agent 安全的核心不是给 Agent 配一组简单的文件权限，而是建立统一的 Identity、Policy 和 Capability 模型：明确谁通过什么访问路径，对什么 Resource 执行什么 Action；Policy 决定是否允许，Sandbox 限制最大影响范围，同时在 Resource 侧再次做权限控制，避免通过 Shell、MCP、API 等其他路径绕过权限。**
+
+其中：
+
+```text
+FilesystemPermission
+        ↓
+只是一个具体的 Policy 实现
+        ↓
+不是 Agent Security 的整体模型
+```
+
+这一版可以作为后续 **Agent Harness / Security** 文档的主干，基本只保留一条逻辑链：**Identity → Policy → Capability → Resource → Sandbox**，其他概念都挂在这条线上。
