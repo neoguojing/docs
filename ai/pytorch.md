@@ -1,273 +1,489 @@
-# pytorch
+# PyTorch 核心原理与工程实践（紧凑版）
 
-## 张量
-- 任何张量的最后一维，都可以理解为「行的长度（每一行的元素个数）
-- 向量写法 (3,) 是最合理的写法，因为它忠实反映了数据的维度和结构：
---它不是二维矩阵
---它只有一个轴
---这个轴的长度是 3
-### 广播
-- 广播就是让“缺省/维度为 1”的地方自动扩展，匹配另一个张量的形状，从而能做逐元素计算
-- 如果两个维度相同 → 直接匹配。
-- 如果某个维度是 1 → 就会广播（扩展成另一个的大小）。
-- 其他情况 → 报错（形状不兼容）。
-### 三要素
-- shape（形状）：各维度长度，如 (B, C, H, W)。
-- dtype（数据类型）：如 float32、bfloat16、int64、bool、complex64 等。
-- device（设备）：cpu 或 cuda（GPU）。
-### 底层实现
-- PyTorch 的核心是 ATen 库（C++），所有张量操作最终调用 ATen 的函数。
-- Tensor 在 C++ 层是一个 TensorImpl 对象，Python 只是一个封装（PyObject）。
-- Tensor 的数据和元信息分开管理：
--- 数据（storage）：连续内存块，存储实际数字（float32, int64 等）
--- 元信息（TensorImpl）：shape、stride、dtype、device、requires_grad 等
-### contiguous
-- 由于底层存储是连续内存，大部分情况下知识改变了元数据
-- 某些情况下，CUDA等要求内存是连续的
-- contiguous 重新分配内存和元素重排
-- is_contiguous 判断内存是否连续
-### 基于轴的操作
-- 沿着 axis 的方向“压扁”它，剩下的方向就保留下来
-- 矩阵：axis=0，即沿着行的方向（上下）压缩，axis=1，沿着列的方向压缩
-### 张量的算子，对张亮进行的数学运算
-- +, -, *, / 对张量元素做逐元素运算
-- torch.ceil(input)：对 input 张量中的每个元素，返回大于或等于该元素的最小整数
-- F.pad： F.pad(chunk_num, (1, 0), value=-1) ：在左边添加1维，右边不添加，值是-1
-- - input：需要填充的张量
-- - pad：填充参数，长度是 2 * number_of_dims_to_pad，pad = (pad_left, pad_right, pad_top, pad_bottom, ...)
-- - mode：填充模式，常用 'constant'（常数填充）、'reflect'（镜像填充）、'replicate'（复制边界）
-- - value：当 mode='constant' 时，用于指定填充值（默认 0）
-- cumsum： 累积和，延指定纬度，（1，2，3） -> (1,3,6)
-- split: 沿指定维度拆分张量; torch.Tensor.split(split_size_or_sections, dim=0)
-- - 如果是整数 → 每块长度相等
-- - 如果是 list → 每块长度按照 list 指定
-- nn.utils.rnn.pad_sequence：将一个长度不同的序列列表（List of Tensors）填充（pad）成统一长度的张量
-- - sequences：包含多个tensor的列表
-  - batch_first：true
-  - padding_value： 填充值
-- matmul, t()做矩阵乘法或转置
-- sum, mean, max对张量沿指定维度求和、
-- torch.linspace(start, end, steps)：返回一个包含从 start 到 end 均匀间隔的数值序列 的一维张量
-- reshape： 改变shape，总元素不变，换一种视角取查看数据
-- transpose： 转置，和.T一致
-- squeeze：删除张量中长度为1的维度
-- unsqueeze：在指定位置增加长度度为1的纬度
-- 逻辑/比较运算>, <, ==
-- 激活函数ReLU, Sigmoid, Tanh非线性映射，用于神经网络
-- 索引/切片x[0,:], gather获取张量的子集或重排
-- 切片：x[start : end : step]，x[start_dim0:end_dim0, start_dim1:end_dim1, ...]
-- - start：起始索引（包含）
-- - end：结束索引（不包含）
-- - step：步长（默认为1，可为负数表示反向）
-- gather → 类似“根据索引表挑选元素”，特别适合 batch 处理或神经网络输出重排
-- vmap (vectorized map) = 把一个作用在单个样本上的函数，自动扩展成能在 batch 上并行计算的函数。
-```
-x[0, :]  # 第0行 → tensor([1,2,3])
-x[:, 1]  # 第1列 → tensor([2,5,8])
-x[1:3, 0:2]  # 第1、2行，第0、1列 → tensor([[4,5],[7,8]])
-```
-## 自动微分张量 
-- tensor 的属性 requires_grad=True 表示需要跟踪梯度。
-- 张量 .grad 存储了该张量的梯度（在反向传播后）。
-- 导数：就是函数变化的“斜率”或“敏感度“
-- 链式法则：输出对输入的变化率 = 输出对中间变量的变化率 × 中间变量对输入的变化率
-- 多元函数的偏导数：多元函数即输入有多个，偏导数：表示输出对某一个输入的变化率
-- 梯度（Gradient）**是所有偏导数组成的向量
-- 残差连接 = 恒等梯度 + 非线性梯度 保证深层网络梯度不消失 这是 Transformer 可以训练非常深层的根本原因
-- 损失函数输出：总是一个标量，衡量整个样本或 batch 的误差
-- 损失函数对输出求导：得到与网络输出相同形状的梯度，向量或者矩阵
-- 对 输入 X 求导 → 保证梯度能继续往前传
-- 对 参数 W 求导 → 保证参数能更新
-- 参数更新：通常是用w-学习率*w的导数
-### 参数和方法
-- requires_grad	是否追踪梯度
-- grad	存储梯度值
-- backward()	反向传播计算梯度
-- - create_graph=True 让反向传播也构建计算图，从而支持二阶导数
-  - 默认 retain_graph=False，会释放中间节点，节省内存
-- no_grad() / detach()	停止追踪，节省内存，常用于推理
-### 计算图与求导过程
-> 在前向计算时动态构建计算图（记录每个算子的输入输出关系）。
-> 在反向传播时，基于链式法则逐节点调用反向函数，把梯度从输出传播到输入。
-> 底层由 C++ Autograd Engine + ATen 张量库 驱动，Python 只是调用接口。
-- 每个操作（如加、乘、矩阵乘法）都会在图中形成一个节点。
-- 图的叶子节点是原始张量（requires_grad=True）：Tensor
-- 每个 Tensor 有一个 .grad_fn 指针，指向它是由哪个函数计算出来的
-- 图的边是函数：封装在 Function 对象中
-- 输出节点是最终的函数值。
-- backward 从输出节点开始，递归调用每个节点的 backward() 函数；而每个Function都实现了前向和后向函数
-- 累加梯度到后面的节点的.grad
-### 矩阵求导原理：
-- Jacobian 矩阵，输出对每个矩阵元素求导组成的矩阵，计算量和存储量大
-- 向量-雅可比积 (Vector-Jacobian Product, VJP)：拿一行权重（上游梯度）去乘这个表格，只算需要的那一部分
-## 模块化神经网络
-### nn.Module
-- 参数注册：通过 nn.Parameter 自动加入 _parameters
-- 子模块注册：通过 _modules 管理，支持递归访问
-- 前向传播：forward() 用户定义，__call__ 负责调用并处理 hooks
-- 缓冲区：register_buffer 管理非训练张量
-- 训练模式管理：self.training 控制 Dropout/BatchNorm 行为
-- 模块序列化：state_dict() / load_state_dict() 保存和加载权重
--- 收集本模块参数
--- 收集 buffer
--- 递归收集子模块
--- OrderedDict：保持层级顺序，方便加载到原模型
-  
-### 子模块组合
-- 子模块本质上是 另一个 Module 实例
-- nn.Module 内部通过 _modules 管理子模块
-- 组合方式：
--- 顺序：nn.Sequential
--- 列表：nn.ModuleList
--- 字典：nn.ModuleDict
-- 优势：
--- 参数递归管理
--- forward 递归调用
--- state_dict 自动保存子模块参数
--- 可复用、可扩展
-### 前向传播由 forward
-### 内置网络层
-#### 全连接层：nn.Linear
-- in_features	输入向量长度
-- out_features 输出向量长度
-- 下采样：让数据纬度降低
-```
-nn.Linear 内部就是用 torch.nn.functional.linear 实现的矩阵乘法。
-本质就是 torch.matmul(x, W.T) + b
-参数 W 和 b 会自动注册为模型参数，并且能被优化器更新。
-```
-#### 卷积层：nn.Conv 支持1-3维的卷积
-- 对输入的每个滑动窗口与卷积核做点积，得到输出特征图的一个像素
-- H_in,W_in输入特征图高宽
-- kH，kW：卷积核的宽高
-- 填充：pH, pW
-- 步幅：sH, sW
-- 扩张（dilation）：dH, dW
-- 卷积就是用“小滤镜”在图上滑动，取一块区域，乘一乘，加一加，得到新的像素值。
-- H_out = floor( (H_in + 2*pH - dH*(kH-1) -1) / sH ) + 1
-- 输入：(B, C_in, H_in, W_in)
-- 输出： (B, C_out, H_out, W_out)
-#### Conv3d
-- 输入：(N, C_in, D, H, W)
-- - N: batch size（批次大小）
-- - C_in: 输入通道数（channels）
-- - D: 深度维度（Depth，例如时间帧、体数据切片）
-- - H: 高度（Height）
-- - W: 宽度（Width）
-- 输出： (N, C_out, D_out, H_out, W_out)
-#### 池化层：
-#### 激活函数
-#### 正则化层：LayerNorm：把每个样本的特征维度标准化到均值 0、方差 1，然后可学习地缩放和平移
-- 计算该时间步 t 的特征均值和方差
-- 归一化后乘以 γ，加上 β
-#### Dropout：随机失活
+> 目标：从 Tensor → Autograd → Module → NN → Training → Data/CUDA → Compile → Distributed/Extension 建立完整心智模型。  
+> 原文已覆盖的内容作为主线；下面只在关键位置补充运行时、性能和工程层知识。
 
-#### nn.Embedding 是一个 可训练的查找表，把离散的整数 id 转换成稠密向量，在训练过程中不断调整 embedding，使其更好地表达这些 id 的语义或特征
-```
-nn.Embedding(
-    num_embeddings,   # 词表大小，比如 50000
-    embedding_dim,    # 向量维度，比如 768
-    padding_idx=None, # 如果设置，这个 index 的 embedding 永远是 0
-    max_norm=None,    # 如果设置，embedding 会被约束在最大范数内
-    norm_type=2.0,    # max_norm 的范数类型 (默认 L2 范数)
-    scale_grad_by_freq=False, # 是否根据词频缩放梯度（稀有词梯度更大）
-    sparse=False      # 是否使用稀疏更新（节省内存，适合大词表）
-)
-```
-## 损失函数
-> transfomer的损失函数多是CrossEntropyLoss
-> 自监督学习：将预测的token和实际训练数据的token做输入，进行损失计算
-| 类型    | 函数                  | 适用场景     | 输入特点                    |
-| ----- | ------------------- | -------- | ----------------------- |
-| 分类    | CrossEntropyLoss    | 多分类      | logits, label           |
-| 分类    | BCEWithLogitsLoss   | 二分类/多标签  | logits, 0/1             |
-| 分类    | NLLLoss             | 多分类      | log-prob, label         |
-| 回归    | MSELoss             | 回归       | y\_pred, y\_true        |
-| 回归    | L1Loss              | 回归       | y\_pred, y\_true        |
-| 回归    | SmoothL1Loss        | 回归/异常值鲁棒 | y\_pred, y\_true        |
-| 对比/嵌入 | CosineEmbeddingLoss | 相似度学习    | x1, x2, label           |
-| 对比/嵌入 | TripletMarginLoss   | 嵌入学习     | anchor, pos, neg        |
-| 分布    | KLDivLoss           | 分布匹配/蒸馏  | log\_prob, target\_prob |
+## 1. Tensor：PyTorch 的核心数据结构
 
-## 优化器
-> 优化器负责 根据梯度更新模型参数，是训练神经网络的核心
-> PyTorch 中优化器位于 torch.optim 模块，常用类继承自 Optimizer 基类
-```
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+### 1.1 Tensor 是什么
 
-for x, y in dataloader:
-    optimizer.zero_grad()         # 清空梯度
-    y_pred = model(x)
-    loss = loss_fn(y_pred, y)
-    loss.backward()               # 反向传播计算梯度
-    optimizer.step()              # 更新参数
+**Tensor ≈ Storage + Shape + Stride + Offset + dtype/device + Autograd 元信息**。
 
-```
-### 核心工作：
-- 接收模型参数
-- 根据梯度和优化算法更新参数
-- 支持动量、权重衰减、学习率调度等
-### 核心成员：
-- param_groups：参数组，每组可设置不同学习率或权重衰减
-- state：存储优化器状态（如动量、Adam 的一阶/二阶矩）
-### 核心方法：
-- step()：执行一次参数更新
-- zero_grad()：清空梯度（一般在反向传播前调用）
-### 核心流程：
-- 遍历 param_groups
-- 对每个参数 p：
--- 获取梯度 g = p.grad
--- 更新状态 state[p]
--- 计算参数更新量 delta：参数更新量 = 学习率 × 梯度 × 其他修正因子（如动量、自适应系数）
--- 执行 p.data.add_(delta)：等价于 p.data = p.data + delta；
-### 常见优化器
-| 优化器          | 特点             | 公式（参数更新）                                                                                                                                                                                                                                          |
-| ------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SGD          | 随机梯度下降，简单，收敛慢  | $\theta_{t+1} = \theta_t - \eta \nabla_\theta L$                                                                                                                                                                                                  |
-| SGD+Momentum | 引入动量，缓冲梯度      | $v_{t} = \mu v_{t-1} + \nabla_\theta L, \theta_{t+1} = \theta_t - \eta v_t$                                                                                                                                                                       |
-| SGD+Nesterov | 提前梯度更新         | $v_{t} = \mu v_{t-1} + \nabla_\theta L(\theta_t - \eta \mu v_{t-1})$                                                                                                                                                                              |
-| Adam         | 自适应学习率，一阶矩和二阶矩 | $ m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t$ <br> $v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2$ <br> $\hat{m}_t = m_t/(1-\beta_1^t)$, $\hat{v}_t = v_t/(1-\beta_2^t)$ <br> $\theta_{t+1} = \theta_t - \eta \hat{m}_t / (\sqrt{\hat{v}_t} + \epsilon)$ |
-| AdamW        | Adam + 正则化分离   | 权重衰减直接作用于参数而不是梯度                                                                                                                                                                                                                                  |
-| RMSprop      | 自适应学习率         | $E[g^2]_t = \gamma E[g^2]_{t-1} + (1-\gamma) g_t^2$ <br> $\theta_{t+1} = \theta_t - \eta g_t / (\sqrt{E[g^2]_t} + \epsilon)$                                                                                                                      |
+| 概念 | 含义 | 关键点 |
+|---|---|---|
+| `shape` | 每个维度长度 | `(B,C,H,W)` |
+| `dtype` | 元素类型 | `float32/bfloat16/int64/bool` |
+| `device` | 存储设备 | `cpu/cuda` |
+| `stride` | 各维移动 1 个元素需要跨过多少 Storage 元素 | 决定“如何解释内存” |
+| `storage` | 实际数据 | Tensor 可以共享底层 Storage |
+| `offset` | 起始位置 | 切片可能改变 offset |
+| `requires_grad` | 是否记录梯度 | Autograd 入口 |
 
-### 概念：
-| 概念       | 作用         | PyTorch 表达           |
-| -------- | ---------- | -------------------- |
-| 学习率 η    | 控制更新步长     | lr=0.01              |
-| 动量 μ     | 利用历史梯度平滑更新 | momentum=0.9         |
-| Nesterov | 提前修正梯度方向   | nesterov=True        |
-| 自适应学习率   | 对不同参数调节步长  | Adam / RMSprop       |
-| 权重衰减 λ   | 防止过拟合      | weight\_decay=0.01   |
-| 梯度裁剪     | 防止梯度爆炸     | clip\_grad\_norm\_   |
-| 梯度累积     | 多步累积梯度再更新  | 手动控制 backward / step |
+**核心理解：** Tensor 不等于一块“矩阵内存”；它更像是“对一块 Storage 的视图”。因此 `transpose/permute/slice` 很多时候只修改 shape/stride/offset，并不复制数据。
 
-## 数据加载
-### Dataset
-- 抽象类：torch.utils.data.Dataset
-- 核心方法：
-```
-__len__()     # 返回样本数量
-__getitem__(idx)  # 返回 idx 对应的样本 (x, y)
-```
-### DataLoader
-- 作用：批量读取、打乱顺序、并行加载
-- 常用参数：
--- batch_size：每个 batch 样本数量
--- shuffle：是否打乱顺序
--- num_workers：多进程加载数量
--- collate_fn：自定义 batch 合并方法
-## 设备管理
-- CUDACachingAllocator 管理gpu内存
-## 自定义算子
-```
-import torch
+### 1.2 Shape / Axis / Broadcasting
+
+- `(3,)` 是一维向量，不是 `3×1` 矩阵。
+- 最后一维通常可以理解为“每行元素数量”，但实际含义由业务决定。
+- `axis=0` 表示第 0 个维度；`sum(dim=1)` 是沿第 1 维消除该维。
+- 广播：从最后一维开始比较，**相等 → 匹配；其中一个为 1 → 扩展；否则报错**。
+
+例：`(B,3,1) + (1,1,4) → (B,3,4)`。
+
+### 1.3 View / Reshape / Transpose / Contiguous
+
+| API | 本质 |
+|---|---|
+| `reshape` | 尽可能返回 view；无法满足布局要求时可能复制 |
+| `view` | 要求内存布局满足 view 条件，通常不复制 |
+| `transpose/permute` | 改 stride/维度顺序，通常不复制 |
+| `contiguous()` | 若当前非连续，则重新分配并整理成连续布局 |
+| `is_contiguous()` | 检查连续性 |
+
+**面试重点：** 为什么 `permute()` 后 `view()` 可能报错？因为 `permute` 改了 stride，新的逻辑维度不一定对应连续内存。
+
+### 1.4 常见算子
+
+| 类别 | API | 作用 |
+|---|---|---|
+| 数学 | `+ - * / ceil` | 逐元素运算 |
+| 聚合 | `sum/mean/max` | 沿维度聚合 |
+| 形状 | `reshape/transpose/squeeze/unsqueeze` | 改变视图 |
+| 填充 | `F.pad` | 补边界 |
+| 序列 | `cumsum/split/pad_sequence` | 累积、拆分、padding |
+| 矩阵 | `matmul/t` | 矩阵运算 |
+| 索引 | `slice/gather` | 选择/重排 |
+| 批处理 | `vmap` | 将单样本函数向量化到 batch |
+
+`gather` 可理解为“按照索引表逐位置取值”；`vmap` 可理解为“自动给函数增加 batch 维”。
+
+---
+
+## 2. Autograd：PyTorch 为什么能自动求导
+
+### 2.1 核心概念
+
+| API/概念 | 含义 |
+|---|---|
+| `requires_grad=True` | Tensor 参与梯度追踪 |
+| `.grad` | 反向传播后保存的梯度 |
+| `.grad_fn` | 非叶子 Tensor 对应的反向节点 |
+| `backward()` | 从输出向输入传播梯度 |
+| `create_graph=True` | 为梯度本身继续建立计算图，支持高阶导 |
+| `no_grad()` | 暂停梯度记录 |
+| `detach()` | 从当前计算图中切断 |
+
+### 2.2 动态计算图
+
+前向：
+
+`x → Linear → ReLU → Linear → loss`
+
+每个可求导算子产生对应的 Autograd 节点；反向从 `loss` 开始，沿图执行反向函数。
+
+**核心：**
+
+`Tensor` 保存数据和元信息；`grad_fn/Function` 描述反向关系；C++ Autograd Engine 负责调度反向计算。
+
+这也是 PyTorch **动态图**的核心：图是在实际执行 forward 时构建的，而不是提前声明完整静态图。
+
+### 2.3 为什么实际计算 VJP，而不是完整 Jacobian
+
+假设：
+
+`y = f(x), x∈R^N, y∈R^M`
+
+完整 Jacobian 是 `M×N`，可能非常大。反向传播真正需要的是：
+
+`vᵀJ`
+
+即 **Vector-Jacobian Product（VJP）**。
+
+所以神经网络训练中：
+
+`loss → ∂L/∂output → ∂L/∂W → ∂L/∂input`
+
+只计算当前反向传播需要的梯度，而不是显式构造整个 Jacobian。
+
+### 2.4 梯度为什么会累加
+
+`backward()` 默认将梯度**累加**到参数的 `.grad` 中，因此训练循环通常：
+
+`zero_grad → forward → loss → backward → step`
+
+如果做梯度累积，则故意执行多次 `backward()`，再调用一次 `step()`。
+
+### 2.5 Residual 为什么有利于深层网络
+
+残差：
+
+`y = F(x) + x`
+
+导数：
+
+`dy/dx = dF/dx + I`
+
+其中 `I` 提供了一条直接的梯度路径，因此缓解深层网络中的梯度传播问题。Transformer 大量使用 residual connection，但“能训练深层 Transformer”并非只由 residual 单独决定。
+
+---
+
+## 3. nn.Module：模型是如何组织起来的
+
+### 3.1 Module 的四类核心能力
+
+| 机制 | 内部概念 | 作用 |
+|---|---|---|
+| Parameter | `_parameters` | 自动注册可训练参数 |
+| Submodule | `_modules` | 递归组织网络 |
+| Buffer | `_buffers` | 保存非训练状态，如 BN running stats |
+| Mode | `training` | 控制 Dropout/BatchNorm 等行为 |
+
+组合方式：
+
+- `Sequential`：固定顺序串联
+- `ModuleList`：模块列表，参数会被注册
+- `ModuleDict`：按名字管理模块
+
+**关键区别：** 普通 Python `list/dict` 中放 Module，不会自动完成同样的参数注册；`ModuleList/ModuleDict` 会。
+
+### 3.2 `forward()` 与 `__call__()`
+
+通常用户实现：
+
+`forward(x)`
+
+实际调用：
+
+`model(x) → Module.__call__() → forward()`
+
+`__call__` 不只是简单调用 `forward`，还负责 hooks 等 Module 机制。
+
+### 3.3 state_dict
+
+`state_dict()` 递归收集：
+
+`本模块 Parameter + Buffer + 子模块 Parameter/Buffer`
+
+形成层级化字典，例如：
+
+`encoder.layer.0.attention.weight`
+
+它是模型保存、加载、迁移和检查参数的重要接口。
+
+---
+
+## 4. 常见 NN 层：从公式理解 API
+
+### 4.1 Linear
+
+`y = xWᵀ + b`
+
+输入最后一维为 `in_features`，输出最后一维为 `out_features`。
+
+```python
+nn.Linear(768, 3072)
+
+本质就是矩阵乘法 + bias。
+
+4.2 Conv2d
+
+输入：
+
+(N, C_in, H, W)
+
+输出：
+
+(N, C_out, H_out, W_out)
+
+输出空间尺寸：
+
+H_out = floor((H + 2P - D(K-1) - 1)/S) + 1
+
+卷积本质：滑动窗口 + 局部权重共享 + 点积。
+
+Conv3d 则扩展为：
+
+(N,C,D,H,W) → (N,C_out,D_out,H_out,W_out)。
+
+4.3 Pooling / Activation / Normalization
+Pooling：局部区域聚合，常用于降低空间尺寸或增强局部不变性。
+ReLU：max(0,x)；Sigmoid/Tanh 提供其他非线性映射。
+LayerNorm：通常对每个样本的指定特征维做标准化，再用可学习 γ/β 缩放平移。
+Dropout：训练阶段随机置零部分激活并做缩放；eval() 下关闭随机失活。
+4.4 Embedding
+
+nn.Embedding(V,D) 本质是一个 V×D 的可训练查找表：
+
+token_id → embedding vector
+
+LLM 中 token embedding 就属于这一类；输入整数 ID，输出向量，不需要对 ID 本身做连续数值意义上的计算。
+
+5. Loss：训练到底在优化什么
+
+损失函数把模型输出映射成一个标量：
+
+L = Loss(prediction, target)
+
+然后 Autograd 计算：
+
+∂L/∂θ
+
+场景	常用 Loss	关键输入
+多分类	CrossEntropyLoss	logits + class index
+二分类/多标签	BCEWithLogitsLoss	logits + 0/1
+log-prob 分类	NLLLoss	log-prob + label
+回归	MSELoss	prediction + target
+鲁棒回归	L1/SmoothL1Loss	prediction + target
+相似度	CosineEmbeddingLoss	两个 embedding
+Triplet	TripletMarginLoss	anchor/positive/negative
+分布匹配	KLDivLoss	log-prob + target distribution
+
+Transformer/LLM： 常见训练目标是 next-token prediction，即根据前面的 token 预测下一个 token，使用 Cross Entropy 计算每个位置的 token loss，再对有效位置聚合。
+
+6. Optimizer：梯度如何变成参数更新
+
+训练闭环：
+
+forward → loss → backward → optimizer.step
+
+6.1 Optimizer 内部
+成员	作用
+param_groups	参数分组，可设置不同 lr/weight_decay
+state	保存动量、Adam 一阶/二阶矩等
+zero_grad()	清理历史梯度
+step()	根据梯度和状态更新参数
+6.2 核心算法
+
+SGD
+
+θ ← θ - ηg
+
+Momentum
+
+v ← μv + g
+
+θ ← θ - ηv
+
+Adam
+
+m ← β₁m + (1-β₁)g
+
+v ← β₂v + (1-β₂)g²
+
+再做 bias correction 后：
+
+θ ← θ - η m̂/(√v̂ + ε)
+
+AdamW： 将 weight decay 与梯度更新解耦，实际工程中非常常见。
+
+6.3 三个容易混淆的概念
+Gradient accumulation：多次 backward 后再 step，用于模拟更大 batch。
+Gradient clipping：限制梯度范数，例如 clip_grad_norm_，主要用于缓解梯度爆炸。
+Learning-rate scheduler：改变学习率随训练过程的变化，而不是改变优化器本身。
+7. Dataset / DataLoader / CUDA
+7.1 Dataset
+
+最基本接口：
+
+__len__()
+__getitem__(idx)
+7.2 DataLoader
+
+负责：
+
+Dataset → sampling → batch → collate → worker loading
+
+关键参数：
+
+batch_size / shuffle / num_workers / collate_fn
+
+collate_fn 特别重要：它决定多个样本如何组成一个 batch，例如变长文本需要 padding。
+
+7.3 GPU 数据路径
+
+典型训练路径：
+
+CPU Dataset → DataLoader → pinned CPU memory → H2D copy → GPU Tensor → CUDA Kernel
+
+Pinned Memory： 固定页主机内存，可提高 CPU→GPU 异步传输效率。
+
+7.4 CUDA Memory
+
+PyTorch 使用 CUDACachingAllocator 管理 GPU 内存，核心目的之一是缓存已经申请过的显存块，减少频繁 cudaMalloc/cudaFree 带来的开销。
+
+注意：
+
+allocated ≠ reserved
+
+allocated：当前 Tensor 实际占用
+reserved：PyTorch allocator 从 CUDA runtime 保留的显存
+
+因此 nvidia-smi 看到的显存占用可能大于当前 Tensor 实际占用。
+
+8. AMP / Stream / Performance：从“能跑”到“跑得快”
+8.1 AMP
+
+Automatic Mixed Precision 的核心思想：
+
+适合低精度的算子用 FP16/BF16，数值敏感部分保持更高精度。
+
+典型收益：
+
+更低显存 + 更高 Tensor Core 吞吐
+
+训练中常见：
+
+with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    loss = model(x)
+
+FP16 训练通常还需要关注 loss scaling；BF16 动态范围更大，现代训练中使用越来越广。
+
+8.2 CUDA Stream
+
+Stream 是 GPU 上的执行队列。
+
+默认 stream 中 kernel 按顺序执行；多个 stream 可以让相互独立的计算/拷贝存在并发机会。
+
+因此性能优化不能只看单个 kernel，还要看：
+
+数据传输 → kernel → synchronization → 下一批数据
+
+是否形成流水线。
+
+8.3 性能分析的基本方法
+
+不要只看“GPU 利用率”。
+
+应关注：
+
+DataLoader 是否成为瓶颈？
+
+H2D copy 是否阻塞？
+
+Kernel launch 是否过多？
+
+GPU kernel 是否真正占满计算资源？
+
+显存带宽是否成为瓶颈？
+
+是否发生频繁 synchronization？
+
+9. Dispatcher / ATen：PyTorch 为什么能支持 CPU、CUDA、不同 dtype
+
+可以把 PyTorch 算子路径抽象成：
+
+Python API → Dispatcher → ATen Operator → Backend Kernel
+
+例如：
+
+torch.add(x,y)
+
+并不是 Python 自己实现加法，而是进入 C++/ATen 体系，再根据：
+
+device / dtype / layout / dispatch key
+
+选择对应实现。
+
+Dispatcher 是理解 PyTorch runtime 的关键。
+
+它使同一个高层 API 可以根据 Tensor 的设备、dtype 等信息分派到不同 backend。
+
+10. torch.compile：PyTorch 2.x 的编译路径
+
+可以把现代 PyTorch 编译链理解为：
+
+Python Model
+→ TorchDynamo
+→ FX Graph
+→ AOTAutograd
+→ TorchInductor
+→ Triton/CUDA Kernel
+
+各组件职责
+组件	作用
+TorchDynamo	捕获 Python 中可编译的 Tensor 运算
+FX	用 Graph 表示模型计算
+AOTAutograd	将 forward/backward 纳入编译流程
+Inductor	进行图级优化并生成后端代码
+Triton	常用于生成高性能 GPU kernel
+
+为什么 compile 能加速？
+
+不是简单“把 Python 变快”，而是把多个算子放到更大的计算图中分析，从而进行：
+
+operator fusion
+memory planning
+kernel generation
+减少 Python / kernel launch 开销
+
+面试重点： eager mode 的优势是灵活；compile 的优势是能够看到更大的计算图并进行优化；动态控制流、数据依赖和 graph break 会影响编译收益。
+
+11. Distributed：从单 GPU 到多 GPU
+11.1 DDP
+
+DistributedDataParallel 的核心：
+
+每个 GPU 一个进程 + 一个模型副本
+
+每个进程拿不同数据：
+
+GPU0 → batch0
+
+GPU1 → batch1
+
+各自 backward 后，通过 AllReduce 聚合梯度，使不同副本保持一致。
+
+典型流程：
+
+forward → backward → gradient AllReduce → optimizer.step
+
+11.2 为什么 DDP 常用 AllReduce
+
+假设 2 张 GPU：
+
+g0 = GPU0 梯度
+
+g1 = GPU1 梯度
+
+AllReduce 后：
+
+g = (g0 + g1)/2
+
+每个 GPU 得到相同的平均梯度，然后各自更新参数，因此模型参数继续保持一致。
+
+11.3 NCCL
+
+NCCL 是 NVIDIA GPU 集群通信库，提供：
+
+AllReduce / AllGather / ReduceScatter / Broadcast
+
+等 collective communication。
+
+在大模型训练/推理中，通信往往成为重要瓶颈，因此要同时理解：
+
+计算量 + 显存 + 通信量 + 通信拓扑
+
+12. 大模型并行的基本抽象
+方法	核心思想	主要解决
+Data Parallel	每卡完整模型，不同数据	提高训练吞吐
+Tensor Parallel	一个算子/权重矩阵拆到多卡	单模型太大/单卡算力不足
+Pipeline Parallel	不同层放不同 GPU	模型层数/显存规模
+FSDP	参数、梯度、optimizer state 分片	降低单卡显存
+
+理解这些技术的关键不是背名字，而是回答：
+
+“模型的哪一部分被切了？通信发生在哪里？通信量是多少？显存节省在哪里？”
+
+13. 自定义 Autograd Operator
+
+当已有算子不能满足需求，可以实现：
 
 class SwishFn(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
         sig = x.sigmoid()
         y = x * sig
-        ctx.save_for_backward(x, sig)   # 反向会用到
+        ctx.save_for_backward(x, sig)
         return y
 
     @staticmethod
@@ -276,11 +492,125 @@ class SwishFn(torch.autograd.Function):
         grad_x = grad_y * (sig + x * sig * (1 - sig))
         return grad_x
 
-def swish(x):
-    return SwishFn.apply(x)
+关键机制：
 
-# 使用 & 梯度检验（双精度 + 小扰动）
-x = torch.randn(5, requires_grad=True, dtype=torch.double)
-torch.autograd.gradcheck(SwishFn.apply, (x,), eps=1e-6, atol=1e-4, rtol=1e-3)
+forward() 保存反向所需数据；
 
-```
+backward() 接收上游梯度 grad_y，返回对输入的梯度。
+
+因此 backward 不是重新计算 loss，而是在执行局部 VJP。
+
+最后用：
+
+torch.autograd.gradcheck(...)
+
+进行数值梯度检查。
+
+14. PyTorch 专家级心智模型
+
+把整个 PyTorch 压缩成一条链：
+
+Tensor
+  ↓
+ATen Operator
+  ↓
+Dispatcher
+  ↓
+Backend Kernel
+  ↓
+Autograd Graph
+  ↓
+Loss
+  ↓
+Optimizer
+  ↓
+Parameter Update
+
+训练工程再向两侧展开：
+
+Dataset
+  ↓
+DataLoader
+  ↓
+CPU / Pinned Memory
+  ↓
+H2D
+  ↓
+GPU Tensor
+  ↓
+Model / Kernel
+  ↓
+Autograd
+  ↓
+Optimizer
+
+规模扩大后：
+
+Single GPU
+   ↓
+DDP / NCCL
+   ↓
+Tensor Parallel / Pipeline Parallel / FSDP
+
+性能优化则形成：
+
+Profiler
+  ↓
+定位 Data / Memory / Compute / Communication Bottleneck
+  ↓
+AMP / Fusion / torch.compile / Triton
+  ↓
+减少 Kernel、显存访问、同步与通信
+15. 面试必须真正理解的 12 个问题
+Tensor 为什么不是简单的一块连续内存？
+因为 Tensor 通过 shape/stride/offset 描述对 Storage 的视图。
+transpose 为什么通常不复制数据？
+因为主要修改 stride；真正需要连续布局时才可能 contiguous()。
+view 和 reshape 区别？
+view 对布局要求更严格；reshape 尽可能 view，否则复制。
+Autograd 是怎么工作的？
+forward 动态构图，backward 从输出沿图执行 VJP。
+为什么反向传播不显式构造 Jacobian？
+因为训练需要的是 VJP，避免巨大 Jacobian 的计算和存储。
+Parameter 为什么需要注册？
+注册后 Module、state_dict、optimizer 等才能自动发现参数。
+ModuleList 为什么不能简单换成 list？
+因为 ModuleList 会把子模块注册到 _modules。
+Adam 和 AdamW 的关键区别？
+AdamW 将 weight decay 与梯度更新解耦。
+DataLoader 为什么会影响 GPU 利用率？
+CPU 数据准备、worker、collate、H2D 都可能成为 GPU 前端供给瓶颈。
+allocated 和 reserved 为什么不同？
+allocator 会缓存显存块，reserved 包含已向 CUDA runtime 保留但当前未被 Tensor 使用的部分。
+torch.compile 为什么能加速？
+通过图捕获和编译，让系统进行 fusion、memory planning、kernel generation 等优化。
+多 GPU 为什么不只是“复制模型”？
+真正的瓶颈还包括梯度同步、参数/激活通信、显存和网络拓扑。
+16. 建议的深入学习路线
+第一阶段：Tensor
+shape / stride / storage / view / contiguous / broadcasting
+        ↓
+第二阶段：Autograd
+dynamic graph / Function / VJP / backward / detach
+        ↓
+第三阶段：Module
+Parameter / Buffer / Module / state_dict / hooks
+        ↓
+第四阶段：NN
+Linear / Conv / Norm / Attention / Embedding
+        ↓
+第五阶段：Training
+Loss / AdamW / Scheduler / AMP / accumulation / clipping
+        ↓
+第六阶段：Runtime
+ATen / Dispatcher / CUDA / Stream / Allocator
+        ↓
+第七阶段：Compile
+Dynamo / FX / AOTAutograd / Inductor / Triton
+        ↓
+第八阶段：Distributed
+DDP / NCCL / FSDP / TP / PP
+
+最终目标不是记住 API，而是能够从一个问题沿着这条链定位：
+
+数据 → Tensor → 算子 → Kernel → Autograd → 参数更新 → 显存 → 通信 → 性能瓶颈
