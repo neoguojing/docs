@@ -228,7 +228,7 @@ $$\tilde{x}_m = x \odot \cos\_vec + x_{rot} \odot \sin\_vec$$
 
 1. **既然 RoPE 叫“相对位置编码”，为什么实现时却直接乘在绝对位置 $m$ 的 $q_m$ 和 $k_n$ 上？**
 * **考点**：考察是否理解“绝对操作实现相对效果”。
-* **核心要点**：通过正交旋转矩阵的性质 $\boldsymbol{R}_m^\top \boldsymbol{R}_n = \boldsymbol{R}_{n-m}$ ，在计算内积 $q_m^\top k_n$ 时，绝对位置 $m$ 和 $n$ 自然相减抵消，仅保留相对距离 $n-m$。
+* **核心要点**：通过正交旋转矩阵的性质 $\boldsymbol{R}_m^\top \boldsymbol{R}_n = \boldsymbol{R}_{n - m}$ ，在计算内积 $q_m^\top k_n$ 时，绝对位置 $m$ 和 $n$ 自然相减抵消，仅保留相对距离 $n-m$。
 
 
 2. **为什么 RoPE 只对 Query 和 Key 施加旋转，而不对 Value 向量施加？**
