@@ -166,8 +166,8 @@ $$\theta_2 = 10000^{-4/6} = 10000^{-2/3} \approx 0.00215 \text{ rad} \approx 0.1
 
 #### 构造分块旋转矩阵
 在 $m = 1$ 时：
-* 平面 0 旋转角 $90^\circ$：$\cos 90^\circ = 0, \sin 90^\circ = 1$
-* 平面 1 旋转角 $30^\circ$：$\cos 30^\circ = \frac{\sqrt{3}}{2} \approx 0.866, \sin 30^\circ = 0.5$
+* 平面 0 旋转角 $90^\circ$ ： $\cos 90^\circ = 0, \sin 90^\circ = 1$
+* 平面 1 旋转角 $30^\circ$ ： $\cos 30^\circ = \frac{\sqrt{3}}{2} \approx 0.866, \sin 30^\circ = 0.5$
 
 $$\boldsymbol{R}_1 = \begin{pmatrix} 0 & -1 & 0 & 0 \cr 1 & 0 & 0 & 0 \cr 0 & 0 & 0.866 & -0.5 \cr 0 & 0 & 0.5 & 0.866 \end{pmatrix}$$
 
