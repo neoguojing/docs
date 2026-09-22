@@ -64,9 +64,9 @@ $$\tilde{q}_m = \boldsymbol{R}_m q = \begin{pmatrix} \cos m\theta & -\sin m\thet
 
 $$\tilde{q}_m^\top \tilde{k}_n = (\boldsymbol{R}_m q)^\top (\boldsymbol{R}_n k) = q^\top \boldsymbol{R}_m^\top \boldsymbol{R}_n k$$
 
-利用旋转矩阵的正交性 $\boldsymbol{R}_m^\top = \boldsymbol{R}_{-m}$ 以及角度可加性 $\boldsymbol{R}_{-m}\boldsymbol{R}_n = \boldsymbol{R}_{n - m}$，可得：
+利用旋转矩阵的正交性  $\boldsymbol{R}_m^\top = \boldsymbol{R}_{-m}$ 以及角度可加性 $\boldsymbol{R}_{-m}\boldsymbol{R}_n = \boldsymbol{R}_{n - m}$，可得：
 
-$$\tilde{q}_m^\top \tilde{k}_n = q^\top \boldsymbol{R}_{n - m} k$$
+ $$\tilde{q}_m^\top \tilde{k}_n = q^\top \boldsymbol{R}_{n - m} k$$
 
 ---
 
