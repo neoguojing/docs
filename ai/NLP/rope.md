@@ -123,8 +123,9 @@ $$\boldsymbol{R}_{\Theta, m}^d = \begin{pmatrix} \cos m\theta_0 & -\sin m\theta_
 
 角频率定义沿用了 Transformer 正弦位置编码的底数规则：
 
-$$\theta_i = 10000^{-2i/d}, \quad i \in \left\{0, 1, \dots, \frac{d}{2} - 1\right\}$$
-
+$$
+\theta_i = 10000^{-2i/d}, \quad i \in \{0, 1, \dots, \frac{d}{2} - 1\}
+$$
 #### 频率跨度数值演示（以 $d = 6$ 为例，划分为 3 个平面）
 * **平面 0（$i = 0$，高频/秒针）**：
 
