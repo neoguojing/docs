@@ -39,8 +39,8 @@ $$\langle f(q, m), f(k, n) \rangle = g(q, k, m - n)$$
 $$q^\top k = \Vert q \Vert \Vert k \Vert \cos(\alpha - \beta)$$
 
 对位于位置 $m$ 的 $q$ 旋转角度 $m\theta$，对位于位置 $n$ 的 $k$ 旋转角度 $n\theta$：
-* 旋转后 $q$ 的方向角变为：$\alpha + m\theta$
-* 旋转后 $k$ 的方向角变为：$\beta + n\theta$
+* 旋转后 $q$ 的方向角变为： $\alpha + m\theta$
+* 旋转后 $k$ 的方向角变为： $\beta + n\theta$
 * 正交旋转变换不改变向量的模长
 
 此时计算变换后的内积：
