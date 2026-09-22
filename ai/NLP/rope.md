@@ -78,7 +78,7 @@ $$\boldsymbol{R}_m^\top = \boldsymbol{R}_{-m}, \quad \boldsymbol{R}_{-m}\boldsym
 
 设定：
 * 旋转步长基频： $\theta = 30^\circ$
-* 初始向量： $q = [1, 0]^\top$（模长 1，角度 $0^\circ$），$k = [0, 1]^\top$ （模长 1，角度 $90^\circ$ ）
+* 初始向量： $q = [1, 0]^\top$（模长 1，角度 $0^\circ$）， $k = [0, 1]^\top$ （模长 1，角度 $90^\circ$ ）
 
 #### 情况 1：位置 $m = 2, n = 1$（相对距离 $m - n = 1$）
 * $\tilde{q}_2$（旋转 $2 \times 30^\circ = 60^\circ$）：
