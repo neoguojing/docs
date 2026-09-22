@@ -217,5 +217,5 @@ $$\tilde{x}_m = x \odot \cos\_vec + x_{rot} \odot \sin\_vec$$
 | :--- | :--- | :--- |
 | **范数保持（Norm Preserving）** | 旋转矩阵属于正交矩阵（ $\Vert \boldsymbol{R}_m x \Vert = \Vert x \Vert$ ） | 不会放大或缩小词向量的模长，保障注意力分布计算数值稳定 |
 | **远程衰减（Long-term Decay）** | 多频震荡波叠加干涉 | 相对距离越远，内积期望值趋于衰减，契合语言距离越远关联越弱的先验 |
-| **相对位置内积不变性** | 矩阵乘法角度抵消： $\boldsymbol{R}_m^\top \boldsymbol{R}_n = \boldsymbol{R}_{n - m}$ | 无论在句首还是句尾，相同句式的相对注意力分数严格一致 |
+| **相对位置内积不变性** | 矩阵乘法角度抵消：`R_m^T * R_n = R_{n - m}` | 无论在句首还是句尾，相同句式的相对注意力分数严格一致 |
 | **长度外推与插值潜力** | 基于角频率 $\theta_i$ 参数化控制 | 可方便引入 NTK-Aware、Linear Scaling、YaRN 等位置外推算法扩展模型上下文 |
