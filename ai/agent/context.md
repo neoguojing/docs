@@ -108,7 +108,7 @@ User Goal + State_t + Memory + JIT Retrieval + Tool Results + Recent History
 
 当 Token 水位触碰警戒线（如 75%）时，通过效用比对信息进行分类分流：
 
-$$\text{Utility}(i) = \frac{\text{Relevance}(i) \times \text{Importance}(i) \times \text{Freshness}(i) \times \text{Uniqueness}(i)}{\text{Token\_Count}(i)}$$
+ $$\text{Utility}(i) = \frac{\text{Relevance}(i) \times \text{Importance}(i) \times \text{Freshness}(i) \times \text{Uniqueness}(i)}{\text{Token\_Count}(i)}$$ 
 
 * **高 Utility / 低 Token** $\to$ **保留（Keep）**：直接保留在活动上下文中。
 * **高 Utility / 高 Token** $\to$ **压缩（Compress）**：抽取成结构化状态字段。
