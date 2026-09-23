@@ -237,8 +237,3 @@ User Goal + State_t + Memory + JIT Retrieval + Tool Results + Recent History
 
 ---
 
-## 7. 面试终局表达模板
-
-> “**Agent 上下文工程**本质上是为 LLM 构建的一套**动态工作内存（Working Memory）管理系统**。它解决的核心问题不是‘如何把提示词写得更生动’，而是在物理计算与注意力衰减的约束下，**动态构造出让模型做出正确动作所必需的‘最小但充分’的信息集合**。
-> 在工程落地中，我们严格将 **Context Window（易失的工作内存）** 与 **外部持久化存储（扩展状态空间）** 解耦。通过**结构化状态压缩（Compaction）**消解历史噪音，通过**外化（Externalization）**将大体量数据转变为引用句柄，通过**即时获取（JIT）**替代全量预加载，并通过**子 Agent 拓扑实现上下文物理隔离**。
-> 在底层与 AI Infra 协同上，我们遵循 **Stable Prefix** 与 **Append-Only** 准则以最大化推理引擎的 **KV Cache（Radix Attention）** 复用效率；同时在输出边界配合执行权限隔离，最终构成一个闭环、高信噪比且具备强确定性的企业级 Agent 系统。”
