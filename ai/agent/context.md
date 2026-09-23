@@ -73,7 +73,7 @@ User Goal + State_t + Memory + JIT Retrieval + Tool Results + Recent History
 
 任意时间步 $t$ 的有效输入上下文 $C_t$ 可抽象为：
 
-$$C_t = S + G_t + \text{State}_t + \text{Memory}_t + \text{Retrieval}_t + \text{Trajectory}_t$$
+ $$C_t = S + G_t + \text{State}_t + \text{Memory}_t + \text{Retrieval}_t + \text{Trajectory}_t$$ 
 
 * $S$：固定前缀系统指令与规则（Stable System Context）
 * $G_t$：当前拆解的目标/子目标（Active Goal）
