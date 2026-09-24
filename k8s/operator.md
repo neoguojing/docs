@@ -258,7 +258,20 @@ AIJob Resource
 ```
 
 > CRD 是“类型”，CR 是“对象”。
+#### Kubernetes Go Client代码差创建CR
+```
+job := &aiv1.AIJob{
+    ObjectMeta: metav1.ObjectMeta{
+        Name: "face-task-001",
+    },
+    Spec: aiv1.AIJobSpec{
+        Image: "face-worker:v1",
+        GPU:   1,
+    },
+}
 
+client.Create(ctx, job)
+```
 ---
 
 ### 8. Controller
