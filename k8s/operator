@@ -1,0 +1,47 @@
+## 把一个业务领域的“期望状态”声明成 Kubernetes Resource，然后通过 Controller 持续把实际状态拉回期望状态。
+## Operator = Custom Resource + Controller
+
+
+```
+                  用户
+                   │
+                   │ Task
+                   ▼
+              Management
+                Service
+                   │
+                   │ create
+                   ▼
+              ┌─────────┐
+              │  AIJob  │
+              │  CR     │
+              └────┬────┘
+                   │
+              desired state
+                   │
+                   ▼
+        ┌────────────────────┐
+        │   AIJob Operator   │
+        │                    │
+        │ Watch              │
+        │ Reconcile          │
+        │ Status             │
+        │ Recovery           │
+        └─────────┬──────────┘
+                  │
+                  │ create
+                  ▼
+                Pod
+                  │
+                  ▼
+              Scheduler
+                  │
+                  ▼
+              GPU Node
+                  │
+                  ▼
+              Kubelet
+                  │
+                  ▼
+               Worker
+```
