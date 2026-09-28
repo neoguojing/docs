@@ -424,9 +424,7 @@ Linear / State Space
 
 GPT 的目标：
 
-$$
-P(x)=\prod_tP(x_t|x_{<t})
-$$
+ $$ P(x)=\prod_tP(x_t|x_{<t}) $$
 
 即：
 
