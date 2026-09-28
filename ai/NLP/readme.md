@@ -841,11 +841,7 @@ K3 V3
 
 常见公式：
 
-$$
-M_{KV}
-=
-2×L×H_{kv}×D×B×S×bytes
-$$
+ $$ M_{KV} = 2×L×H_{kv}×D×B×S×bytes $$
 
 其中：
 
