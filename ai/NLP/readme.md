@@ -1319,14 +1319,7 @@ Decay
 
 Cosine：
 
-$$
-lr(t)
-=
-lr_{min}
-+
-\frac12(lr_{max}-lr_{min})
-(1+\cos(\pi t/T))
-$$
+ $$ lr(t) = lr_{min} + \frac12(lr_{max}-lr_{min})(1+\cos(\pi t/T)) $$
 
 Warmup：
 
