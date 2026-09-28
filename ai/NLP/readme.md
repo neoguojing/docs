@@ -1331,9 +1331,7 @@ Warmup：
 
 Causal LM：
 
-$$
-L=-\frac1N\sum_i logP(y_i|x,y_{<i})
-$$
+ $$ L=-\frac1N\sum_i logP(y_i|x,y_{<i}) $$
 
 如果真实 Token 概率：
 
