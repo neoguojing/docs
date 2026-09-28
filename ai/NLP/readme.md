@@ -314,13 +314,7 @@ $$
 
 则：
 
-$$
-q_m^Tk_n
-=
-q^TR_m^TR_nk
-=
-q^TR_{n-m}k
-$$
+ $$ q_m^Tk_n = q^TR_m^TR_n = q^TR_{n-m}k $$
 
 因此 Attention 自然获得了**相对位置关系**。
 
