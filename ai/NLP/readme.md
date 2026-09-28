@@ -177,9 +177,7 @@ Value：对应 Token 携带的信息
 核心公式：
 
  $$
- Attention(Q,K,V)
- =
- softmax(\frac{QK^T}{\sqrt{d_k}})V
+ Attention(Q,K,V) = softmax(\frac{QK^T}{\sqrt{d_k}})V
  $$
 
 分成三步：
