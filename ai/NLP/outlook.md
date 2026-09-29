@@ -1,3 +1,10 @@
+GitHub 的 Markdown 数学公式渲染器（MathJax / KaTeX）有时会限制部分较高级的 LaTeX 宏（如 `\operatorname`）。
+
+为了完美兼容，我已经把文中所有的 `\operatorname{...}` 替换为原生的 `\text{...}`，这样就可以在 GitHub 上正常解析显示了。
+
+以下是修复后的完整 Markdown 代码：
+
+```markdown
 # Transformer 总纲 (GitHub 兼容优化版)
 
 ## 0. 全局参数与符号定义 (Global Definitions)
@@ -5,19 +12,18 @@
 为了保证全局推演的一致性，本文所有公式与数值演算均基于以下同一套超参数：
 
 **核心超参数：**
-
-* $L=3$ (Sequence length，序列长度)
-* $d=4$ ( $d_{model}$ ，隐藏层维度)
-* $H=2$ (num_heads，注意力头数)
-* $d_h=2$ ( $d_{head}=d/H$ ，每个头的维度)
-* $d_{ff}=8$ (MLP 隐藏层维度，通常为 $d$ 的倍数)
-* $V=6$ (Vocab size，词表大小)
-* $N=2$ (层数)
+*   $L=3$ (Sequence length，序列长度)
+*   $d=4$ ( $d_{model}$ ，隐藏层维度)
+*   $H=2$ (num_heads，注意力头数)
+*   $d_h=2$ ( $d_{head}=d/H$ ，每个头的维度)
+*   $d_{ff}=8$ (MLP 隐藏层维度，通常为 $d$ 的倍数)
+*   $V=6$ (Vocab size，词表大小)
+*   $N=2$ (层数)
 
 **参数与网络位置严格对应表：**
 
 | 网络模块 | 数学公式符号 | 代码层命名 | 张量维度 | 具体本例维度 |
-| --- | --- | --- | --- | --- |
+| :--- | :--- | :--- | :--- | :--- |
 | **Embedding** | $E$ | `embed_tokens` | `[V, d]` | `[6, 4]` |
 | **Attention** | $W_Q$ | `q_proj` | `[d, H·d_h]` | `[4, 4]` |
 | **Attention** | $W_K$ | `k_proj` | `[d, H·d_h]` | `[4, 4]` |
@@ -160,13 +166,13 @@ $$Q = XW_Q \quad K = XW_K \quad V = XW_V$$
 
 ## 4. Attention 核心公式
 
- $$ \boxed{Z = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V} $$ 
+$$\boxed{Z = \text{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}$$
 
 **公式分解与维度：**
 
 1. 相似度计算： $S = \frac{QK^T}{\sqrt{d_h}}$ （维度： `[L, d_h] × [d_h, L] = [L, L]` ）
 2. 掩码操作： $S' = S + M$ （加入 Causal Mask，禁止访问未来信息）
-3. 概率分布： $A = \operatorname{softmax}(S')$ （维度： `[L, L]` ）
+3. 概率分布： $A = \text{softmax}(S')$ （维度： `[L, L]` ）
 4. 信息聚合： $Z = AV$ （维度： `[L, L] × [L, d_h] = [L, d_h]` ）
 
 ---
@@ -224,7 +230,7 @@ $$Z_1 = \begin{bmatrix} 1 & 0 \\ 0.12 & 0.88 \\ 0.531 & 0.531 \end{bmatrix}_{3 \
 
 **Concat 拼接：**
 
-$$Z = \operatorname{Concat}(Z_1, Z_2) = \begin{bmatrix} 1 & 0 & 0 & 1 \\ 0.12 & 0.88 & 0.5 & 0.5 \\ 0.531 & 0.531 & 0.2 & 0.8 \end{bmatrix}$$
+$$Z = \text{Concat}(Z_1, Z_2) = \begin{bmatrix} 1 & 0 & 0 & 1 \\ 0.12 & 0.88 & 0.5 & 0.5 \\ 0.531 & 0.531 & 0.2 & 0.8 \end{bmatrix}$$
 
 拼接后维度恢复为： `[L, d] = [3, 4]` 。
 
@@ -266,19 +272,19 @@ $$X_{norm} \in R^{3 \times 4}$$
 
 **经典 FFN 结构：**
 
-$$FFN(x) = W_2\operatorname{Activation}(W_1x+b_1) + b_2$$
+$$\text{FFN}(x) = W_2\text{Activation}(W_1x+b_1) + b_2$$
 
 **现代 LLM 的 Gated MLP 结构：**
 
-$$\boxed{MLP(x) = W_{down}\left(\operatorname{Act}(W_{gate}x)\odot W_{up}x\right)}$$
+$$\boxed{\text{MLP}(x) = W_{down}\left(\text{Act}(W_{gate}x)\odot W_{up}x\right)}$$
 
 **严格对应的数值演示：**
 基于全篇设定的 $d=4, d_{ff}=8$ 。我们抽取第一个 Token 的特征向量 $x = [1, 2, -1, 0]$ (维度 `1x4`)：
 
 * **gate_proj**: $W_{gate}x \in R^8$ 。假设 $= [1, 2, 0, -1, 0, 0, 0, 0]$
 * **up_proj**: $W_{up}x \in R^8$ 。假设 $= [3, 4, 1, 1, 1, 1, 1, 1]$
-* **SiLU 激活**: $\operatorname{SiLU}(x) = x \cdot \sigma(x)$
-近似计算： $\operatorname{SiLU}([1, 2...]) \approx [0.731, 1.762, 0, -0.269, 0, 0, 0, 0]$
+* **SiLU 激活**: $\text{SiLU}(x) = x \cdot \sigma(x)$
+近似计算： $\text{SiLU}([1, 2...]) \approx [0.731, 1.762, 0, -0.269, 0, 0, 0, 0]$
 * **逐元素相乘 ( $\odot$ )**:
 $[0.731, 1.762, 0, -0.269, 0, 0, 0, 0] \odot [3, 4, 1, 1, 1, 1, 1, 1]$
 得到中间态维度 `[8]` 的张量： $M_{inner} = [2.193, 7.048, 0, -0.269, 0, 0, 0, 0]$
@@ -292,19 +298,19 @@ $y = W_{down}M_{inner}$ (其中 $W_{down} \in R^{8 \times 4}$ )。
 
 一个独立 Block 的数据流转历程：
 
-$$X \rightarrow \operatorname{Norm} \rightarrow \operatorname{Attention} \rightarrow \operatorname{Residual} \rightarrow \operatorname{Norm} \rightarrow \operatorname{MLP} \rightarrow \operatorname{Residual}$$
+$$X \rightarrow \text{Norm} \rightarrow \text{Attention} \rightarrow \text{Residual} \rightarrow \text{Norm} \rightarrow \text{MLP} \rightarrow \text{Residual}$$
 
 **公式表达：**
 
-$$H_1 = X + \operatorname{Attention}(\operatorname{Norm}(X))$$
+$$H_1 = X + \text{Attention}(\text{Norm}(X))$$
 
-$$H_2 = H_1 + \operatorname{MLP}(\operatorname{Norm}(H_1))$$
+$$H_2 = H_1 + \text{MLP}(\text{Norm}(H_1))$$
 
 $$\boxed{X_{out} = H_2}$$
 
 **层间堆叠：**
 
-$$X_0 \rightarrow \operatorname{Block}_1 \rightarrow X_1 \rightarrow \operatorname{Block}_2 \rightarrow X_2 \rightarrow \cdots \rightarrow \operatorname{Block}_N$$
+$$X_0 \rightarrow \text{Block}_1 \rightarrow X_1 \rightarrow \text{Block}_2 \rightarrow X_2 \rightarrow \cdots \rightarrow \text{Block}_N$$
 
 $$\boxed{\text{Block} \times N = \text{串行}}$$
 
@@ -349,11 +355,11 @@ $$Token_{next} \sim P(Token \mid Context)$$
 
 $$\boxed{Q = XW_Q, \quad K = XW_K, \quad V = XW_V}$$
 
-$$\boxed{\operatorname{Attention}(Q, K, V) = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}$$
+$$\boxed{\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}$$
 
 **Multi-Head**
 
-$$\boxed{\operatorname{MHA}(X) = \operatorname{Concat}(\text{Head}_1, \dots, \text{Head}_H)W_O}$$
+$$\boxed{\text{MHA}(X) = \text{Concat}(\text{Head}_1, \dots, \text{Head}_H)W_O}$$
 
 **Residual**
 
@@ -361,7 +367,7 @@ $$\boxed{Y = X + F(X)}$$
 
 **MLP (Gated)**
 
-$$\boxed{\operatorname{MLP}(x) = W_{down}\left(\operatorname{Act}(W_{gate}x)\odot W_{up}x\right)}$$
+$$\boxed{\text{MLP}(x) = W_{down}\left(\text{Act}(W_{gate}x)\odot W_{up}x\right)}$$
 
 **输出概率**
 
@@ -419,5 +425,9 @@ $$\boxed{P(token_i) = \frac{e^{z_i}}{\sum_je^{z_j}}}$$
                     │
                     ▼
               Next Token
+
+```
+
+```
 
 ```
