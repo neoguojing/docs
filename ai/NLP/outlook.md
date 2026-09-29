@@ -7,9 +7,9 @@
 **核心超参数：**
 
 * $L=3$ (Sequence length，序列长度)
-* $d=4$ ($d_{model}$，隐藏层维度)
+* $d=4$ ( $d_{model}$ ，隐藏层维度)
 * $H=2$ (num_heads，注意力头数)
-* $d_h=2$ ($d_{head}=d/H$，每个头的维度)
+* $d_h=2$ ( $d_{head}=d/H$ ，每个头的维度)
 * $d_{ff}=8$ (MLP 隐藏层维度，通常为 $d$ 的倍数)
 * $V=6$ (Vocab size，词表大小)
 * $N=2$ (层数)
@@ -421,6 +421,3 @@ $$\boxed{P(token_i) = \frac{e^{z_i}}{\sum_je^{z_j}}}$$
               Next Token
 
 ```
-
-> **核心理解总结：**
-> Attention 负责 Token 与 Token 之间的信息交互（空间聚合）；MLP 负责单个 Token 内部的特征变换（通道映射）；Multi-Head 并行学习不同子空间的表征关系；Transformer Block 通过残差实现深层无损的逐层串行堆叠。
