@@ -160,7 +160,7 @@ $$Q = XW_Q \quad K = XW_K \quad V = XW_V$$
 
 ## 4. Attention 核心公式
 
-$$\boxed{Z = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}$$
+ $$ \boxed{Z = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V} $$ 
 
 **公式分解与维度：**
 
