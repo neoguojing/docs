@@ -1,477 +1,1292 @@
-这里是为您深度优化后的 **Transformer 总纲**。
+可以。你这份内容主要不是数学问题，而是 **GitHub Markdown 对 LaTeX、表格、HTML/代码块混排的兼容性**问题。尤其是：
 
-本次优化严格遵循了您的要求：
+* GitHub 原生支持 `$...$` 和 `$$...$$`，但复杂环境兼容性有限。
+* `\boxed{}`、`\begin{bmatrix}` 通常可以，但复杂嵌套容易出现显示问题。
+* 表格里的 LaTeX 建议尽量简单。
+* `R^{L \times d}` 这类表达没问题，但 `\operatorname{}`、`\text{}` 在不同渲染器中容易出现差异。
+* Mermaid 不建议混在这里，ASCII 图最稳定。
+* 数学公式最好不要和中文放在同一行，GitHub 渲染更稳定。
+* `*`、`_`、`|` 在公式和表格中容易与 Markdown 语法冲突。
 
-1. **全局统一定义**：在开头新增「第0节」，将散落的超参数、张量维度与网络代码名称（`q_proj` 等）集中定义，作为全篇的基准参考。
-2. **全局数值连贯**：全篇使用完全相同的一套数值（$L=3, d=4, H=2, d_{ff}=8, V=6$）进行推导。从 Token IDs 输入，到 Embedding，再到 Attention $3 \times 3$ 矩阵计算、Mask、多头拼接、MLP 升降维，最后到 Logits 预测，**所有矩阵的形状和数值首尾相接、严格自洽**。
-3. **内容无删减**：保留了所有的公式、结论和网络结构图，仅重构了计算示例以确保严谨性和格式清晰度。
+下面我按 **GitHub README / Markdown 可稳定渲染** 的方式整理，并顺便把一些公式格式统一了。
 
----
+# Transformer 总纲
 
-# Transformer 总纲 (全局自洽版)
-
-## 0. 全局参数与符号定义 (Global Definitions)
-
-为了保证全局推演的一致性，本文所有公式与数值演算均基于以下同一套超参数：
-
-**核心超参数：**
-
-* $L = 3$ (Sequence length，序列长度)
-* $d = 4$ ($d_{model}$，隐藏层维度)
-* $H = 2$ (num_heads，注意力头数)
-* $d_h = 2$ ($d_{head} = d / H$，每个头的维度)
-* $d_{ff} = 8$ (MLP 隐藏层维度，通常为 $d$ 的倍数)
-* $V = 6$ (Vocab size，词表大小)
-* $N = 2$ (层数)
-
-**参数与网络位置严格对应表：**
-
-| 网络模块 | 数学公式符号 | 代码层命名 | 张量维度 | 具体本例维度 |
-| --- | --- | --- | --- | --- |
-| **Embedding** | $E$ | `embed_tokens` | `[V, d]` | `[6, 4]` |
-| **Attention** | $W_Q$ | `q_proj` | `[d, H·d_h]` | `[4, 4]` |
-| **Attention** | $W_K$ | `k_proj` | `[d, H·d_h]` | `[4, 4]` |
-| **Attention** | $W_V$ | `v_proj` | `[d, H·d_h]` | `[4, 4]` |
-| **Attention** | $W_O$ | `o_proj` | `[H·d_h, d]` | `[4, 4]` |
-| **MLP** | $W_{gate}$ | `gate_proj` | `[d, d_ff]` | `[4, 8]` |
-| **MLP** | $W_{up}$ | `up_proj` | `[d, d_ff]` | `[4, 8]` |
-| **MLP** | $W_{down}$ | `down_proj` | `[d_ff, d]` | `[8, 4]` |
-| **Norm** | $\gamma, \beta$ | `input_layernorm` | `[d]` | `[4]` |
-| **Output** | $W_{lm}$ | `lm_head` | `[d, V]` | `[4, 6]` |
-
-*(注：标准 Multi-Head Attention 中 $H \cdot d_h = d$，因此投影矩阵通常为 $R^{d \times d}$。)*
+> **目标：** 用一套统一的参数和数值，从 Token → Embedding → Attention → Multi-Head → MLP → Transformer Block → Logits → Next Token，完整理解 Transformer。
 
 ---
 
-## 1. 整体网络
+## 0. 全局参数与符号
+
+全文统一使用以下参数：
+
+| 参数     | 含义                   | 本例 |
+| ------ | -------------------- | -: |
+| `L`    | Sequence Length      |  3 |
+| `d`    | `d_model`，隐藏维度       |  4 |
+| `H`    | Attention Head 数量    |  2 |
+| `d_h`  | 每个 Head 的维度          |  2 |
+| `d_ff` | MLP 隐藏维度             |  8 |
+| `V`    | Vocabulary Size      |  6 |
+| `N`    | Transformer Block 数量 |  2 |
+
+其中：
+
+$$
+d_h = \frac{d}{H} = \frac{4}{2} = 2
+$$
+
+### 网络参数与代码名称
+
+| 模块        | 数学符号     | 常见代码名             | 参数维度                  |
+| --------- | -------- | ----------------- | --------------------- |
+| Embedding | `E`      | `embed_tokens`    | `[V, d] = [6, 4]`     |
+| Query     | `W_Q`    | `q_proj`          | `[d, H*d_h] = [4, 4]` |
+| Key       | `W_K`    | `k_proj`          | `[d, H*d_h] = [4, 4]` |
+| Value     | `W_V`    | `v_proj`          | `[d, H*d_h] = [4, 4]` |
+| Output    | `W_O`    | `o_proj`          | `[H*d_h, d] = [4, 4]` |
+| Gate      | `W_gate` | `gate_proj`       | `[d, d_ff] = [4, 8]`  |
+| Up        | `W_up`   | `up_proj`         | `[d, d_ff] = [4, 8]`  |
+| Down      | `W_down` | `down_proj`       | `[d_ff, d] = [8, 4]`  |
+| Norm      | `γ, β`   | `input_layernorm` | `[d] = [4]`           |
+| Output    | `W_lm`   | `lm_head`         | `[d, V] = [4, 6]`     |
+
+> 对标准 Multi-Head Attention：
+>
+> \(H \times d_h = d\)
+>
+> 因此 `q_proj / k_proj / v_proj` 的完整投影通常都是 `[d, d]`。
+
+---
+
+# 1. Transformer 整体结构
 
 以 Decoder-only LLM 为例：
 
 ```text
-               Token IDs
-                   │
-                   ▼
-               Embedding
-                E[V,d]
-                   │
-                   ▼
-                X[L,d]
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│ Transformer Block × N                   │
-│                                         │
-│ X                                       │
-│ │                                       │
-│ ├─ Norm ─→ Attention ─→ + X             │
-│ │             │                         │
-│ │        ┌────┼────┐                    │
-│ │        ▼    ▼    ▼                    │
-│ │      Head1 Head2 ... HeadH            │
-│ │        └────┼────┘                    │
-│ │             ▼                         │
-│ │          Concat                       │
-│ │             ↓                         │
-│ │          o_proj                       │
-│ │             │                         │
-│ └─────────────┼─────────────────────────┤
-│               ▼                         │
-│              Norm                       │
-│               │                         │
-│        ┌──────▼──────┐                  │
-│        │     MLP     │                  │
-│        │ gate/up     │                  │
-│        │    ↓        │                  │
-│        │   Act ×     │                  │
-│        │    ↓        │                  │
-│        │   down      │                  │
-│        └──────┬──────┘                  │
-│               │                         │
-│              +X                         │
-└───────────────┬─────────────────────────┘
-                │
-             Block 1
-                ↓
-             Block 2
-                ↓
-               ...
-                ↓
-             Block N
-                │
-                ▼
-           Hidden State
-                │
-                ▼
-             lm_head
-                │
-                ▼
-              Logits
-                │
-                ▼
-         Softmax / Decode
-
+Token IDs
+   │
+   ▼
+Embedding
+   │
+   ▼
+X [L, d]
+   │
+   ▼
+┌──────────────────────────────┐
+│ Transformer Block            │
+│                              │
+│  Norm                        │
+│    │                         │
+│    ▼                         │
+│  Attention                   │
+│    │                         │
+│    ├── Head 1 ──┐            │
+│    ├── Head 2 ──┤ 并行       │
+│    └── ...   ───┘            │
+│          │                   │
+│        Concat                │
+│          │                   │
+│        o_proj                │
+│          │                   │
+│       Residual               │
+│          │                   │
+│         Norm                 │
+│          │                   │
+│         MLP                  │
+│          │                   │
+│       Residual               │
+└──────────┬───────────────────┘
+           │
+           ▼
+       Block × N
+         串行
+           │
+           ▼
+        lm_head
+           │
+           ▼
+        Logits
+           │
+           ▼
+      Next Token
 ```
 
-**串行与并行关系：**
+### 串行与并行
 
-* **Block 之间（串行）：** `Block 1 → Block 2 → ... → Block N`
-* **Block 内部（串行）：** `Norm → Attention → Norm → MLP`
-* **Attention 内部（并行与串行）：** `Head 1~H` (并行) `→ Concat → o_proj` (串行)
+* **Block 之间：串行**
 
----
+```text
+Block 1 → Block 2 → ... → Block N
+```
 
-## 2. Embedding
+* **Block 内部：串行**
 
-**输入 Token IDs ($L=3$)：**
+```text
+Norm → Attention → Residual → Norm → MLP → Residual
+```
 
+* **Attention 内部：Head 并行**
 
-$$t = [2, 5, 1]$$
-
-**Embedding 查表参数 ($E \in R^{6 \times 4}$)：**
-根据词表索引查表后，得到输入张量 $X$：
-
-
-$$X = \begin{bmatrix} 1 & 0 & 1 & 0 \\ 0 & 1 & 0 & 1 \\ 1 & 1 & 0 & 0 \end{bmatrix}$$
-
-
-此时维度：
-
-$$X \in R^{L \times d} = R^{3 \times 4}$$
-
-**数学表达：**
-
-
-$$X_i = E[t_i]$$
-
-
-若注入位置信息（如可加式）：
-
-$$X_i = E[t_i] + P_i$$
-
-
-*(现代 LLM 常使用 RoPE 进行旋转位置编码)*
+```text
+          ┌→ Head 1 ─┐
+Input ────┼→ Head 2 ─┼→ Concat → o_proj
+          └→ Head H ─┘
+```
 
 ---
 
-## 3. Attention：Q/K/V 投影
+# 2. Embedding
 
-**输入：**
+## 2.1 Token IDs
 
+假设输入：
 
-$$X \in R^{3 \times 4}$$
+$$
+t = [2, 5, 1]
+$$
 
-**参数 (对应 `q_proj, k_proj, v_proj`)：**
-对于第 1 个 Head，权重矩阵为 $W_Q, W_K, W_V \in R^{d \times d_h} = R^{4 \times 2}$。
+序列长度：
 
-**计算：**
-
-
-$$Q = XW_Q \quad K = XW_K \quad V = XW_V$$
-
-**维度变化：**
-
-* $X$: `[3, 4]`
-* $W_Q$: `[4, 2]`
-* 得到 **$Q, K, V$**: 均被投影为 `[3, 2]` ($L \times d_h$)。
+$$
+L = 3
+$$
 
 ---
 
-## 4. Attention 核心公式
+## 2.2 Embedding 查表
 
-$$\boxed{Z = \operatorname{softmax} \left( \frac{QK^T}{\sqrt{d_h}} + M \right) V}$$
+Embedding 矩阵：
 
-**公式分解与维度：**
+$$
+E \in R^{V \times d} = R^{6 \times 4}
+$$
 
-1. 相似度计算：$S = \frac{QK^T}{\sqrt{d_h}}$ （维度：`[L, d_h] × [d_h, L] = [L, L]`）
-2. 掩码操作：$S' = S + M$ （加入 Causal Mask，禁止访问未来信息）
-3. 概率分布：$A = \operatorname{softmax}(S')$ （维度：`[L, L]`）
-4. 信息聚合：$Z = AV$ （维度：`[L, L] × [L, d_h] = [L, d_h]`）
+根据 Token ID 查表：
 
----
+$$
+X_i = E[t_i]
+$$
 
-## 5. Attention 数值计算 (含 Causal Mask)
+得到：
 
-我们以第 1 个 Head 的实际矩阵进行 $3 \times 3$ 严谨推演。
-假设投影后的 $Q, K, V \in R^{3 \times 2}$ 为：
+$$
+X =
+\begin{bmatrix}
+1 & 0 & 1 & 0 \\
+0 & 1 & 0 & 1 \\
+1 & 1 & 0 & 0
+\end{bmatrix}
+$$
 
+因此：
 
-$$Q = \begin{bmatrix} 1.414 & 0 \\ 0 & 1.414 \\ 1.414 & 1.414 \end{bmatrix}, \quad K = \begin{bmatrix} 2 & 0 \\ 0 & 2 \\ 0 & 0 \end{bmatrix}, \quad V = \begin{bmatrix} 1 & 0 \\ 0 & 1 \\ 1 & 1 \end{bmatrix}$$
-
-
-已知缩放因子 $\sqrt{d_h} = \sqrt{2} \approx 1.414$。
-
-**① 计算 $QK^T$ (维度 `[3, 3]`)**
-
-
-$$QK^T = \begin{bmatrix} 1.414 & 0 \\ 0 & 1.414 \\ 1.414 & 1.414 \end{bmatrix} \begin{bmatrix} 2 & 0 & 0 \\ 0 & 2 & 0 \end{bmatrix} = \begin{bmatrix} 2.828 & 0 & 0 \\ 0 & 2.828 & 0 \\ 2.828 & 2.828 & 0 \end{bmatrix}$$
-
-**② Scale 缩放计算 $S$**
-
-
-$$S = \frac{QK^T}{1.414} = \begin{bmatrix} 2 & 0 & 0 \\ 0 & 2 & 0 \\ 2 & 2 & 0 \end{bmatrix}$$
-
-**③ 加入 Causal Mask 矩阵 $M$**
-
-
-$$\boxed{\text{注意：Mask 必须加在 Softmax 之前}}$$
-
-$$M = \begin{bmatrix} 0 & -\infty & -\infty \\ 0 & 0 & -\infty \\ 0 & 0 & 0 \end{bmatrix}$$
-
-$$S' = S + M = \begin{bmatrix} 2 & -\infty & -\infty \\ 0 & 2 & -\infty \\ 2 & 2 & 0 \end{bmatrix}$$
-
-**④ Softmax 归一化得到 $A$**
-
-* **Row 1**: $e^{-\infty}=0$，仅第一列有效 $\rightarrow [1, 0, 0]$
-* **Row 2**: $\frac{e^0}{e^0+e^2} \approx 0.12, \frac{e^2}{e^0+e^2} \approx 0.88 \rightarrow [0.12, 0.88, 0]$
-* **Row 3**: $\frac{e^2}{\sum}, \frac{e^2}{\sum}, \frac{e^0}{\sum} \rightarrow [0.468, 0.468, 0.063]$
-
-$$A \approx \begin{bmatrix} 1 & 0 & 0 \\ 0.12 & 0.88 & 0 \\ 0.468 & 0.468 & 0.063 \end{bmatrix}$$
-
-
-
-**⑤ 计算 $A \times V$ 得到最终输出 $Z_1$**
-
-
-$$Z_1 = AV = \begin{bmatrix} 1 & 0 & 0 \\ 0.12 & 0.88 & 0 \\ 0.468 & 0.468 & 0.063 \end{bmatrix} \begin{bmatrix} 1 & 0 \\ 0 & 1 \\ 1 & 1 \end{bmatrix} = \begin{bmatrix} 1 & 0 \\ 0.12 & 0.88 \\ 0.531 & 0.531 \end{bmatrix}$$
-
-
-输出张量维度完美契合：
-
-$$Z_1 \in R^{L \times d_h} = R^{3 \times 2}$$
+$$
+X \in R^{L \times d} = R^{3 \times 4}
+$$
 
 ---
 
-## 6. Multi-Head Attention
+## 2.3 位置信息
 
-**多头并行处理与拼接：**
-我们设定 $H = 2$。刚才已算出 Head 1 的输出 $Z_1$。
-假设 Head 2 也完成独立计算得到 $Z_2$：
+传统 Transformer 可以：
 
+$$
+X_i = E[t_i] + P_i
+$$
 
-$$Z_1 = \begin{bmatrix} 1 & 0 \\ 0.12 & 0.88 \\ 0.531 & 0.531 \end{bmatrix}_{3 \times 2}, \quad Z_2 = \begin{bmatrix} 0 & 1 \\ 0.5 & 0.5 \\ 0.2 & 0.8 \end{bmatrix}_{3 \times 2}$$
-
-**Concat 拼接：**
-
-
-$$Z = \operatorname{Concat}(Z_1, Z_2) = \begin{bmatrix} 1 & 0 & 0 & 1 \\ 0.12 & 0.88 & 0.5 & 0.5 \\ 0.531 & 0.531 & 0.2 & 0.8 \end{bmatrix}$$
-
-
-拼接后维度恢复为：`[L, d] = [3, 4]`。
-
-**输出投影 (`o_proj`)：**
-
-
-$$O = ZW_O$$
-
-
-其中 $W_O \in R^{4 \times 4}$。最终注意力模块输出：
-
-$$O \in R^{3 \times 4}$$
+现代 LLM 通常使用 RoPE 等位置编码方式。
 
 ---
 
-## 7. Residual + Norm
+# 3. Attention：Q / K / V
 
-Attention 模块输出：
+输入：
 
-$$O \in R^{3 \times 4}$$
+$$
+X \in R^{3 \times 4}
+$$
 
+对于单个 Head：
 
-**残差连接：** 
+$$
+W_Q, W_K, W_V \in R^{d \times d_h}
+$$
 
-$$Y = X + O$$
+本例：
 
- （两者均为 `[3, 4]`，直接相加）
-*作用：保留原始信息，同时让网络更容易进行深层梯度回传。*
+$$
+W_Q, W_K, W_V \in R^{4 \times 2}
+$$
 
-**Norm (如 LayerNorm / RMSNorm)：**
+计算：
 
+$$
+Q = XW_Q
+$$
 
-$$\mu = \frac{1}{d} \sum_{j=1}^{d}x_j, \quad \sigma^2 = \frac{1}{d} \sum_{j=1}^{d}(x_j - \mu)^2$$
+$$
+K = XW_K
+$$
 
-$$LN(x)_j = \gamma_j \frac{x_j - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta_j$$
+$$
+V = XW_V
+$$
 
----
+维度变化：
 
-## 8. MLP / FFN
+```text
+X       [3, 4]
+ │
+ ├─ WQ [4, 2] → Q [3, 2]
+ ├─ WK [4, 2] → K [3, 2]
+ └─ WV [4, 2] → V [3, 2]
+```
 
-输入经过 Norm 后维度依然为：
+因此：
 
-$$X_{norm} \in R^{3 \times 4}$$
-
-**经典 FFN 结构：**
-
-
-$$FFN(x) = W_2 \operatorname{Activation}(W_1x + b_1) + b_2$$
-
-**现代 LLM 的 Gated MLP 结构：**
-
-
-$$\boxed{MLP(x) = W_{down} \left( \operatorname{Act}(W_{gate}x) \odot W_{up}x \right)}$$
-
-**严格对应的数值演示：**
-基于全篇设定的 $d=4, d_{ff}=8$。我们抽取第一个 Token 的特征向量 $x = [1, 2, -1, 0]$ (维度 `1x4`)：
-
-* **gate_proj**: $W_{gate}x \in R^8$。假设 $= [1, 2, 0, -1, 0, 0, 0, 0]$
-* **up_proj**: $W_{up}x \in R^8$。假设 $= [3, 4, 1, 1, 1, 1, 1, 1]$
-* **SiLU 激活**: $\operatorname{SiLU}(x) = x \cdot \sigma(x)$
-近似计算：$\operatorname{SiLU}([1, 2...]) \approx [0.731, 1.762, 0, -0.269, 0, 0, 0, 0]$
-* **逐元素相乘 ($\odot$)**:
-$[0.731, 1.762, 0, -0.269, 0, 0, 0, 0] \odot [3, 4, 1, 1, 1, 1, 1, 1]$
-得到中间态维度 `[8]` 的张量：$M_{inner} = [2.193, 7.048, 0, -0.269, 0, 0, 0, 0]$
-* **down_proj**:
-$y = W_{down} M_{inner}$ (其中 $W_{down} \in R^{8 \times 4}$)。
-最终将向量从 $R^8$ 降维回 $R^4$。完美闭环。
+$$
+Q,K,V \in R^{L \times d_h}
+$$
 
 ---
 
-## 9. 一个完整 Transformer Block
+# 4. Attention 核心公式
 
-一个独立 Block 的数据流转历程：
+$$
+Attention(Q,K,V)
+=
+softmax
+\left(
+\frac{QK^T}{\sqrt{d_h}} + M
+\right)V
+$$
 
+拆解为：
 
-$$X \rightarrow \operatorname{Norm} \rightarrow \operatorname{Attention} \rightarrow \operatorname{Residual} \rightarrow \operatorname{Norm} \rightarrow \operatorname{MLP} \rightarrow \operatorname{Residual}$$
+### ① 计算相似度
 
-**公式表达：**
+$$
+S = \frac{QK^T}{\sqrt{d_h}}
+$$
 
+维度：
 
-$$H_1 = X + \operatorname{Attention}(\operatorname{Norm}(X))$$
+$$
+[3,2] \times [2,3] = [3,3]
+$$
 
-$$H_2 = H_1 + \operatorname{MLP}(\operatorname{Norm}(H_1))$$
+### ② 加 Causal Mask
 
-$$\boxed{X_{out} = H_2}$$
+$$
+S' = S + M
+$$
 
-**层间堆叠：**
+### ③ Softmax
 
+$$
+A = softmax(S')
+$$
 
-$$X_0 \rightarrow \operatorname{Block}_1 \rightarrow X_1 \rightarrow \operatorname{Block}_2 \rightarrow X_2 \rightarrow \cdots \rightarrow \operatorname{Block}_N$$
+得到：
 
-$$\boxed{\text{Block} \times N = \text{串行}}$$
+$$
+A \in R^{3 \times 3}
+$$
+
+### ④ 加权聚合
+
+$$
+Z = AV
+$$
+
+维度：
+
+$$
+[3,3] \times [3,2] = [3,2]
+$$
 
 ---
 
-## 10. 输出与 Token 预测
+# 5. Attention 数值计算
 
-经过 $N$ 层后，最终隐藏状态：
+设：
 
-$$H \in R^{L \times d} = R^{3 \times 4}$$
+$$
+Q =
+\begin{bmatrix}
+1.414 & 0 \\
+0 & 1.414 \\
+1.414 & 1.414
+\end{bmatrix}
+$$
 
-**Logits 计算 (`lm_head`)：**
+$$
+K =
+\begin{bmatrix}
+2 & 0 \\
+0 & 2 \\
+0 & 0
+\end{bmatrix}
+$$
 
+$$
+V =
+\begin{bmatrix}
+1 & 0 \\
+0 & 1 \\
+1 & 1
+\end{bmatrix}
+$$
 
-$$Logits = H W_{lm}$$
+因为：
 
+$$
+d_h = 2
+$$
+
+所以：
+
+$$
+\sqrt{d_h} = \sqrt{2} \approx 1.414
+$$
+
+---
+
+## 5.1 计算 `QK^T`
+
+$$
+QK^T =
+\begin{bmatrix}
+1.414 & 0 \\
+0 & 1.414 \\
+1.414 & 1.414
+\end{bmatrix}
+\begin{bmatrix}
+2 & 0 & 0 \\
+0 & 2 & 0
+\end{bmatrix}
+$$
+
+得到：
+
+$$
+QK^T =
+\begin{bmatrix}
+2.828 & 0 & 0 \\
+0 & 2.828 & 0 \\
+2.828 & 2.828 & 0
+\end{bmatrix}
+$$
+
+---
+
+## 5.2 Scale
+
+$$
+S =
+\frac{QK^T}{1.414}
+$$
+
+得到：
+
+$$
+S =
+\begin{bmatrix}
+2 & 0 & 0 \\
+0 & 2 & 0 \\
+2 & 2 & 0
+\end{bmatrix}
+$$
+
+---
+
+## 5.3 Causal Mask
+
+Causal Mask：
+
+$$
+M =
+\begin{bmatrix}
+0 & -\infty & -\infty \\
+0 & 0 & -\infty \\
+0 & 0 & 0
+\end{bmatrix}
+$$
+
+注意：
+
+> **Mask 必须在 Softmax 之前加入。**
+
+因此：
+
+$$
+S' = S + M
+$$
+
+得到：
+
+$$
+S' =
+\begin{bmatrix}
+2 & -\infty & -\infty \\
+0 & 2 & -\infty \\
+2 & 2 & 0
+\end{bmatrix}
+$$
+
+---
+
+## 5.4 Softmax
+
+### 第 1 行
+
+$$
+softmax([2,-\infty,-\infty])
+=
+[1,0,0]
+$$
+
+### 第 2 行
+
+$$
+softmax([0,2,-\infty])
+\approx
+[0.12,0.88,0]
+$$
+
+### 第 3 行
+
+$$
+softmax([2,2,0])
+\approx
+[0.468,0.468,0.063]
+$$
+
+因此：
+
+$$
+A \approx
+\begin{bmatrix}
+1 & 0 & 0 \\
+0.12 & 0.88 & 0 \\
+0.468 & 0.468 & 0.063
+\end{bmatrix}
+$$
+
+---
+
+## 5.5 计算 `AV`
+
+$$
+Z = AV
+$$
+
+即：
+
+$$
+\begin{bmatrix}
+1 & 0 & 0 \\
+0.12 & 0.88 & 0 \\
+0.468 & 0.468 & 0.063
+\end{bmatrix}
+\begin{bmatrix}
+1 & 0 \\
+0 & 1 \\
+1 & 1
+\end{bmatrix}
+$$
+
+得到：
+
+$$
+Z =
+\begin{bmatrix}
+1 & 0 \\
+0.12 & 0.88 \\
+0.531 & 0.531
+\end{bmatrix}
+$$
+
+因此：
+
+$$
+Z \in R^{3 \times 2}
+$$
+
+---
+
+# 6. Multi-Head Attention
+
+本例：
+
+$$
+H = 2
+$$
+
+因此：
+
+$$
+d_h = \frac{d}{H} = 2
+$$
+
+两个 Head 分别计算 Attention。
+
+假设：
+
+$$
+Z_1 =
+\begin{bmatrix}
+1 & 0 \\
+0.12 & 0.88 \\
+0.531 & 0.531
+\end{bmatrix}
+$$
+
+$$
+Z_2 =
+\begin{bmatrix}
+0 & 1 \\
+0.5 & 0.5 \\
+0.2 & 0.8
+\end{bmatrix}
+$$
+
+---
+
+## 6.1 Concat
+
+沿最后一个维度拼接：
+
+$$
+Z = Concat(Z_1,Z_2)
+$$
+
+得到：
+
+$$
+Z =
+\begin{bmatrix}
+1 & 0 & 0 & 1 \\
+0.12 & 0.88 & 0.5 & 0.5 \\
+0.531 & 0.531 & 0.2 & 0.8
+\end{bmatrix}
+$$
+
+维度：
+
+$$
+[3,2] + [3,2] \rightarrow [3,4]
+$$
+
+---
+
+## 6.2 Output Projection
+
+使用：
+
+$$
+W_O \in R^{4 \times 4}
+$$
+
+计算：
+
+$$
+O = ZW_O
+$$
+
+因此：
+
+$$
+[3,4] \times [4,4] = [3,4]
+$$
+
+最终：
+
+$$
+O \in R^{3 \times 4}
+$$
+
+---
+
+# 7. Residual + Norm
+
+Attention 输出：
+
+$$
+O \in R^{3 \times 4}
+$$
+
+输入：
+
+$$
+X \in R^{3 \times 4}
+$$
+
+进行残差连接：
+
+$$
+Y = X + O
+$$
+
+维度不变：
+
+$$
+[3,4] + [3,4] = [3,4]
+$$
+
+作用：
+
+* 保留原始信息
+* 改善梯度传播
+* 支持深层 Transformer 堆叠
+
+---
+
+## LayerNorm
+
+对于一个 Token：
+
+$$
+\mu =
+\frac{1}{d}
+\sum_{j=1}^{d}x_j
+$$
+
+$$
+\sigma^2 =
+\frac{1}{d}
+\sum_{j=1}^{d}(x_j-\mu)^2
+$$
+
+LayerNorm：
+
+$$
+LN(x)_j =
+\gamma_j
+\frac{x_j-\mu}
+{\sqrt{\sigma^2+\epsilon}}
++
+\beta_j
+$$
+
+现代 LLM 中也常使用 RMSNorm。
+
+---
+
+# 8. MLP / FFN
+
+输入：
+
+$$
+X_{norm} \in R^{3 \times 4}
+$$
+
+---
+
+## 8.1 经典 FFN
+
+经典 Transformer：
+
+$$
+FFN(x)
+=
+W_2
+Activation(W_1x+b_1)
++b_2
+$$
+
+---
+
+## 8.2 现代 Gated MLP
+
+现代 LLM 常使用 Gated MLP：
+
+$$
+MLP(x)
+=
+W_{down}
+\left(
+Act(W_{gate}x)
+\odot
+W_{up}x
+\right)
+$$
+
+本例：
+
+$$
+d = 4
+$$
+
+$$
+d_{ff} = 8
+$$
+
+因此：
+
+```text
+x [4]
+ │
+ ├── gate_proj [4,8] → [8] → Activation
+ │
+ └── up_proj   [4,8] → [8]
+                     │
+                     ×
+                     │
+                     ▼
+                  [8]
+                     │
+              down_proj [8,4]
+                     │
+                     ▼
+                   [4]
+```
+
+---
+
+## 8.3 数值示例
+
+假设：
+
+$$
+x = [1,2,-1,0]
+$$
+
+### Gate Projection
+
+$$
+W_{gate}x
+=
+[1,2,0,-1,0,0,0,0]
+$$
+
+### Up Projection
+
+$$
+W_{up}x
+=
+[3,4,1,1,1,1,1,1]
+$$
+
+### SiLU
+
+SiLU 定义：
+
+$$
+SiLU(x)=x \cdot sigmoid(x)
+$$
 
 其中：
 
-$$W_{lm} \in R^{d \times V} = R^{4 \times 6}$$
+$$
+sigmoid(x)=\frac{1}{1+e^{-x}}
+$$
 
+因此：
 
-维度相乘：`[3, 4] × [4, 6] = [3, 6]` (包含了 3 个 Token 在词表上的概率投影)
+$$
+SiLU([1,2,0,-1])
+\approx
+[0.731,1.762,0,-0.269]
+$$
 
-**数值预测示例（针对最后一个 Token，触发下一次生成）：**
-假设第三个 Token 的最终 Hidden State 为 $H_3 = [1.0, -1.0, 2.0, 0.5]$ (维度 4)
+扩展到 8 维：
 
-* 与 `lm_head` `[4, 6]` 矩阵相乘，得到 6 个词元的分数：
-Logits = `[1.2, -0.3, 4.1, 0.8, -0.5, 1.0]`
-* **概率转化 (Softmax)：**
-
-$$P_i = \frac{e^{z_i}}{\sum_j e^{z_j}}$$
-
-
-* **选择 / 采样策略：**
-
-$$Token_{next} \sim P(Token \mid Context)$$
-
-
-
-拿到新的 Token IDs，将其拼接入 Context，开启下一轮自回归（Auto-Regressive）生成。
+$$
+[0.731,1.762,0,-0.269,0,0,0,0]
+$$
 
 ---
 
-## 11. Transformer 最核心的公式
+## 8.4 Element-wise Multiply
 
-**Attention**
+$$
+M_{inner}
+=
+SiLU(W_{gate}x)
+\odot
+W_{up}x
+$$
 
+得到：
 
-$$\boxed{Q = XW_Q, \quad K = XW_K, \quad V = XW_V}$$
+$$
+M_{inner}
+=
+[2.193,7.048,0,-0.269,0,0,0,0]
+$$
 
-$$\boxed{\operatorname{Attention}(Q, K, V) = \operatorname{softmax} \left( \frac{QK^T}{\sqrt{d_h}} + M \right) V}$$
+维度：
 
-**Multi-Head**
-
-
-$$\boxed{\operatorname{MHA}(X) = \operatorname{Concat}(\text{Head}_1, \dots, \text{Head}_H) W_O}$$
-
-**Residual**
-
-
-$$\boxed{Y = X + F(X)}$$
-
-**MLP (Gated)**
-
-
-$$\boxed{\operatorname{MLP}(x) = W_{down} \left( \operatorname{Act}(W_{gate}x) \odot W_{up}x \right)}$$
-
-**输出概率**
-
-
-$$\boxed{Logits = H W_{lm}}$$
-
-$$\boxed{P(token_i) = \frac{e^{z_i}}{\sum_j e^{z_j}}}$$
+$$
+M_{inner} \in R^8
+$$
 
 ---
 
-## 12. 一张图记住 Transformer
+## 8.5 Down Projection
+
+$$
+y=W_{down}M_{inner}
+$$
+
+其中：
+
+$$
+W_{down}\in R^{8\times4}
+$$
+
+因此：
+
+$$
+[8]\times[8,4]\rightarrow[4]
+$$
+
+最终：
+
+$$
+y\in R^4
+$$
+
+完成：
 
 ```text
-                 Token IDs
-                     │
-                     ▼
-               Embedding [L,d]
-                     │
-                     ▼
-        ┌──────────────────────────┐
-        │      Transformer Block   │
-        │                          │
-        │  Norm                    │
-        │   │                      │
-        │   ▼                      │
-        │  ┌────────────────────┐  │
-        │  │ Attention          │  │
-        │  │                    │  │
-        │  │ Head1 ─┐           │  │
-        │  │ Head2 ─┤ 并行      │  │
-        │  │ ...    ┤           │  │
-        │  │ HeadH ─┘           │  │
-        │  │    ↓               │  │
-        │  │ Concat → o_proj    │  │
-        │  └────────┬───────────┘  │
-        │           ↓              │
-        │       Residual           │
-        │           ↓              │
-        │          Norm            │
-        │           ↓              │
-        │  gate_proj ─┐            │
-        │             × → down_proj│
-        │  up_proj ───┘            │
-        │           ↓              │
-        │       Residual           │
-        └───────────┬──────────────┘
-                    │
-              Block × N
-                 串行
-                    │
-                    ▼
-                 lm_head
-                    │
-                    ▼
-                 Logits
-                    │
-                    ▼
-              Next Token
-
+[4]
+ ↓
+[8]
+ ↓
+[8]
+ ↓
+[4]
 ```
 
-> **核心理解总结：**
-> Attention 负责 Token 与 Token 之间的信息交互（空间聚合）；MLP 负责单个 Token 内部的特征变换（通道映射）；Multi-Head 并行学习不同子空间的表征关系；Transformer Block 通过残差实现深层无损的逐层串行堆叠。
+---
+
+# 9. 一个完整 Transformer Block
+
+采用现代 LLM 常见的 **Pre-Norm** 结构：
+
+$$
+H_1 =
+X +
+Attention(Norm(X))
+$$
+
+然后：
+
+$$
+H_2 =
+H_1 +
+MLP(Norm(H_1))
+$$
+
+因此：
+
+$$
+X_{out}=H_2
+$$
+
+整体：
+
+```text
+X
+ │
+ ▼
+Norm
+ │
+ ▼
+Attention
+ │
+ ▼
++ X
+ │
+ ▼
+H1
+ │
+ ▼
+Norm
+ │
+ ▼
+MLP
+ │
+ ▼
++ H1
+ │
+ ▼
+H2
+```
+
+---
+
+# 10. Transformer Block 堆叠
+
+如果：
+
+$$
+N=2
+$$
+
+则：
+
+```text
+X0
+ │
+ ▼
+Block 1
+ │
+ ▼
+X1
+ │
+ ▼
+Block 2
+ │
+ ▼
+X2
+```
+
+即：
+
+$$
+X_0
+\rightarrow
+Block_1
+\rightarrow
+X_1
+\rightarrow
+Block_2
+\rightarrow
+X_2
+$$
+
+因此：
+
+> **Transformer Block 之间是串行的。**
+
+---
+
+# 11. 输出与 Token 预测
+
+经过 `N` 个 Block 后：
+
+$$
+H\in R^{L\times d}
+$$
+
+本例：
+
+$$
+H\in R^{3\times4}
+$$
+
+---
+
+## 11.1 lm_head
+
+输出层：
+
+$$
+W_{lm}\in R^{d\times V}
+$$
+
+本例：
+
+$$
+W_{lm}\in R^{4\times6}
+$$
+
+计算：
+
+$$
+Logits=HW_{lm}
+$$
+
+维度：
+
+$$
+[3,4]\times[4,6]=[3,6]
+$$
+
+因此：
+
+```text
+Hidden State [3,4]
+       │
+       ▼
+ lm_head [4,6]
+       │
+       ▼
+   Logits [3,6]
+```
+
+每一行表示一个位置对整个词表的预测分数。
+
+---
+
+## 11.2 最后一个 Token
+
+自回归生成时，通常只关注最后一个位置：
+
+$$
+H_3=[1.0,-1.0,2.0,0.5]
+$$
+
+假设：
+
+$$
+Logits=
+[1.2,-0.3,4.1,0.8,-0.5,1.0]
+$$
+
+---
+
+## 11.3 Softmax
+
+$$
+P_i=
+\frac{e^{z_i}}
+{\sum_j e^{z_j}}
+$$
+
+得到：
+
+```text
+Logits
+  │
+  ▼
+Softmax
+  │
+  ▼
+Probability
+  │
+  ▼
+Sampling / Greedy / Top-k / Top-p
+  │
+  ▼
+Next Token
+```
+
+最终：
+
+$$
+Token_{next}
+\sim
+P(Token|Context)
+$$
+
+新 Token 加入 Context 后，再进行下一轮 Transformer 计算。
+
+---
+
+# 12. Transformer 最核心的公式
+
+## Attention
+
+$$
+Q=XW_Q
+$$
+
+$$
+K=XW_K
+$$
+
+$$
+V=XW_V
+$$
+
+核心：
+
+$$
+Attention(Q,K,V)
+=
+softmax
+\left(
+\frac{QK^T}{\sqrt{d_h}}+M
+\right)V
+$$
+
+---
+
+## Multi-Head Attention
+
+$$
+MHA(X)
+=
+Concat(Head_1,\ldots,Head_H)W_O
+$$
+
+---
+
+## Residual
+
+$$
+Y=X+F(X)
+$$
+
+---
+
+## Gated MLP
+
+$$
+MLP(x)
+=
+W_{down}
+\left(
+Act(W_{gate}x)
+\odot
+W_{up}x
+\right)
+$$
+
+---
+
+## Output
+
+$$
+Logits=HW_{lm}
+$$
+
+$$
+P(token_i)
+=
+\frac{e^{z_i}}
+{\sum_j e^{z_j}}
+$$
+
+---
+
+# 13. 一张图记住 Transformer
+
+```text
+                    Token IDs
+                        │
+                        ▼
+                 Embedding [L,d]
+                        │
+                        ▼
+              ┌─────────────────────┐
+              │ Transformer Block    │
+              │                     │
+              │  Norm               │
+              │   │                 │
+              │   ▼                 │
+              │ Attention           │
+              │   │                 │
+              │   ├─ Head 1 ─┐      │
+              │   ├─ Head 2 ─┤      │
+              │   └─ Head H ─┘      │
+              │        │             │
+              │      Concat          │
+              │        │             │
+              │      o_proj          │
+              │        │             │
+              │    Residual          │
+              │        │             │
+              │       Norm           │
+              │        │             │
+              │      MLP             │
+              │        │             │
+              │   gate ─┐            │
+              │         × ─ down     │
+              │   up ───┘            │
+              │        │             │
+              │    Residual          │
+              └────────┬─────────────┘
+                       │
+                    Block × N
+                       │
+                      串行
+                       │
+                       ▼
+                    lm_head
+                       │
+                       ▼
+                    Logits
+                       │
+                       ▼
+                  Next Token
+```
+
+---
+
+# 14. 最核心的理解
+
+可以把 Transformer 压缩成四个核心过程：
+
+```text
+Token
+  │
+  ▼
+Embedding
+  │
+  ▼
+Attention ──→ Token 与 Token 之间的信息交互
+  │
+  ▼
+MLP       ──→ 单个 Token 内部的特征变换
+  │
+  ▼
+重复 N 个 Block
+  │
+  ▼
+lm_head
+  │
+  ▼
+Next Token
+```
+
+### 一句话理解
+
+> **Attention 负责“不同 Token 之间互相看”；MLP 负责“每个 Token 自己进行特征变换”；Residual 负责信息与梯度传递；多个 Transformer Block 串行堆叠，最终通过 `lm_head` 将隐藏状态映射到词表，预测下一个 Token。**
+
+### 最重要的维度链路
+
+以本例为例：
+
+```text
+Token IDs
+[3]
+  │
+  ▼
+Embedding
+[3,4]
+  │
+  ▼
+Q/K/V
+[3,2] × 2 Heads
+  │
+  ▼
+Attention
+[3,2] × 2
+  │
+  ▼
+Concat
+[3,4]
+  │
+  ▼
+o_proj
+[3,4]
+  │
+  ▼
+MLP
+[3,4] → [3,8] → [3,4]
+  │
+  ▼
+Block × N
+[3,4]
+  │
+  ▼
+lm_head
+[3,4] → [3,6]
+  │
+  ▼
+Logits
+[3,6]
+  │
+  ▼
+Next Token
+```
+
+这条维度链路是理解 Transformer 实现最重要的主线。
+
+这版我重点做了两件事：**保证 GitHub Markdown 渲染稳定**，同时把全文压成一条非常清晰的“`[3] → [3,4] → Attention → [3,4] → MLP → [3,4] → [3,6]`”主线。
