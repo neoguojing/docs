@@ -209,9 +209,9 @@ $$\tilde{x}_m = x \odot \cos\_vec + x_{rot} \odot \sin\_vec$$
 
 **计算复杂度**：显存占用和时间复杂度均为 $O(d)$。
 
-这里为您重新梳理 RoPE（旋转位置编码）的完整模拟计算过程。
+为了**彻底解决**某些 Markdown 渲染器对下划线 `_` 极其严格的报错，最一劳永逸的方法是：**在数学公式中放弃使用代码风格的下划线命名法（如 `cos_vec`），而是改用标准的数学下标表示法（如 $v_{\cos}$ 和 $v_{\sin}$）。**
 
-这次重点为您彻底拆解 **位置序号 $m$** 与 **旋转角度 $\theta$** 在真实大模型（如 LLaMA / GPT）中到底是如何计算的，同时修复所有的 LaTeX 格式问题（如下划线转义）。
+这样不仅绝对不会报错，而且公式看起来更加专业美观。下面是为您格式化并彻底消除下划线报错的纯净版模拟过程：
 
 ---
 
@@ -267,23 +267,23 @@ $$\theta_i = 10000^{\frac{-2i}{d}}$$
 
 $$x = [1, 2, 3, 4]$$
 
-**② 错位取反向量 $x_{\text{rot}}$**：
+**② 错位取反向量 $x_{rot}$**：
 规则是：相邻两个元素互换位置，并将前一个取负号，即 $[-x_1, x_0, -x_3, x_2]$。
 
 
-$$x_{\text{rot}} = [-2, 1, -4, 3]$$
+$$x_{rot} = [-2, 1, -4, 3]$$
 
-**③ 余弦向量 $\text{cos\_vec}$**：
+**③ 余弦向量 $v_{\cos}$**：
 将每个平面的 $\cos(m\theta_i)$ 复制两遍凑成维度 $d$。
 
 
-$$\text{cos\_vec} = [\cos(90^\circ), \cos(90^\circ), \cos(180^\circ), \cos(180^\circ)] = [0, 0, -1, -1]$$
+$$v_{\cos} = [\cos(90^\circ), \cos(90^\circ), \cos(180^\circ), \cos(180^\circ)] = [0, 0, -1, -1]$$
 
-**④ 正弦向量 $\text{sin\_vec}$**：
+**④ 正弦向量 $v_{\sin}$**：
 将每个平面的 $\sin(m\theta_i)$ 复制两遍凑成维度 $d$。
 
 
-$$\text{sin\_vec} = [\sin(90^\circ), \sin(90^\circ), \sin(180^\circ), \sin(180^\circ)] = [1, 1, 0, 0]$$
+$$v_{\sin} = [\sin(90^\circ), \sin(90^\circ), \sin(180^\circ), \sin(180^\circ)] = [1, 1, 0, 0]$$
 
 ---
 
@@ -292,14 +292,14 @@ $$\text{sin\_vec} = [\sin(90^\circ), \sin(90^\circ), \sin(180^\circ), \sin(180^\
 在底层 CUDA 算子中，RoPE 被统一重写为极简公式：
 
 
-$$\tilde{x}_m = x \odot \text{cos\_vec} + x_{\text{rot}} \odot \text{sin\_vec}$$
+$$\tilde{x}_m = x \odot v_{\cos} + x_{rot} \odot v_{\sin}$$
 
-**步骤 A：逐元素计算 $x \odot \text{cos\_vec}$**
+**步骤 A：逐元素计算 $x \odot v_{\cos}$**
 
 
 $$\begin{bmatrix} 1 \\ 2 \\ 3 \\ 4 \end{bmatrix} \odot \begin{bmatrix} 0 \\ 0 \\ -1 \\ -1 \end{bmatrix} = \begin{bmatrix} 0 \\ 0 \\ -3 \\ -4 \end{bmatrix}$$
 
-**步骤 B：逐元素计算 $x_{\text{rot}} \odot \text{sin\_vec}$**
+**步骤 B：逐元素计算 $x_{rot} \odot v_{\sin}$**
 
 
 $$\begin{bmatrix} -2 \\ 1 \\ -4 \\ 3 \end{bmatrix} \odot \begin{bmatrix} 1 \\ 1 \\ 0 \\ 0 \end{bmatrix} = \begin{bmatrix} -2 \\ 1 \\ 0 \\ 0 \end{bmatrix}$$
@@ -310,11 +310,11 @@ $$\begin{bmatrix} -2 \\ 1 \\ -4 \\ 3 \end{bmatrix} \odot \begin{bmatrix} 1 \\ 1 
 $$\tilde{x}_m = \begin{bmatrix} 0 \\ 0 \\ -3 \\ -4 \end{bmatrix} + \begin{bmatrix} -2 \\ 1 \\ 0 \\ 0 \end{bmatrix} = \begin{bmatrix} -2 \\ 1 \\ -3 \\ -4 \end{bmatrix}$$
 
 > **验证其等价性：**
-> 如果我们用笨办法（传统 $2 \times 2$ 矩阵旋转）去算：
+> 如果我们用传统 $2 \times 2$ 矩阵旋转去算：
 > 第 0 组平面 `[1, 2]` 转 $90^\circ$，落在横轴负半区、纵轴正半区，变为 `[-2, 1]`。
 > 第 1 组平面 `[3, 4]` 转 $180^\circ$，相当于绕原点对称，变为 `[-3, -4]`。
 > 拼合后恰好也是 `[-2, 1, -3, -4]`。
-> **结论证明了：**通过 `x_rot` 和 `sin_vec`、`cos_vec` 的逐元素乘法，不仅绕开了 $O(d^2)$ 的庞大显存占用，更利用 GPU 的一维数组对齐乘加操作（FMA），实现了完美的等价替代。
+> **结论证明了：**通过 $x_{rot}$ 与 $v_{\sin}$、$v_{\cos}$ 的逐元素乘法，不仅绕开了 $O(d^2)$ 的庞大显存占用，更利用 GPU 的一维数组对齐乘加操作（FMA），实现了完美的等价替代。
 ---
 
 ## 5. 关键特性总结
