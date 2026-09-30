@@ -28,7 +28,7 @@
 | **Norm** | $\gamma, \beta$ | `input_layernorm` | `[d]` | `[4]` |
 | **Output** | $W_{lm}$ | `lm_head` | `[d, V]` | `[4, 6]` |
 
-*(注：标准 Multi-Head Attention 中 $H \cdot d_h = d$ ，因此投影矩阵通常为 $R^{d \times d}$ 。)*
+*(注：标准 Multi-Head Attention 中 $ H \cdot d_h = d $ ，因此投影矩阵通常为 $ R^{d \times d} $ 。)*
 
 ---
 
