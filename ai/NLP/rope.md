@@ -209,32 +209,58 @@ $$\tilde{x}_m = x \odot \cos\_vec + x_{rot} \odot \sin\_vec$$
 
 **计算复杂度**：显存占用和时间复杂度均为 $O(d)$。
 
-这是一个非常经典的 **旋转位置编码 (RoPE)** 在 PyTorch/CUDA 中的底层优化实现。
+这里为您重新梳理 RoPE（旋转位置编码）的完整模拟计算过程。
 
-它通过将 $O(d^2)$ 的稀疏矩阵乘法，转化为 $O(d)$ 的向量逐元素相乘（Hadamard积，符号 $\odot$ ），极大地节省了显存和算力。
-
-下面为您提供一个直观的 **数值演算示例**：
+这次重点为您彻底拆解 **位置序号 $m$** 与 **旋转角度 $\theta$** 在真实大模型（如 LLaMA / GPT）中到底是如何计算的，同时修复所有的 LaTeX 格式问题（如下划线转义）。
 
 ---
 
-### 1. 设定初始参数
+### 1. $m$ 和角度 $\theta$ 到底是如何取值的？
 
-假设我们要对一个词元 (Token) 的特征向量应用旋转位置编码。
+在真实的 Transformer 中，特征向量的维度 $d$ 通常很大（例如 $d=4096$），我们会把这 4096 个数字**两两分组**，分成 $4096 / 2 = 2048$ 个二维平面。
 
-* **向量维度**： $d = 4$
-* **输入向量**： $x = [1, 2, 3, 4]$
-* **当前 Token 所在位置**： $m = 1$
-* **旋转角度**：为了计算清晰，我们设定：
-* 第 0 组二维平面的旋转角 $m\theta_0 = 90^\circ$ （即 $\pi/2$ ）
-* 第 1 组二维平面的旋转角 $m\theta_1 = 180^\circ$ （即 $\pi$ ）
+* **$m$（绝对位置）：** 代表当前 Token 在句子中的位置索引（从 0 开始）。
+* 第一词：“我”，$m = 0$
+* 第二词：“爱”，$m = 1$
+* 第三词：“你”，$m = 2$
+
+
+* **$\theta_i$（基础角度）：** 代表第 $i$ 组二维平面固定的旋转频率。通常通过一个以 10000 为底的指数公式自动计算：
+
+$$\theta_i = 10000^{\frac{-2i}{d}}$$
+
+
+
+*其中 $i$ 是分组的序号（$0, 1, 2 \dots \frac{d}{2}-1$）。*
+
+**举个真实的例子（假设维度 $d=4$，有两组二维平面）：**
+
+* **第 0 组** ($i=0$)：$\theta_0 = 10000^0 = 1$ （即 1 弧度，约 $57.3^\circ$）
+* **第 1 组** ($i=1$)：$\theta_1 = 10000^{-2/4} = 10000^{-0.5} = 0.01$ （即 0.01 弧度，约 $0.57^\circ$）
+
+**最终的实际旋转角度 $= m \times \theta_i$**
+这就是为什么叫做“位置编码”：同一个二维平面，Token 所在的位置 $m$ 越靠后，转过的总角度 $m\theta_i$ 就越大，模型就能借此感知到词与词的距离！
+
+---
+
+### 2. 设定一个“方便手算”的数值场景
+
+真实的 1 弧度和 0.01 弧度计算正余弦会得到无限不循环小数，无法直观演示。为了让您看清矩阵乘法向 Hadamard 积（$\odot$）转化的巧妙过程，我们人为设定两个整角来进行模拟演算：
+
+* **向量维度：** $d=4$
+* **输入向量：** $x = [1, 2, 3, 4]$
+* **当前 Token 所在位置：** $m = 1$ （代表这句话的第 2 个词）
+* **假设的基准角度：**
+* 第一组 ($i=0$) 的总角度设定为 $m\theta_0 = 90^\circ$（即 $\pi/2$）
+* 第二组 ($i=1$) 的总角度设定为 $m\theta_1 = 180^\circ$（即 $\pi$）
 
 
 
 ---
 
-### 2. 构建所需向量 ( $O(d)$ 复杂度)
+### 3. 构建 O(d) 复杂度的 1 维向量
 
-在代码实现中，我们不需要构建 $4 \times 4$ 的对角块矩阵，而是直接准备 4 个长度为 $d$ 的一维向量：
+我们不需要构建庞大且稀疏的二维旋转矩阵，而是直接在 PyTorch 中生成 4 个一维数组（向量）：
 
 **① 原始向量 $x$**：
 
@@ -242,67 +268,53 @@ $$\tilde{x}_m = x \odot \cos\_vec + x_{rot} \odot \sin\_vec$$
 $$x = [1, 2, 3, 4]$$
 
 **② 错位取反向量 $x_{\text{rot}}$**：
-按照公式 $[-x_1, x_0, -x_3, x_2]$ 规则翻转并加负号：
+规则是：相邻两个元素互换位置，并将前一个取负号，即 $[-x_1, x_0, -x_3, x_2]$。
 
 
 $$x_{\text{rot}} = [-2, 1, -4, 3]$$
 
 **③ 余弦向量 $\text{cos\_vec}$**：
-每个角度重复两次： $[\cos(90^\circ), \cos(90^\circ), \cos(180^\circ), \cos(180^\circ)]$
+将每个平面的 $\cos(m\theta_i)$ 复制两遍凑成维度 $d$。
 
 
-$$\text{cos\_vec} = [0, 0, -1, -1]$$
+$$\text{cos\_vec} = [\cos(90^\circ), \cos(90^\circ), \cos(180^\circ), \cos(180^\circ)] = [0, 0, -1, -1]$$
 
 **④ 正弦向量 $\text{sin\_vec}$**：
-每个角度重复两次： $[\sin(90^\circ), \sin(90^\circ), \sin(180^\circ), \sin(180^\circ)]$
+将每个平面的 $\sin(m\theta_i)$ 复制两遍凑成维度 $d$。
 
 
-$$\text{sin\_vec} = [1, 1, 0, 0]$$
+$$\text{sin\_vec} = [\sin(90^\circ), \sin(90^\circ), \sin(180^\circ), \sin(180^\circ)] = [1, 1, 0, 0]$$
 
 ---
 
-### 3. 执行向量化计算 (Hadamard 积 $\odot$ )
+### 4. 执行向量化计算 (Hadamard 积 $\odot$)
 
-现在严格套用您提供的代码级公式： $\tilde{x}_m = x \odot \text{cos\_vec} + x_{\text{rot}} \odot \text{sin\_vec}$
+在底层 CUDA 算子中，RoPE 被统一重写为极简公式：
 
-**步骤 A：计算 $x \odot \text{cos\_vec}$**
-对应位置的元素直接相乘：
+
+$$\tilde{x}_m = x \odot \text{cos\_vec} + x_{\text{rot}} \odot \text{sin\_vec}$$
+
+**步骤 A：逐元素计算 $x \odot \text{cos\_vec}$**
 
 
 $$\begin{bmatrix} 1 \\ 2 \\ 3 \\ 4 \end{bmatrix} \odot \begin{bmatrix} 0 \\ 0 \\ -1 \\ -1 \end{bmatrix} = \begin{bmatrix} 0 \\ 0 \\ -3 \\ -4 \end{bmatrix}$$
 
-**步骤 B：计算 $x_{\text{rot}} \odot \text{sin\_vec}$**
-对应位置的元素直接相乘：
+**步骤 B：逐元素计算 $x_{\text{rot}} \odot \text{sin\_vec}$**
 
 
 $$\begin{bmatrix} -2 \\ 1 \\ -4 \\ 3 \end{bmatrix} \odot \begin{bmatrix} 1 \\ 1 \\ 0 \\ 0 \end{bmatrix} = \begin{bmatrix} -2 \\ 1 \\ 0 \\ 0 \end{bmatrix}$$
 
-**步骤 C：两者相加得到最终结果 $\tilde{x}_m$**
+**步骤 C：两者相加，得到加入位置信息后的输出 $\tilde{x}_m$**
 
 
 $$\tilde{x}_m = \begin{bmatrix} 0 \\ 0 \\ -3 \\ -4 \end{bmatrix} + \begin{bmatrix} -2 \\ 1 \\ 0 \\ 0 \end{bmatrix} = \begin{bmatrix} -2 \\ 1 \\ -3 \\ -4 \end{bmatrix}$$
 
----
-
-### 4. 验证：这与传统矩阵乘法结果一致吗？
-
-我们用传统的 $2 \times 2$ 旋转矩阵公式分别验证这两个二维对：
-
-**第一对 $(x_0, x_1) = (1, 2)$，旋转 $90^\circ$：**
-
-
-$$\begin{bmatrix} \cos 90^\circ & -\sin 90^\circ \\ \sin 90^\circ & \cos 90^\circ \end{bmatrix} \begin{bmatrix} 1 \\ 2 \end{bmatrix} = \begin{bmatrix} 0 & -1 \\ 1 & 0 \end{bmatrix} \begin{bmatrix} 1 \\ 2 \end{bmatrix} = \begin{bmatrix} -2 \\ 1 \end{bmatrix}$$
-
-**第二对 $(x_2, x_3) = (3, 4)$，旋转 $180^\circ$：**
-
-
-$$\begin{bmatrix} \cos 180^\circ & -\sin 180^\circ \\ \sin 180^\circ & \cos 180^\circ \end{bmatrix} \begin{bmatrix} 3 \\ 4 \end{bmatrix} = \begin{bmatrix} -1 & 0 \\ 0 & -1 \end{bmatrix} \begin{bmatrix} 3 \\ 4 \end{bmatrix} = \begin{bmatrix} -3 \\ -4 \end{bmatrix}$$
-
-拼接起来得到的结果正是 $[-2, 1, -3, -4]$ 。
-
-**结论：**
-通过 $x \odot \text{cos\_vec} + x_{\text{rot}} \odot \text{sin\_vec}$ 这种巧妙的排列组合，我们在数学结果上完美等价于 $O(d^2)$ 的稀疏矩阵乘法，但在显卡里完全变成了一维数组的对齐乘加运算 (FMA，Fused Multiply-Add)，实现了 $O(d)$ 的极速计算。
-
+> **验证其等价性：**
+> 如果我们用笨办法（传统 $2 \times 2$ 矩阵旋转）去算：
+> 第 0 组平面 `[1, 2]` 转 $90^\circ$，落在横轴负半区、纵轴正半区，变为 `[-2, 1]`。
+> 第 1 组平面 `[3, 4]` 转 $180^\circ$，相当于绕原点对称，变为 `[-3, -4]`。
+> 拼合后恰好也是 `[-2, 1, -3, -4]`。
+> **结论证明了：**通过 `x_rot` 和 `sin_vec`、`cos_vec` 的逐元素乘法，不仅绕开了 $O(d^2)$ 的庞大显存占用，更利用 GPU 的一维数组对齐乘加操作（FMA），实现了完美的等价替代。
 ---
 
 ## 5. 关键特性总结
