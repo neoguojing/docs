@@ -1,10 +1,3 @@
-GitHub 的 Markdown 数学公式渲染器（MathJax / KaTeX）有时会限制部分较高级的 LaTeX 宏（如 `\operatorname`）。
-
-为了完美兼容，我已经把文中所有的 `\operatorname{...}` 替换为原生的 `\text{...}`，这样就可以在 GitHub 上正常解析显示了。
-
-以下是修复后的完整 Markdown 代码：
-
-```markdown
 # Transformer 总纲 (GitHub 兼容优化版)
 
 ## 0. 全局参数与符号定义 (Global Definitions)
@@ -120,24 +113,38 @@ GitHub 的 Markdown 数学公式渲染器（MathJax / KaTeX）有时会限制部
 
 **输入 Token IDs ( $L=3$ )：**
 
-$$t = [2, 5, 1]$$
+$$
+t = [2, 5, 1]
+$$
 
 **Embedding 查表参数 ( $E \in R^{6 \times 4}$ )：**
 根据词表索引查表后，得到输入张量 $X$ ：
 
-$$X = \begin{bmatrix} 1 & 0 & 1 & 0 \\ 0 & 1 & 0 & 1 \\ 1 & 1 & 0 & 0 \end{bmatrix}$$
+$$
+X = \begin{bmatrix}
+1 & 0 & 1 & 0 \\
+0 & 1 & 0 & 1 \\
+1 & 1 & 0 & 0
+\end{bmatrix}
+$$
 
 此时维度：
 
-$$X \in R^{L \times d} = R^{3 \times 4}$$
+$$
+X \in R^{L \times d} = R^{3 \times 4}
+$$
 
 **数学表达：**
 
-$$X_i = E[t_i]$$
+$$
+X_i = E[t_i]
+$$
 
 若注入位置信息（如可加式）：
 
-$$X_i = E[t_i] + P_i$$
+$$
+X_i = E[t_i] + P_i
+$$
 
 *(现代 LLM 常使用 RoPE 进行旋转位置编码)*
 
@@ -147,14 +154,18 @@ $$X_i = E[t_i] + P_i$$
 
 **输入：**
 
-$$X \in R^{3 \times 4}$$
+$$
+X \in R^{3 \times 4}
+$$
 
 **参数 (对应 `q_proj`, `k_proj`, `v_proj`)：**
 对于第 1 个 Head，权重矩阵为 $W_Q, W_K, W_V \in R^{d \times d_h} = R^{4 \times 2}$ 。
 
 **计算：**
 
-$$Q = XW_Q \quad K = XW_K \quad V = XW_V$$
+$$
+Q = XW_Q \quad K = XW_K \quad V = XW_V
+$$
 
 **维度变化：**
 
@@ -166,7 +177,9 @@ $$Q = XW_Q \quad K = XW_K \quad V = XW_V$$
 
 ## 4. Attention 核心公式
 
-$$\boxed{Z = \text{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}$$
+$$
+\boxed{Z = \text{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}
+$$
 
 **公式分解与维度：**
 
@@ -182,25 +195,70 @@ $$\boxed{Z = \text{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}$$
 我们以第 1 个 Head 的实际矩阵进行 $3 \times 3$ 严谨推演。
 假设投影后的 $Q, K, V \in R^{3 \times 2}$ 为：
 
-$$Q = \begin{bmatrix} 1.414 & 0 \\ 0 & 1.414 \\ 1.414 & 1.414 \end{bmatrix}, \quad K = \begin{bmatrix} 2 & 0 \\ 0 & 2 \\ 0 & 0 \end{bmatrix}, \quad V = \begin{bmatrix} 1 & 0 \\ 0 & 1 \\ 1 & 1 \end{bmatrix}$$
+$$
+Q = \begin{bmatrix}
+1.414 & 0 \\
+0 & 1.414 \\
+1.414 & 1.414
+\end{bmatrix}, \quad K = \begin{bmatrix}
+2 & 0 \\
+0 & 2 \\
+0 & 0
+\end{bmatrix}, \quad V = \begin{bmatrix}
+1 & 0 \\
+0 & 1 \\
+1 & 1
+\end{bmatrix}
+$$
 
 已知缩放因子 $\sqrt{d_h} = \sqrt{2} \approx 1.414$ 。
 
 **① 计算 $QK^T$ (维度 `[3, 3]`)**
 
-$$QK^T = \begin{bmatrix} 1.414 & 0 \\ 0 & 1.414 \\ 1.414 & 1.414 \end{bmatrix} \begin{bmatrix} 2 & 0 & 0 \\ 0 & 2 & 0 \end{bmatrix} = \begin{bmatrix} 2.828 & 0 & 0 \\ 0 & 2.828 & 0 \\ 2.828 & 2.828 & 0 \end{bmatrix}$$
+$$
+QK^T = \begin{bmatrix}
+1.414 & 0 \\
+0 & 1.414 \\
+1.414 & 1.414
+\end{bmatrix} \begin{bmatrix}
+2 & 0 & 0 \\
+0 & 2 & 0
+\end{bmatrix} = \begin{bmatrix}
+2.828 & 0 & 0 \\
+0 & 2.828 & 0 \\
+2.828 & 2.828 & 0
+\end{bmatrix}
+$$
 
 **② Scale 缩放计算 $S$**
 
-$$S = \frac{QK^T}{1.414} = \begin{bmatrix} 2 & 0 & 0 \\ 0 & 2 & 0 \\ 2 & 2 & 0 \end{bmatrix}$$
+$$
+S = \frac{QK^T}{1.414} = \begin{bmatrix}
+2 & 0 & 0 \\
+0 & 2 & 0 \\
+2 & 2 & 0
+\end{bmatrix}
+$$
 
 **③ 加入 Causal Mask 矩阵 $M$**
 
 $\boxed{\text{注意：Mask 必须加在 Softmax 之前}}$
 
-$$M = \begin{bmatrix} 0 & -\infty & -\infty \\ 0 & 0 & -\infty \\ 0 & 0 & 0 \end{bmatrix}$$
+$$
+M = \begin{bmatrix}
+0 & -\infty & -\infty \\
+0 & 0 & -\infty \\
+0 & 0 & 0
+\end{bmatrix}
+$$
 
-$$S' = S + M = \begin{bmatrix} 2 & -\infty & -\infty \\ 0 & 2 & -\infty \\ 2 & 2 & 0 \end{bmatrix}$$
+$$
+S' = S + M = \begin{bmatrix}
+2 & -\infty & -\infty \\
+0 & 2 & -\infty \\
+2 & 2 & 0
+\end{bmatrix}
+$$
 
 **④ Softmax 归一化得到 $A$**
 
@@ -208,15 +266,37 @@ $$S' = S + M = \begin{bmatrix} 2 & -\infty & -\infty \\ 0 & 2 & -\infty \\ 2 & 2
 * **Row 2** : $\frac{e^0}{e^0+e^2} \approx 0.12, \frac{e^2}{e^0+e^2} \approx 0.88 \rightarrow [0.12, 0.88, 0]$
 * **Row 3** : $\frac{e^2}{\sum}, \frac{e^2}{\sum}, \frac{e^0}{\sum} \rightarrow [0.468, 0.468, 0.063]$
 
-$$A \approx \begin{bmatrix} 1 & 0 & 0 \\ 0.12 & 0.88 & 0 \\ 0.468 & 0.468 & 0.063 \end{bmatrix}$$
+$$
+A \approx \begin{bmatrix}
+1 & 0 & 0 \\
+0.12 & 0.88 & 0 \\
+0.468 & 0.468 & 0.063
+\end{bmatrix}
+$$
 
 **⑤ 计算 $A \times V$ 得到最终输出 $Z_1$**
 
-$$Z_1 = AV = \begin{bmatrix} 1 & 0 & 0 \\ 0.12 & 0.88 & 0 \\ 0.468 & 0.468 & 0.063 \end{bmatrix} \begin{bmatrix} 1 & 0 \\ 0 & 1 \\ 1 & 1 \end{bmatrix} = \begin{bmatrix} 1 & 0 \\ 0.12 & 0.88 \\ 0.531 & 0.531 \end{bmatrix}$$
+$$
+Z_1 = AV = \begin{bmatrix}
+1 & 0 & 0 \\
+0.12 & 0.88 & 0 \\
+0.468 & 0.468 & 0.063
+\end{bmatrix} \begin{bmatrix}
+1 & 0 \\
+0 & 1 \\
+1 & 1
+\end{bmatrix} = \begin{bmatrix}
+1 & 0 \\
+0.12 & 0.88 \\
+0.531 & 0.531
+\end{bmatrix}
+$$
 
 输出张量维度完美契合：
 
-$$Z_1 \in R^{L \times d_h} = R^{3 \times 2}$$
+$$
+Z_1 \in R^{L \times d_h} = R^{3 \times 2}
+$$
 
 ---
 
@@ -226,21 +306,41 @@ $$Z_1 \in R^{L \times d_h} = R^{3 \times 2}$$
 我们设定 $H=2$ 。刚才已算出 Head 1 的输出 $Z_1$ 。
 假设 Head 2 也完成独立计算得到 $Z_2$ ：
 
-$$Z_1 = \begin{bmatrix} 1 & 0 \\ 0.12 & 0.88 \\ 0.531 & 0.531 \end{bmatrix}_{3 \times 2}, \quad Z_2 = \begin{bmatrix} 0 & 1 \\ 0.5 & 0.5 \\ 0.2 & 0.8 \end{bmatrix}_{3 \times 2}$$
+$$
+Z_1 = \begin{bmatrix}
+1 & 0 \\
+0.12 & 0.88 \\
+0.531 & 0.531
+\end{bmatrix}_{3 \times 2}, \quad Z_2 = \begin{bmatrix}
+0 & 1 \\
+0.5 & 0.5 \\
+0.2 & 0.8
+\end{bmatrix}_{3 \times 2}
+$$
 
 **Concat 拼接：**
 
-$$Z = \text{Concat}(Z_1, Z_2) = \begin{bmatrix} 1 & 0 & 0 & 1 \\ 0.12 & 0.88 & 0.5 & 0.5 \\ 0.531 & 0.531 & 0.2 & 0.8 \end{bmatrix}$$
+$$
+Z = \text{Concat}(Z_1, Z_2) = \begin{bmatrix}
+1 & 0 & 0 & 1 \\
+0.12 & 0.88 & 0.5 & 0.5 \\
+0.531 & 0.531 & 0.2 & 0.8
+\end{bmatrix}
+$$
 
 拼接后维度恢复为： `[L, d] = [3, 4]` 。
 
 **输出投影 (`o_proj`)：**
 
-$$O = ZW_O$$
+$$
+O = ZW_O
+$$
 
 其中 $W_O \in R^{4 \times 4}$ 。最终注意力模块输出：
 
-$$O \in R^{3 \times 4}$$
+$$
+O \in R^{3 \times 4}
+$$
 
 ---
 
@@ -248,19 +348,27 @@ $$O \in R^{3 \times 4}$$
 
 Attention 模块输出：
 
-$$O \in R^{3 \times 4}$$
+$$
+O \in R^{3 \times 4}
+$$
 
 **残差连接：**
 
-$$Y = X + O$$
+$$
+Y = X + O
+$$
 
 （两者均为 `[3, 4]` ，直接相加。作用：保留原始信息，同时让网络更容易进行深层梯度回传。）
 
 **Norm (如 LayerNorm / RMSNorm)：**
 
-$$\mu = \frac{1}{d}\sum_{j=1}^{d}x_j, \quad \sigma^2 = \frac{1}{d}\sum_{j=1}^{d}(x_j-\mu)^2$$
+$$
+\mu = \frac{1}{d}\sum_{j=1}^{d}x_j, \quad \sigma^2 = \frac{1}{d}\sum_{j=1}^{d}(x_j-\mu)^2
+$$
 
-$$LN(x)_j = \gamma_j\frac{x_j-\mu}{\sqrt{\sigma^2+\epsilon}} + \beta_j$$
+$$
+LN(x)_j = \gamma_j\frac{x_j-\mu}{\sqrt{\sigma^2+\epsilon}} + \beta_j
+$$
 
 ---
 
@@ -268,15 +376,21 @@ $$LN(x)_j = \gamma_j\frac{x_j-\mu}{\sqrt{\sigma^2+\epsilon}} + \beta_j$$
 
 输入经过 Norm 后维度依然为：
 
-$$X_{norm} \in R^{3 \times 4}$$
+$$
+X_{norm} \in R^{3 \times 4}
+$$
 
 **经典 FFN 结构：**
 
-$$\text{FFN}(x) = W_2\text{Activation}(W_1x+b_1) + b_2$$
+$$
+\text{FFN}(x) = W_2\text{Activation}(W_1x+b_1) + b_2
+$$
 
 **现代 LLM 的 Gated MLP 结构：**
 
-$$\boxed{\text{MLP}(x) = W_{down}\left(\text{Act}(W_{gate}x)\odot W_{up}x\right)}$$
+$$
+\boxed{\text{MLP}(x) = W_{down}\left(\text{Act}(W_{gate}x)\odot W_{up}x\right)}
+$$
 
 **严格对应的数值演示：**
 基于全篇设定的 $d=4, d_{ff}=8$ 。我们抽取第一个 Token 的特征向量 $x = [1, 2, -1, 0]$ (维度 `1x4`)：
@@ -298,21 +412,33 @@ $y = W_{down}M_{inner}$ (其中 $W_{down} \in R^{8 \times 4}$ )。
 
 一个独立 Block 的数据流转历程：
 
-$$X \rightarrow \text{Norm} \rightarrow \text{Attention} \rightarrow \text{Residual} \rightarrow \text{Norm} \rightarrow \text{MLP} \rightarrow \text{Residual}$$
+$$
+X \rightarrow \text{Norm} \rightarrow \text{Attention} \rightarrow \text{Residual} \rightarrow \text{Norm} \rightarrow \text{MLP} \rightarrow \text{Residual}
+$$
 
 **公式表达：**
 
-$$H_1 = X + \text{Attention}(\text{Norm}(X))$$
+$$
+H_1 = X + \text{Attention}(\text{Norm}(X))
+$$
 
-$$H_2 = H_1 + \text{MLP}(\text{Norm}(H_1))$$
+$$
+H_2 = H_1 + \text{MLP}(\text{Norm}(H_1))
+$$
 
-$$\boxed{X_{out} = H_2}$$
+$$
+\boxed{X_{out} = H_2}
+$$
 
 **层间堆叠：**
 
-$$X_0 \rightarrow \text{Block}_1 \rightarrow X_1 \rightarrow \text{Block}_2 \rightarrow X_2 \rightarrow \cdots \rightarrow \text{Block}_N$$
+$$
+X_0 \rightarrow \text{Block}_1 \rightarrow X_1 \rightarrow \text{Block}_2 \rightarrow X_2 \rightarrow \cdots \rightarrow \text{Block}_N
+$$
 
-$$\boxed{\text{Block} \times N = \text{串行}}$$
+$$
+\boxed{\text{Block} \times N = \text{串行}}
+$$
 
 ---
 
@@ -320,15 +446,21 @@ $$\boxed{\text{Block} \times N = \text{串行}}$$
 
 经过 $N$ 层后，最终隐藏状态：
 
-$$H \in R^{L \times d} = R^{3 \times 4}$$
+$$
+H \in R^{L \times d} = R^{3 \times 4}
+$$
 
 **Logits 计算 (`lm_head`)：**
 
-$$Logits = HW_{lm}$$
+$$
+Logits = HW_{lm}
+$$
 
 其中：
 
-$$W_{lm} \in R^{d \times V} = R^{4 \times 6}$$
+$$
+W_{lm} \in R^{d \times V} = R^{4 \times 6}
+$$
 
 维度相乘： `[3, 4] × [4, 6] = [3, 6]` (包含了 3 个 Token 在词表上的概率投影)
 
@@ -339,11 +471,15 @@ $$W_{lm} \in R^{d \times V} = R^{4 \times 6}$$
 Logits = `[1.2, -0.3, 4.1, 0.8, -0.5, 1.0]`
 * **概率转化 (Softmax)：**
 
-$$P_i = \frac{e^{z_i}}{\sum_je^{z_j}}$$
+$$
+P_i = \frac{e^{z_i}}{\sum_je^{z_j}}
+$$
 
 * **选择 / 采样策略：**
 
-$$Token_{next} \sim P(Token \mid Context)$$
+$$
+Token_{next} \sim P(Token \mid Context)
+$$
 
 拿到新的 Token IDs，将其拼接入 Context，开启下一轮自回归（Auto-Regressive）生成。
 
@@ -353,27 +489,41 @@ $$Token_{next} \sim P(Token \mid Context)$$
 
 **Attention**
 
-$$\boxed{Q = XW_Q, \quad K = XW_K, \quad V = XW_V}$$
+$$
+\boxed{Q = XW_Q, \quad K = XW_K, \quad V = XW_V}
+$$
 
-$$\boxed{\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}$$
+$$
+\boxed{\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_h}} + M\right)V}
+$$
 
 **Multi-Head**
 
-$$\boxed{\text{MHA}(X) = \text{Concat}(\text{Head}_1, \dots, \text{Head}_H)W_O}$$
+$$
+\boxed{\text{MHA}(X) = \text{Concat}(\text{Head}_1, \dots, \text{Head}_H)W_O}
+$$
 
 **Residual**
 
-$$\boxed{Y = X + F(X)}$$
+$$
+\boxed{Y = X + F(X)}
+$$
 
 **MLP (Gated)**
 
-$$\boxed{\text{MLP}(x) = W_{down}\left(\text{Act}(W_{gate}x)\odot W_{up}x\right)}$$
+$$
+\boxed{\text{MLP}(x) = W_{down}\left(\text{Act}(W_{gate}x)\odot W_{up}x\right)}
+$$
 
 **输出概率**
 
-$$\boxed{Logits = HW_{lm}}$$
+$$
+\boxed{Logits = HW_{lm}}
+$$
 
-$$\boxed{P(token_i) = \frac{e^{z_i}}{\sum_je^{z_j}}}$$
+$$
+\boxed{P(token_i) = \frac{e^{z_i}}{\sum_je^{z_j}}}
+$$
 
 ---
 
@@ -425,9 +575,5 @@ $$\boxed{P(token_i) = \frac{e^{z_i}}{\sum_je^{z_j}}}$$
                     │
                     ▼
               Next Token
-
-```
-
-```
 
 ```
