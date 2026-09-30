@@ -209,6 +209,100 @@ $$\tilde{x}_m = x \odot \cos\_vec + x_{rot} \odot \sin\_vec$$
 
 **计算复杂度**：显存占用和时间复杂度均为 $O(d)$。
 
+这是一个非常经典的 **旋转位置编码 (RoPE)** 在 PyTorch/CUDA 中的底层优化实现。
+
+它通过将 $O(d^2)$ 的稀疏矩阵乘法，转化为 $O(d)$ 的向量逐元素相乘（Hadamard积，符号 $\odot$ ），极大地节省了显存和算力。
+
+下面为您提供一个直观的 **数值演算示例**：
+
+---
+
+### 1. 设定初始参数
+
+假设我们要对一个词元 (Token) 的特征向量应用旋转位置编码。
+
+* **向量维度**： $d = 4$
+* **输入向量**： $x = [1, 2, 3, 4]$
+* **当前 Token 所在位置**： $m = 1$
+* **旋转角度**：为了计算清晰，我们设定：
+* 第 0 组二维平面的旋转角 $m\theta_0 = 90^\circ$ （即 $\pi/2$ ）
+* 第 1 组二维平面的旋转角 $m\theta_1 = 180^\circ$ （即 $\pi$ ）
+
+
+
+---
+
+### 2. 构建所需向量 ( $O(d)$ 复杂度)
+
+在代码实现中，我们不需要构建 $4 \times 4$ 的对角块矩阵，而是直接准备 4 个长度为 $d$ 的一维向量：
+
+**① 原始向量 $x$**：
+
+
+$$x = [1, 2, 3, 4]$$
+
+**② 错位取反向量 $x_{\text{rot}}$**：
+按照公式 $[-x_1, x_0, -x_3, x_2]$ 规则翻转并加负号：
+
+
+$$x_{\text{rot}} = [-2, 1, -4, 3]$$
+
+**③ 余弦向量 $\text{cos\_vec}$**：
+每个角度重复两次： $[\cos(90^\circ), \cos(90^\circ), \cos(180^\circ), \cos(180^\circ)]$
+
+
+$$\text{cos\_vec} = [0, 0, -1, -1]$$
+
+**④ 正弦向量 $\text{sin\_vec}$**：
+每个角度重复两次： $[\sin(90^\circ), \sin(90^\circ), \sin(180^\circ), \sin(180^\circ)]$
+
+
+$$\text{sin\_vec} = [1, 1, 0, 0]$$
+
+---
+
+### 3. 执行向量化计算 (Hadamard 积 $\odot$ )
+
+现在严格套用您提供的代码级公式： $\tilde{x}_m = x \odot \text{cos\_vec} + x_{\text{rot}} \odot \text{sin\_vec}$
+
+**步骤 A：计算 $x \odot \text{cos\_vec}$**
+对应位置的元素直接相乘：
+
+
+$$\begin{bmatrix} 1 \\ 2 \\ 3 \\ 4 \end{bmatrix} \odot \begin{bmatrix} 0 \\ 0 \\ -1 \\ -1 \end{bmatrix} = \begin{bmatrix} 0 \\ 0 \\ -3 \\ -4 \end{bmatrix}$$
+
+**步骤 B：计算 $x_{\text{rot}} \odot \text{sin\_vec}$**
+对应位置的元素直接相乘：
+
+
+$$\begin{bmatrix} -2 \\ 1 \\ -4 \\ 3 \end{bmatrix} \odot \begin{bmatrix} 1 \\ 1 \\ 0 \\ 0 \end{bmatrix} = \begin{bmatrix} -2 \\ 1 \\ 0 \\ 0 \end{bmatrix}$$
+
+**步骤 C：两者相加得到最终结果 $\tilde{x}_m$**
+
+
+$$\tilde{x}_m = \begin{bmatrix} 0 \\ 0 \\ -3 \\ -4 \end{bmatrix} + \begin{bmatrix} -2 \\ 1 \\ 0 \\ 0 \end{bmatrix} = \begin{bmatrix} -2 \\ 1 \\ -3 \\ -4 \end{bmatrix}$$
+
+---
+
+### 4. 验证：这与传统矩阵乘法结果一致吗？
+
+我们用传统的 $2 \times 2$ 旋转矩阵公式分别验证这两个二维对：
+
+**第一对 $(x_0, x_1) = (1, 2)$，旋转 $90^\circ$：**
+
+
+$$\begin{bmatrix} \cos 90^\circ & -\sin 90^\circ \\ \sin 90^\circ & \cos 90^\circ \end{bmatrix} \begin{bmatrix} 1 \\ 2 \end{bmatrix} = \begin{bmatrix} 0 & -1 \\ 1 & 0 \end{bmatrix} \begin{bmatrix} 1 \\ 2 \end{bmatrix} = \begin{bmatrix} -2 \\ 1 \end{bmatrix}$$
+
+**第二对 $(x_2, x_3) = (3, 4)$，旋转 $180^\circ$：**
+
+
+$$\begin{bmatrix} \cos 180^\circ & -\sin 180^\circ \\ \sin 180^\circ & \cos 180^\circ \end{bmatrix} \begin{bmatrix} 3 \\ 4 \end{bmatrix} = \begin{bmatrix} -1 & 0 \\ 0 & -1 \end{bmatrix} \begin{bmatrix} 3 \\ 4 \end{bmatrix} = \begin{bmatrix} -3 \\ -4 \end{bmatrix}$$
+
+拼接起来得到的结果正是 $[-2, 1, -3, -4]$ 。
+
+**结论：**
+通过 $x \odot \text{cos\_vec} + x_{\text{rot}} \odot \text{sin\_vec}$ 这种巧妙的排列组合，我们在数学结果上完美等价于 $O(d^2)$ 的稀疏矩阵乘法，但在显卡里完全变成了一维数组的对齐乘加运算 (FMA，Fused Multiply-Add)，实现了 $O(d)$ 的极速计算。
+
 ---
 
 ## 5. 关键特性总结
