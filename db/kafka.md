@@ -445,7 +445,60 @@ HW = min(1000, 980, 950) = 950
 - **消费者隔离级别**：
   - `READ_UNCOMMITTED`（默认）：可读取所有消息（包括未提交的）。
   - `READ_COMMITTED`：仅读取已提交事务消息和非事务消息，过滤未提交及回滚消息。
+```
+// ================= 1. 初始化阶段 =================
+Configure Producer:
+    - Set bootstrap.servers
+    - Set transactional.id = "my-unique-transaction-id"  // 标识生产者身份
+    - Set enable.idempotence = true                    // 开启幂等性
 
+Configure Consumer:
+    - Set bootstrap.servers
+    - Set group.id = "my-consumer-group"
+    - Set enable.auto.commit = false                   // 关闭自动提交位移
+    - Set isolation.level = "read_committed"           // 核心：只读已提交事务消息
+
+Initialize Producer:
+    producer.initTransactions()                        // 向 Coordinator 注册，获取 PID 和 Epoch
+
+Subscribe Consumer:
+    consumer.subscribe("input-topic")
+
+// ================= 2. 循环处理阶段 ("读-处理-写" 原子循环) =================
+While True:
+    // 1. 拉取消息
+    records = consumer.poll(timeout)
+    If records is empty:
+        Continue
+
+    // 2. 开启事务
+    producer.beginTransaction()
+    
+    Try:
+        Map<TopicPartition, OffsetAndMetadata> currentOffsets = new Map()
+
+        For each record in records:
+            // 业务处理
+            processedData = Process(record.value())
+            
+            // 生产：将处理后的消息写入目标主题
+            producer.send("output-topic", key=record.key, value=processedData)
+            
+            // 收集当前消费记录的位移
+            currentOffsets.put(record.partition, record.offset + 1)
+
+        // 3. 关联消费位移：将消费者的偏移量一并纳入事务管理
+        producer.sendOffsetsToTransaction(currentOffsets, consumer.groupMetadata())
+
+        // 4. 提交事务：写入 COMMIT Marker，消费者此时可见
+        producer.commitTransaction()
+        Print("Transaction Committed Successfully")
+
+    Catch Exception (e):
+        // 5. 回滚事务：写入 ABORT Marker，生产的数据对消费者隐形，位移不提交
+        producer.abortTransaction()
+        Print("Transaction Aborted due to: " + e.message)
+```
 ### 5.7 消息投递语义总结
 
 | 语义 | 配置组合 | 特点 |
