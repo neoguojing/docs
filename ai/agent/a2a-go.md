@@ -2,6 +2,8 @@
 
 本文描述 SDK 的主要模块、依赖边界和请求执行路径。它面向阅读代码、实现自定义 Agent 或扩展后端的开发者；具体并发语义以 [并发模型](CONCURRENCY_MODEL.md) 和当前实现为准。
 
+建议按这个顺序阅读：先看[部署视图](#部署视图)确定 SDK 在各进程中的位置，再看[请求数据流](#请求数据流)，然后查[核心概念](#核心概念)和[外部 Agent 适配](#外部-agent-适配claude-code-示例)。只想快速接入时，可直接跳到 AgentExecutor 和 Claude Code 小节。
+
 ## 已实现能力
 
 | 能力域 | 当前实现 |
@@ -17,26 +19,11 @@
 
 该 SDK 提供的是 A2A 协议客户端/服务端构件，不是 Agent 模型运行时，也不内置生产级数据库、消息代理、身份提供方或授权策略。
 
-## 设计边界
+## 架构总览
 
-SDK 的核心边界是协议领域模型与传输绑定分离：`a2a` 定义客户端、服务端共同使用的协议类型；传输层将 REST、JSON-RPC 或 gRPC 的线格式转换为这些类型；服务端通过 `AgentExecutor` 接入应用逻辑，并负责任务状态、持久化和事件分发。
+记住三层就能读懂大部分代码：`a2a` 是客户端和服务端共用的数据模型；传输绑定负责把 REST、JSON-RPC、gRPC 转换成这些模型；`a2asrv` 负责任务执行与状态，应用通过 `AgentExecutor` 提供 Agent 行为。存储和队列是可替换接口，不与某一种数据库或网络协议绑定。
 
-```mermaid
-flowchart LR
-    Client[a2aclient.Client] --> ClientTransport[客户端 Transport]
-    ClientTransport <-->|A2A 协议| ServerTransport[REST / JSON-RPC / gRPC]
-    ServerTransport --> RequestHandler[a2asrv.RequestHandler]
-    RequestHandler --> Manager[执行管理与任务查询]
-    Manager --> Pipeline[事件执行与处理管线]
-    Pipeline --> Agent[应用 AgentExecutor]
-    Pipeline --> Store[TaskStore]
-    Pipeline --> EventQueue[事件分发]
-    RequestHandler --> CrossCutting[拦截器 / 上下文 / 扩展]
-    ClientTransport --> Core[a2a 核心类型]
-    Pipeline --> Core
-```
-
-## 部署架构：一个 Client Agent，多个 Server Agent
+## 部署视图：一个 Client Agent，多个 Server Agent
 
 `a2a-go` 的 client/server 不是必须单独运行的守护进程，而是嵌入应用进程的 Go SDK。Client Agent 在自己的进程里使用 `a2aclient.Factory` 和一个或多个 `a2aclient.Client`；每个 Server Agent 在自己的服务进程里使用 `a2asrv.NewHandler`、AgentExecutor 和一种或多种服务端传输绑定。双方通过 Agent Card 声明的 A2A 接口直接通信。
 
@@ -80,7 +67,7 @@ flowchart LR
 
 每个 Server Agent 可单进程运行，也可独立启用 `a2asrv` 集群模式，由前端实例接收 A2A 请求、工作实例执行 Agent，并共享其 TaskStore/EventQueue/WorkQueue。客户端仍连接该 Server Agent 对外公布的 A2A 接口，不需要感知其内部部署形态。
 
-## 数据流：发现、调用、事件返回
+## 请求数据流：发现、调用、事件返回
 
 下面展示 Client Agent 依次调用两个独立 Server Agent 的典型路径。实际应用可只调用其中一个，也可自行并发调用；Task 和结果默认不会在两个服务端之间自动复制。
 
@@ -125,7 +112,7 @@ sequenceDiagram
 
 若使用非流式 `SendMessage`，客户端收到的是最终 Message 或 Task；流式调用/任务订阅则逐个收到事件。服务端先应用并保存事件，再向订阅者广播，因而实时事件流与可查询 Task 状态沿用同一更新结果。REST 和 JSON-RPC 的事件在线上使用 SSE，gRPC 使用 server-streaming；进入 SDK 后均转换为 `a2a.Event`。
 
-## 模块地图
+## 模块职责
 
 | 模块 | 职责与边界 |
 | --- | --- |
@@ -144,7 +131,7 @@ sequenceDiagram
 
 服务端可替换的持久化/分发接口位于 `a2asrv` 下，而不是 `internal`：`taskstore.Store` 管理任务状态，`eventqueue.Manager` 分发已处理事件，`workqueue.Queue` 在集群模式下分派执行工作。默认单进程模式使用内存任务存储和内存事件队列。
 
-## 核心概念与实现
+## 核心概念
 
 ### 先区分请求、执行和任务
 
@@ -186,7 +173,7 @@ handler := a2asrv.NewHandler(executor)
 
 新 Task 的首个持久化事件应是 Task（常用 `NewSubmittedTask`，它同时建立 TaskID、ContextID 和初始历史）；已有 Task 的用户消息在调用 Agent 前已由 SDK 追加到历史。Agent 应使用 `ExecutorContext` 构造关联同一任务的事件，并在 `yield` 返回 false 时停止产出。发出事件及它引用的 Part、Metadata 等数据后，不得再修改这些对象，因为存储和订阅处理会并发读取它们。
 
-### 接入外部 Agent Runtime：以 Claude Code 为例
+### 外部 Agent 适配（Claude Code 示例）
 
 仓库没有内置 Claude Code 连接器；`a2asrv` 也不会自动启动 Claude Code。集成方式是在你的 Go Server Agent 应用中实现一个 `AgentExecutor` 适配器：它接收 A2A 的 `ExecutorContext`，调用外部运行时，再把运行时输出转换为 `a2a.Event`。外部运行时可以是本机 CLI 子进程、独立的内部服务，或应用已使用的 Agent SDK；A2A 层只依赖适配器，不依赖 Claude Code 的具体接口。
 
@@ -307,62 +294,16 @@ func (e *ExternalAgent) Execute(
 
 核心定义见 [`a2a/core.go`](../../a2a/core.go)、[`a2asrv/agentexec.go`](../../a2asrv/agentexec.go)、[`a2asrv/exectx.go`](../../a2asrv/exectx.go)、[`a2asrv/taskstore/api.go`](../../a2asrv/taskstore/api.go) 和 [`internal/taskupdate/manager.go`](../../internal/taskupdate/manager.go)。
 
-## 服务端请求路径
+## 单进程与集群模式
 
-### 单进程模式
+两种模式使用同一套 `AgentExecutor` 和事件处理逻辑，区别在于工作在哪里执行、状态如何共享：
 
-```mermaid
-sequenceDiagram
-    participant C as 客户端
-    participant T as REST/JSON-RPC/gRPC 绑定
-    participant H as RequestHandler
-    participant M as taskexec 本地管理器
-    participant E as AgentExecutor
-    participant P as 事件处理器
-    participant S as taskstore.Store
-    participant Q as eventqueue
+| 模式 | 请求处理 | Agent 执行 | 必需后端 |
+| --- | --- | --- | --- |
+| 单进程（默认） | 当前进程中的 RequestHandler | 当前进程的本地执行管理器 | 默认内存 TaskStore、内存 EventQueue；不需要 WorkQueue |
+| 集群（`WithClusterMode`） | 前端实例接收请求并订阅事件 | WorkQueue 将工作分配给 worker | 具备共享/跨实例语义的 TaskStore、EventQueue 和 WorkQueue |
 
-    C->>T: SendMessage / SendStreamingMessage
-    T->>H: 转换为 a2a 请求
-    H->>M: 校验并启动执行
-    M->>E: 创建执行上下文并调用 Execute
-    E-->>P: 产出 Task / Message / 状态或产物事件
-    P->>S: 校验、物化并持久化任务更新
-    P->>Q: 广播已成功处理的事件
-    Q-->>H: 向请求订阅者交付事件
-    H-->>T: 结果或事件流
-    T-->>C: 线格式响应 / SSE 流
-```
-
-`a2asrv.NewHandler` 创建协议无关处理器。传输绑定（如 `NewRESTHandler`、`NewJSONRPCHandler`、`a2agrpc/v1.NewHandler`）只负责把协议调用映射到 `RequestHandler`，不承载 Agent 业务逻辑。`a2asrv.InterceptedHandler` 包装请求处理器，负责调用拦截器、请求上下文、扩展和协议版本检查等横切行为。服务端拦截器的 Before 按注册顺序执行，After 按相反顺序执行。
-
-执行过程中，Agent 通过 `AgentExecutor.Execute` 返回事件序列，而不是直接写 HTTP/gRPC 响应。SDK 将事件经内部管道交给处理器：先应用任务更新并写入任务存储，再将成功处理的事件广播给订阅者；已配置时还可触发推送通知。非流式调用返回最终 Message 或 Task，流式调用和任务订阅逐项交付事件。正常完成、等待用户输入或终态事件会结束当前执行，精确取消和清理行为见 [并发模型](CONCURRENCY_MODEL.md)。
-
-传输层决定线上流的表示：REST 和 JSON-RPC 通过 SSE 传输事件，gRPC 通过 server-streaming RPC 传输事件；这不会改变 AgentExecutor 使用的核心事件类型。
-
-`a2aevent` 描述事件如何改变 Task：用户 Message 进入历史，Artifact 更新可追加或替换产物，状态事件更新任务状态。TaskStore 的版本号用于乐观并发控制，避免并发执行/取消覆盖彼此的状态。
-
-### 集群模式
-
-```mermaid
-flowchart LR
-    Client[客户端] --> Front[前端实例\n传输绑定 + RequestHandler]
-    Front -->|执行/取消 Payload| Work[workqueue.Queue]
-    Work --> Worker[后端工作处理器]
-    Worker --> Executor[AgentExecutor]
-    Executor --> Process[事件处理与任务更新]
-    Process --> Store[(共享 TaskStore)]
-    Process --> EventWriter[eventqueue Writer]
-    EventWriter --> EventReader[eventqueue Reader]
-    EventReader --> Front
-    Front --> Client
-```
-
-通过 `WithClusterMode` 注入共享 `TaskStore`、事件队列和工作队列后，前端负责接收请求、提交工作并订阅事件；工作队列处理器在任一后端实例执行 Agent。单进程与集群模式复用相同的 Agent、事件处理和任务更新逻辑，差别主要在执行调度和跨进程事件传输。跨节点运行要求这些接口背后的实现具备相应的共享/分发能力；SDK 不内置特定数据库或消息代理。
-
-集群模式是可选能力。参考实现见 [`examples/clustermode`](../../examples/clustermode/)：任务状态、工作负载和事件队列由 MySQL 示例适配器提供。工作队列可自行采用拉取或推送式实现；长任务可借助队列心跳延长消息租约。
-
-部署侧必须保证 TaskStore 的共享状态和并发版本语义、EventQueue 的跨实例读写，以及 WorkQueue 的确认/重试等语义满足所选实现要求。仅注入接口并不会自动让内存实现具备跨进程能力。
+集群模式是可选能力。参考实现见 [`examples/clustermode`](../../examples/clustermode/)，使用 MySQL 示例适配器演示任务存储和队列。仅注入接口不会使内存实现自动具备跨进程能力；部署方还需保证版本冲突检测、事件分发、工作确认/重试等语义。并发、取消和心跳细节见[并发模型](CONCURRENCY_MODEL.md)。
 
 ## 客户端连接路径
 
