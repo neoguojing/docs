@@ -26,10 +26,10 @@
 | **部件 (Part)** | 最小内容单位 | 分为 `TextPart` (文本), `FilePart` (文件), `DataPart` (结构化数据)。 |
 | **工件 (Artifact)** | 任务产出物 | Agent 生成的最终或中间结果。 |
 
-### 2.2 JSON 示例 (简版)
-- **Agent Card**: 包含 `name`, `supportedInterfaces`, `capabilities`, `security_schemes`, `skills`。
-- **Task**: 包含 `id`, `contextId`, `status` (state, message), `artifacts`。
-- **Message**: 包含 `messageId`, `taskId`, `role`, `parts` (text/data)。
+### 2.2 数据结构概览
+- **Agent Card**: 关键字段包括 `name`, `supportedInterfaces`, `capabilities`, `security_schemes`, `skills`。
+- **Task**: 关键字段包括 `id`, `contextId`, `status` (state, message), `artifacts`。
+- **Message**: 关键字段包括 `messageId`, `taskId`, `role`, `parts` (text/data)。
 
 ---
 
