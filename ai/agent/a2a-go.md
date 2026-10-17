@@ -186,6 +186,72 @@ handler := a2asrv.NewHandler(executor)
 
 新 Task 的首个持久化事件应是 Task（常用 `NewSubmittedTask`，它同时建立 TaskID、ContextID 和初始历史）；已有 Task 的用户消息在调用 Agent 前已由 SDK 追加到历史。Agent 应使用 `ExecutorContext` 构造关联同一任务的事件，并在 `yield` 返回 false 时停止产出。发出事件及它引用的 Part、Metadata 等数据后，不得再修改这些对象，因为存储和订阅处理会并发读取它们。
 
+### 接入外部 Agent Runtime：以 Claude Code 为例
+
+仓库没有内置 Claude Code 连接器；`a2asrv` 也不会自动启动 Claude Code。集成方式是在你的 Go Server Agent 应用中实现一个 `AgentExecutor` 适配器：它接收 A2A 的 `ExecutorContext`，调用外部运行时，再把运行时输出转换为 `a2a.Event`。外部运行时可以是本机 CLI 子进程、独立的内部服务，或应用已使用的 Agent SDK；A2A 层只依赖适配器，不依赖 Claude Code 的具体接口。
+
+| A2A 输入/输出 | 适配器要做的映射 |
+| --- | --- |
+| `ExecutorContext.Message` | 将本次用户输入转换为 runtime 的 prompt/request；不要把不可信输入拼接成 shell 命令字符串。 |
+| `StoredTask.History` | 需要多轮上下文时，转换成 runtime 接受的对话历史；如果 runtime 自己维护 session，则查找对应的 runtime session。 |
+| `TaskID` / `ContextID` | 作为适配器侧关联键。它们不是 Claude Code session ID；若 runtime 返回独立 session ID，应由应用持久化映射。 |
+| runtime 增量输出 | 需要流式展示时，转换为一个 Artifact 的多个 `TaskArtifactUpdateEvent`；若只需最终答复，可返回一条 Agent `Message`。 |
+| runtime 正常结束/等待输入 | 正常结束时发 Completed 状态；若任务需要用户补充信息，发 InputRequired 状态并在后续请求中恢复任务。 |
+| runtime 错误/取消 | 执行已开始后通常发 Failed 状态事件；实现 `Cancel` 将取消信号传给子进程或远程 runtime，并发出 Canceled 状态。 |
+
+典型执行步骤如下：
+
+1. 对新任务发出 `NewSubmittedTask`，再发 Working 状态；续跑时使用 `ExecutorContext.StoredTask` 和本次 Message 组装 runtime 输入。
+2. 通过 runner 调用 runtime。CLI 方式通常使用 Go 的 `os/exec` 启动非交互模式，并读取其流式输出；服务方式则通过 HTTP/gRPC 或供应方 SDK 调用。具体参数和结构化输出格式取决于 runtime 版本，由适配器负责解析。
+3. 将可向调用方公开的增量结果映射为 Artifact 更新；不要把 runtime 的调试日志、工具凭据或不应公开的内部输出直接透传。
+4. 正常结束时发 Completed；错误时按任务阶段返回错误或发 Failed；用户需要补充信息时发 InputRequired。事件必须带有由 `ExecutorContext` 生成的同一 Task/Context 标识。
+5. 在 `Cancel` 中找到对应的运行实例并停止 CLI/远程任务。若使用 `exec.CommandContext`，应把 SDK 提供的执行 context 传给命令，同时仍需实现 `AgentExecutor.Cancel`，让 A2A 取消能够正确终止外部工作。
+
+以下仅展示适配层的伪代码结构，`RuntimeRunner` 和 `RuntimeUpdate` 由应用实现，不是本仓库提供的类型：
+
+```go
+func (e *ExternalAgent) Execute(
+    ctx context.Context,
+    execCtx *a2asrv.ExecutorContext,
+) iter.Seq2[a2a.Event, error] {
+    return func(yield func(a2a.Event, error) bool) {
+        if execCtx.StoredTask == nil {
+            if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+                return
+            }
+        }
+        if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
+            return
+        }
+
+        var artifactID a2a.ArtifactID
+        for update, err := range e.runner.Run(ctx, execCtx) {
+            if err != nil {
+                yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed, nil), nil)
+                return
+            }
+            if update.Text != "" {
+                var event *a2a.TaskArtifactUpdateEvent
+                if artifactID == "" {
+                    event = a2a.NewArtifactEvent(execCtx, a2a.NewTextPart(update.Text))
+                    artifactID = event.Artifact.ID
+                } else {
+                    event = a2a.NewArtifactUpdateEvent(execCtx, artifactID, a2a.NewTextPart(update.Text))
+                }
+                if !yield(event, nil) {
+                    return
+                }
+            }
+        }
+        yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
+    }
+}
+```
+
+对于需要跨轮恢复的 Claude Code 会话，不要假设 A2A TaskStore 会保存 CLI 的私有 session：可以用独立应用存储按 TaskID 记录 runtime session ID，或从 Task history 重建输入。进程内 map 只适用于单进程生命周期；集群模式下 Execute 和 Cancel 可能落到不同 worker，session 映射与取消控制必须通过共享存储/队列或 runtime 自身的远程接口协调。
+
+还要分别处理两类身份：A2A 调用用户/租户与运行 Claude Code 的操作系统账号、工作目录和工具权限。部署时应使用受限账号和隔离工作目录，显式配置可用工具/权限，并避免让一个用户的 runtime session、文件或凭据被另一个 Task 复用。A2A 的认证信息不会自动转化为 Claude Code 的登录态或授权策略。
+
 ### ExecutorContext：传给 Agent 的执行输入
 
 `ExecutorContext` 不是 Go 的 `context.Context`，而是描述这次 A2A 执行的只读业务上下文。它包含触发执行的 Message、TaskID、ContextID、完整的已有 Task（若有）、请求 Metadata、User、Tenant 和 ServiceParams。实现 Agent 时通常用它读取历史/用户信息，并把它作为 `a2a.NewStatusUpdateEvent`、`a2a.NewArtifactEvent` 等构造函数的 `TaskInfoProvider`，保证输出事件属于正确的 Task/Context。
