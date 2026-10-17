@@ -470,12 +470,28 @@ Extensions 用于在不破坏核心协议的前提下，增加新数据、新方
 
 ---
 
-## 10. 总结：A2A vs 其他协议
+## 11. 实现指南 (Implementation Guide)
 
-| 特性 | MCP (Model Context Protocol) | A2A (Agent2Agent) |
+对于计划实现 A2A 协议的开发者，以下是确保兼容性和鲁棒性的核心指南。
+
+### 11.1 A2A 服务器实现要点 (Server-side)
+如果您正在构建一个 A2A 服务器（智能体提供方），请确保遵循以下原则：
+*   **任务状态的持久化**：`Task` 状态必须持久化。由于 A2A 支持异步 LRO (长时运行操作)，服务器必须能够记录 `task_id` 的状态并在重启后恢复。
+*   **SSE 流的健壮性**：实现 `SubscribeToTask` 时，必须处理客户端断线重连。建议在 `TaskStatusUpdateEvent` 中包含当前的序列号或时间戳，以便客户端同步缺失的事件。
+*   **能力声明的真实性**：`Agent Card` 中的 `skills` 描述应尽量精准。因为对方 Agent 的 LLM 将直接依赖这些文本进行任务规划，描述不准会导致大量的 `TASK_STATE_REJECTED`。
+*   **资源隔离 (Multi-tenancy)**：正确实现 `tenant` 路由逻辑，确保不同租户之间的 `context_id` 和 `task_id` 绝对隔离。
+
+### 11.2 A2A 客户端实现要点 (Client-side)
+如果您正在构建 A2A 客户端（调度者或消费方）：
+*   **智能发现链路**：实现一个自动化的发现链：`Well-known URI` $\rightarrow$ `Registry` $\rightarrow$ `Fallback Config`。
+*   **认证生命周期管理**：建立 Token 自动刷新机制。当收到 `TASK_STATE_AUTH_REQUIRED` 时，应能无缝触发认证流并重新提交请求。
+*   **工件版本管理**：协议规定服务器不跟踪 Artifact 突变。客户端应建立本地映射表：`artifact-name` $\rightarrow$ `[version1_id, version2_id, ...]`，始终向用户展示最新版本。
+*   **优雅降级**：如果服务器不支持 `streaming` (在 Agent Card 中声明)，客户端应自动将 `SendStreamingMessage` 降级为对 `GetTask` 的定时轮询。
+
+### 11.3 常见陷阱与避坑指南 (Pitfalls)
+| 陷阱 | 现象 | 解决方案 |
 | :--- | :--- | :--- |
-| **核心目标** | 连接模型 $\leftrightarrow$ 数据/工具 | 连接智能体 $\leftrightarrow$ 智能体 |
-| **角色关系** | 主从关系 (Model $\rightarrow$ Tool) | 对等关系 (Peer $\rightarrow$ Peer) |
-| **交互复杂度** | 简单调用 $\rightarrow$ 返回结果 | 协商 $\rightarrow$ 任务创建 $\rightarrow$ 状态跟踪 $\rightarrow$ 交付 |
-| **透明度** | 通常需要定义明确的工具 Schema | 保持内部实现不透明 (Opaque) |
-| **适用场景** | 给 LLM 增加一个数据库查询能力 | 让“财务 Agent”与“法务 Agent”协作审计 |
+| **Task 重复创建** | 同一个请求因超时发送两次，导致产生两个 Task | 客户端在请求中提供 `idempotency_key` (通过 metadata)，服务器据此去重。 |
+| **上下文丢失** | 忘记传递 `context_id` 导致 Agent 忘记之前的对话 | 强制在所有 `SendMessage` 请求中携带当前的 `context_id`。 |
+| **死锁中断** | Agent 请求 `INPUT_REQUIRED` 但客户端未响应 | 为 Task 设置超时时间，超时后自动转为 `TASK_STATE_FAILED` 并通知用户。 |
+| **大文件阻塞** | 在 `Part.raw` 中发送超大二进制文件导致内存溢出 | 强制使用 `Part.url` 引用外部存储（如 S3），仅在 `raw` 中发送小片段。 |
