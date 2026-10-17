@@ -153,13 +153,18 @@ graph TD
         UserApp[用户 App / Web] --> Orchestrator[Orchestrator Agent / 调度智能体]
     end
 
+    subgraph "Identity & Governance (身份与治理中心)"
+        AuthSrv[Auth Server / IdP] -- "发放 Token / 验证身份" --> Orchestrator
+        AuthSrv -- "验证凭证" --> AgentA
+        AuthSrv -- "验证凭证" --> AgentB
+        AuthSrv -- "验证凭证" --> AgentC
+        Discovery[Agent Registry / 发现注册表] -- "能力清单 / Endpoint" --> Orchestrator
+    end
+
     subgraph "Agent Network (智能体网络)"
-        Orchestrator --> AuthSrv[Auth Server / 认证中心]
-        Orchestrator --> Discovery[Registry / 发现注册表]
-        
-        Orchestrator --> AgentA[Agent A: 财务审计]
-        Orchestrator --> AgentB[Agent B: 法务合规]
-        Orchestrator --> AgentC[Agent C: 数据分析]
+        Orchestrator -- "A2A Protocol (with Token)" --> AgentA[Agent A: 财务审计]
+        Orchestrator -- "A2A Protocol (with Token)" --> AgentB[Agent B: 法务合规]
+        Orchestrator -- "A2A Protocol (with Token)" --> AgentC[Agent C: 数据分析]
         
         AgentA <--> AgentB
         AgentB <--> AgentC
@@ -175,13 +180,13 @@ graph TD
 ### 3.2 场景模拟：企业自动化审计
 **场景描述**：用户要求“审计 Q3 季度的差旅费用并检查合规性”。
 
-1.  **入口层**：`User App` 向 `Orchestrator Agent` 发起请求。
+1.  **身份获取**：`User App` 引导用户登录 $\rightarrow$ `Auth Server` 发放包含用户身份的 JWT Token $\rightarrow$ 交给 `Orchestrator`。
 2.  **发现与规划**：`Orchestrator` 查询 `Discovery Registry`，发现 `Agent A (财务)` 和 `Agent B (法务)` 具备相关 Skill。
 3.  **分发任务**：
-    *   `Orchestrator` $\xrightarrow{A2A}$ `Agent A`: 创建 Task-1 (提取所有费用单)。
+    *   `Orchestrator` $\xrightarrow{A2A}$ `Agent A`: 创建 Task-1 (提取所有费用单)，携带用户委托 Token。
     *   `Agent A` $\rightarrow$ `Artifact`: 生成 `expenses.csv`。
 4.  **跨 Agent 协作**：
-    *   `Orchestrator` $\xrightarrow{A2A}$ `Agent B`: 创建 Task-2 (审核 `expenses.csv` 的合规性)。
+    *   `Orchestrator` $\xrightarrow{A2A}$ `Agent B`: 创建 Task-2 (审核 `expenses.csv` 的合规性)，传递用户 Token 确保审计记录可溯源。
     *   `Agent B` 接收到 Task-2，通过 `Artifact` 引用读取 `expenses.csv`。
 5.  **汇总交付**：`Agent B` 生成 `audit_report.pdf` $\rightarrow$ `Orchestrator` $\rightarrow$ `User App`。
 
