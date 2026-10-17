@@ -1,6 +1,6 @@
 # Go 并发原语与 Linux 锁机制深度解析（图解增强版）
 
-> 核心导读：Go 的锁并非单一机制，而是**硬件原子指令**、**Linux 内核 Futex** 与 **Go 调度器（GMP）** 的精密协作。本文用大量 ASCII 图例与示例代码，把「全局哈希表 + Treap」「Futex」「runtime.mutex」「用户态 sync.Mutex」「读写锁 sync.RWMutex」五个核心机制从结构、原理到运行流程逐层拆开讲解。
+> 核心导读：Go 的锁并非单一机制，而是**硬件原子指令**、**Linux 内核 Futex** 与 **Go 调度器（GMP）** 的精密协作。本文用大量 ASCII 图例与示例代码，把「全局哈希表 + Treap」「Futex」「runtime.mutex」「用户态 sync.Mutex」「读写锁 sync.RWMutex」「死锁检测机制」六个核心机制从结构、原理到运行流程逐层拆开讲解。
 
 ---
 
@@ -467,8 +467,60 @@ const rwmutexMaxReaders = 1 << 30
 
 ### 5.4 Write Lock / Unlock 写锁运行流程与防饥饿机制简述
 
-* **Lock**：先抢内部 `w` Mutex 确保写写互斥，再将 `readerCount` 减去 $2^{30}$ 形成「拦截网」（阻止新读者）；若发现有旧读者（`readerWait != 0`），则在 `writerSem` 上休眠。
+* **Lock**：先抢内部 `w` Mutex 确保写写互斥，再将 `readerCount` 减去 $2^{30}$ 形成「拦截网」（阻止新读者）；若发现有旧读者（`readerWait != 0`），则在 `writerSem`上休眠。
 * **Unlock**：将 `readerCount` 加上 $2^{30}$ 恢复正数，循环唤醒所有因为写者而被阻塞的读者（通过 `readerSem`），最后释放内部 `w` Mutex 允许下一个写者竞争。
+
+---
+
+## 第六部分 Go 运行时的死锁检测机制 (`checkdead`)
+
+### 6.1 触发场景与核心判定原则
+
+当 Go 运行时无法继续调度任何 Goroutine 时，就会触发死锁检测函数 `checkdead`。它通常在特定生命周期或底层管理线程退出/挂起时触发：
+
+* **触发场景**：`mexit`（线程退出）、`templateThread`、`incidlelocked`、`sysmon`（系统监控）、`mput` 等。
+
+### 6.2 `checkdead` 核心执行流程解析
+
+```text
+                     checkdead() 被触发
+                             |
+                   1. 加调度器锁 sched.lock
+                   2. 若正在发生 panic (panicking > 0) -> 直接退出
+                             |
+                             v
+         计算当前活跃运行的 M 数量 (run):
+         run = (sched.mnext - sched.nmfreed) - sched.nmidle - sched.nmidlelocked - sched.nmsys
+                             |
+            run > 0 ? (Linux 下有活跃运行的 M 线程)
+             ├── 是 --> 非死锁，释放锁并返回
+             └── 否 --> M 数量为 0，开始全面盘点所有 Goroutine (遍历 allg)
+                             |
+                             v
+           遍历全局所有的 Goroutine (allg):
+           ├── 忽略系统级内部 G
+           ├── 检查 G 的状态：
+           │     ├── 若为 _Gwaiting 或 _Gpreempted (说明在等待或被抢占) -> grunning++
+           │     └── 若为 _Grunnable、_Grunning、_Gsyscall (活跃态) 
+           │           └── 抛出异常：M 数量为 0 但存在活跃状态的 G (状态不一致)
+                             |
+         所有 G 检查完毕后，判断 grunning 是否为 0？
+          ├── 若 grunning == 0 (没有任何等待或存活的 G)
+          │     └── 抛出致命错误：no goroutines running - deadlock! (进程退出)
+          └── 若 grunning != 0 (存在正在睡眠等待的 G)
+                |
+                v
+       检查定时器与可唤醒源：
+       1. 调用 timeSleepUntil() 获取最近超时的 timer 及其绑定的 P
+       2. 从 midle 列表获取空闲 M，绑定 M 和 P，并尝试唤醒它 -> 若能被唤醒则非死锁，返回
+       3. 遍历 allp：若任何一个 _p_.timers 的定时器个数大于 0 -> 有唤醒源，返回非死锁
+                |
+                v
+       若所有检查均未通过（所有的 G 都在 sleep 且没有任何定时器/事件源可唤醒）：
+       - 设置 g.m.throwing = -1 （禁止导出冗余栈信息）
+       - 抛出致命死锁异常：all goroutines are asleep - deadlock!
+
+```
 
 ---
 
@@ -504,5 +556,7 @@ const rwmutexMaxReaders = 1 << 30
 当写者发起加锁时，会将 `readerCount` 减去 $2^{30}$ 变为负数，形成一个「拦截网」，让后续所有新来的读锁直接排队休眠；同时通过 `readerWait` 记录写者到来瞬间的旧读者快照，只等这些旧读者走完就立刻获得写锁，防止被源源不断的读请求淹没。
 8. **为什么不能拷贝赋值 sync.Mutex 或 sync.RWMutex？**
 锁的内部状态（`state`、`sema` 等）在加锁后可能记录了等待者计数、唤醒标志或指向特定内存地址的钥匙。拷贝会导致新旧实例状态分裂、sema 关联错乱，进而引发死锁或不可预知的内存并发安全问题。
+9. **Go 运行时的 `checkdead` 是如何判定死锁的？**
+当所有 OS 线程 M 停止运行时（`run == 0`），Go 会检查所有 Goroutine（`allg`）的状态。如果所有存活的 G 均处于等待状态（`_Gwaiting` 或 `_Gpreempted`），且系统中没有任何未完成的定时器（Timers）或其他唤醒源，运行时便会判定所有 G 都在睡眠且无法被唤醒，从而触发 `all goroutines are asleep - deadlock!` 致命异常。
 
 ---
