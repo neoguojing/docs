@@ -36,6 +36,95 @@ flowchart LR
     Pipeline --> Core
 ```
 
+## 部署架构：一个 Client Agent，多个 Server Agent
+
+`a2a-go` 的 client/server 不是必须单独运行的守护进程，而是嵌入应用进程的 Go SDK。Client Agent 在自己的进程里使用 `a2aclient.Factory` 和一个或多个 `a2aclient.Client`；每个 Server Agent 在自己的服务进程里使用 `a2asrv.NewHandler`、AgentExecutor 和一种或多种服务端传输绑定。双方通过 Agent Card 声明的 A2A 接口直接通信。
+
+```mermaid
+flowchart LR
+    User[用户或上游应用] --> ClientApp
+
+    subgraph ClientProcess[Client Agent 应用进程]
+        ClientApp[业务逻辑与多 Agent 编排]
+        Factory[a2aclient.Factory]
+        ClientA[a2aclient.Client A]
+        ClientB[a2aclient.Client B]
+        ClientApp --> Factory
+        Factory --> ClientA
+        Factory --> ClientB
+    end
+
+    subgraph ServerProcessA[Server Agent A 进程]
+        AgentA[Agent A 业务逻辑]
+        HandlerA[a2asrv.NewHandler]
+        BindingA[REST / JSON-RPC / gRPC 绑定]
+        CardA[Agent Card HTTP Endpoint]
+        BindingA --> HandlerA --> AgentA
+    end
+
+    subgraph ServerProcessB[Server Agent B 进程]
+        AgentB[Agent B 业务逻辑]
+        HandlerB[a2asrv.NewHandler]
+        BindingB[REST / JSON-RPC / gRPC 绑定]
+        CardB[Agent Card HTTP Endpoint]
+        BindingB --> HandlerB --> AgentB
+    end
+
+    ClientA <-->|A2A 请求与响应/事件流| BindingA
+    ClientB <-->|A2A 请求与响应/事件流| BindingB
+    Factory -. 获取接口与能力 .-> CardA
+    Factory -. 获取接口与能力 .-> CardB
+```
+
+这里的“一对多”是应用拓扑，不是 SDK 内置的服务端路由器：Client Agent 根据业务逻辑决定调用哪个 Server Agent、调用顺序，以及是否并行调用；A2A-Go 提供发现、连接、协议转换和请求 API，不会自动把一次请求广播到所有 Server Agent，也不会自动聚合多个结果。Server Agent A 与 B 各自执行和保存自己的 Task；如需共享业务状态，必须由应用显式传递信息或另行设计共享后端。
+
+每个 Server Agent 可单进程运行，也可独立启用 `a2asrv` 集群模式，由前端实例接收 A2A 请求、工作实例执行 Agent，并共享其 TaskStore/EventQueue/WorkQueue。客户端仍连接该 Server Agent 对外公布的 A2A 接口，不需要感知其内部部署形态。
+
+## 数据流：发现、调用、事件返回
+
+下面展示 Client Agent 依次调用两个独立 Server Agent 的典型路径。实际应用可只调用其中一个，也可自行并发调用；Task 和结果默认不会在两个服务端之间自动复制。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户/上游
+    participant App as Client Agent 编排逻辑
+    participant F as a2aclient.Factory / Resolver
+    participant CA as a2aclient.Client
+    participant T as 服务端传输绑定
+    participant H as a2asrv.RequestHandler
+    participant M as taskexec 管理器
+    participant A as AgentExecutor
+    participant P as 事件处理器
+    participant S as TaskStore
+    participant Q as EventQueue
+
+    U->>App: 输入业务请求
+    App->>F: 解析 Agent A / B 的 Agent Card
+    F-->>App: 返回接口、能力和安全要求
+    App->>F: 按 AgentInterface 创建 Client A / B
+    F-->>App: 返回已选传输的 Client
+
+    loop 对应用选中的每个 Server Agent
+        App->>CA: SendMessage 或 SendStreamingMessage
+        CA->>T: 编码并发送 A2A 请求
+        T->>H: 解码为 a2a 请求
+        H->>M: 校验请求并开始/恢复 Task 执行
+        M->>A: 提供 ExecutorContext 并调用 Execute
+        A-->>P: 依次产出 Task / 状态 / 产物 / Message 事件
+        P->>S: 校验事件、更新 Task 并提交版本
+        P->>Q: 持久化成功后广播事件
+        Q-->>H: 交付当前调用的事件订阅
+        H-->>T: 返回最终结果或事件流
+        T-->>CA: 编码为 REST/JSON-RPC SSE 或 gRPC 流
+        CA-->>App: 还原为 a2a 结果或事件
+    end
+
+    App->>App: 按自身业务规则组合或转换结果
+    App-->>U: 返回应用层响应
+```
+
+若使用非流式 `SendMessage`，客户端收到的是最终 Message 或 Task；流式调用/任务订阅则逐个收到事件。服务端先应用并保存事件，再向订阅者广播，因而实时事件流与可查询 Task 状态沿用同一更新结果。REST 和 JSON-RPC 的事件在线上使用 SSE，gRPC 使用 server-streaming；进入 SDK 后均转换为 `a2a.Event`。
+
 ## 模块地图
 
 | 模块 | 职责与边界 |
