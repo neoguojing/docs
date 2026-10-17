@@ -58,7 +58,6 @@
 }
 ```
 
-
 ### 2.2 A2A 服务器 (A2A Server)
 **定义**：实现了 A2A 协议接口并暴露 HTTP 端点的智能体服务。
 - **作用**：作为服务提供方，接收请求、管理任务执行、维护状态机并交付结果。
@@ -142,34 +141,82 @@
   }
 }
 ```
-务是“生成报告”，最终生成的 `report.pdf` 就是一个 Artifact。
 
 ---
 
-## 3. 架构抽象分析 (STAR Framework)
+## 3. 整体部署架构 (Deployment Architecture)
 
-### 3.1 背景与挑战 (Situation)
+为了模拟实际企业场景，A2A 协议支持从简单的点对点调用到复杂的多 Agent 协作网络。
+
+### 3.1 企业级部署拓扑
+```mermaid
+graph TD
+    subgraph "Client Side (用户端)"
+        UserApp[用户 App / Web] --> Orchestrator[Orchestrator Agent / 调度智能体]
+    end
+
+    subgraph "Agent Network (智能体网络)"
+        Orchestrator --> AuthSrv[Auth Server / 认证中心]
+        Orchestrator --> Discovery[Registry / 发现注册表]
+        
+        Orchestrator --> AgentA[Agent A: 财务审计]
+        Orchestrator --> AgentB[Agent B: 法务合规]
+        Orchestrator --> AgentC[Agent C: 数据分析]
+        
+        AgentA <--> AgentB
+        AgentB <--> AgentC
+    end
+
+    subgraph "Infrastructure (基础设施)"
+        AgentA --> DB1[(Private DB)]
+        AgentB --> API1[External Law API]
+        AgentC --> DB2[(Data Warehouse)]
+    end
+```
+
+### 3.2 场景模拟：企业自动化审计
+**场景描述**：用户要求“审计 Q3 季度的差旅费用并检查合规性”。
+
+1.  **入口层**：`User App` 向 `Orchestrator Agent` 发起请求。
+2.  **发现与规划**：`Orchestrator` 查询 `Discovery Registry`，发现 `Agent A (财务)` 和 `Agent B (法务)` 具备相关 Skill。
+3.  **分发任务**：
+    *   `Orchestrator` $\xrightarrow{A2A}$ `Agent A`: 创建 Task-1 (提取所有费用单)。
+    *   `Agent A` $\rightarrow$ `Artifact`: 生成 `expenses.csv`。
+4.  **跨 Agent 协作**：
+    *   `Orchestrator` $\xrightarrow{A2A}$ `Agent B`: 创建 Task-2 (审核 `expenses.csv` 的合规性)。
+    *   `Agent B` 接收到 Task-2，通过 `Artifact` 引用读取 `expenses.csv`。
+5.  **汇总交付**：`Agent B` 生成 `audit_report.pdf` $\rightarrow$ `Orchestrator` $\rightarrow$ `User App`。
+
+### 3.3 关键部署模式
+- **Hub-and-Spoke (中心辐射型)**：一个中心 Orchestrator 负责分发任务，所有 Agent 仅与中心通信。适用于强管控场景。
+- **Mesh (网状协作型)**：Agent 之间可以直接通过 A2A 协议互相调用（例如 Agent A 发现需要 Agent B 的帮助，直接发起 `SendMessage`）。适用于高度自主的协作场景。
+
+---
+
+## 4. 架构抽象分析 (STAR Framework)
+
+### 4.1 背景与挑战 (Situation)
 在 AI Agent 的生态演进中，出现了严重的“协议碎片化”现象。不同厂商的智能体被隔离在各自的生态孤岛（Silos）中，缺乏统一的通信标准。现有的集成方式多为点对点（Point-to-Point）的定制开发，且多数协议将 Agent 简单地视为“工具（Tool）”，忽略了 Agent 自身的自主规划和状态管理能力。
 
-### 3.2 核心目标 (Task)
+### 4.2 核心目标 (Task)
 构建一个框架无关、厂商中立的通用通信标准，实现以下目标：
 - **互操作性 (Interoperability)**：允许不同框架的 Agent 无缝协作。
 - **不透明性 (Opacity)**：在不泄露内部 Prompt 和私有逻辑的前提下声明能力。
 - **自主协作**：支持 Agent 之间的双向协商、异步执行和状态跟踪。
 
-### 3.3 实施方案 (Action)
+### 4.3 实施方案 (Action)
 - **能力解耦**：通过 `AgentCard` 定义一套标准的能力清单，实现“能力发现”与“物理连接”的分离。
 - **状态机建模**：引入 `Task` 概念，将交互从简单的请求-响应升级为状态驱动的生命周期管理，支持 `INPUT_REQUIRED` 等中断状态。
 - **标准技术栈**：基于 `JSON-RPC 2.0` 处理指令，`SSE` 处理异步流，`Protobuf` 确保强类型约束。
 
-### 3.4 最终结果 (Result)
+### 4.4 最终结果 (Result)
 形成了一套标准化的 Agent 协作体系，使得 Agent 可以作为对等实体 (Peers) 存在。通过该协议，Agent 能够自主地完成：**发现 $\rightarrow$ 认证 $\rightarrow$ 协商 $\rightarrow$ 执行 $\rightarrow$ 交付** 的闭环。
 
 ---
 
-## 4. 技术架构与逻辑流 (Technical Architecture)
+## 5. 技术架构与逻辑流 (Technical Architecture)
 
-### 4.1 逻辑架构图
+### 5.1 逻辑架构图
 ```mermaid
 graph TD
     subgraph "Discovery Layer (发现层)"
@@ -202,7 +249,7 @@ graph TD
     E --> G
 ```
 
-### 4.2 任务状态流转图
+### 5.2 任务状态流转图
 ```mermaid
 stateDiagram-v2
     [*] --> SUBMITTED
@@ -221,7 +268,7 @@ stateDiagram-v2
     REJECTED --> [*]
 ```
 
-### 4.3 协作交互序列图
+### 5.3 协作交互序列图
 ```mermaid
 sequenceDiagram
     participant C as Client Agent
@@ -251,9 +298,9 @@ sequenceDiagram
 
 ---
 
-## 5. 技术细节深入 (Detailed Specification)
+## 6. 技术细节深入 (Detailed Specification)
 
-### 5.1 技术栈
+### 6.1 技术栈
 为了确保最大程度的兼容性和低门 threshold，A2A 基于成熟的 Web 标准构建：
 
 | 维度 | 采用技术 | 说明 |
@@ -264,7 +311,7 @@ sequenceDiagram
 | **接口定义** | `Protobuf` | 在 `a2a.proto` 中定义强类型约束，支持多语言生成 |
 | **序列化** | `JSON` | 通用数据交换格式 |
 
-### 5.2 核心工作流 (Protocol Flow)
+### 6.2 核心工作流 (Protocol Flow)
 
 #### 第一阶段：发现 (Discovery) $\rightarrow$ Agent Card
 当 Agent A 想要与 Agent B 协作时，首先获取 Agent B 的 **Agent Card (智能体名片)**。
@@ -292,15 +339,15 @@ A2A 将所有交互抽象为 **Task (任务)**。
 
 ---
 
-## 6. 关键数据模型 (Data Models)
+## 7. 关键数据模型 (Data Models)
 
-### 6.1 Task (任务)
+### 7.1 Task (任务)
 任务是 A2A 的核心调度单位。
 *   **层级关系**：`Context` $\supset$ `Tasks`。`context_id` 跨任务维持会话记忆，`task_id` 标识具体工作单元。
 *   **不可变性 (Immutability)**：一旦进入终结状态（Completed/Failed 等），Task 及其关联的 Artifacts 变为不可变快照。任何修改请求必须在同一 `context_id` 下发起新 Task。
 *   **状态管理**：确保长时运行操作（LRO）的可追踪性。
 
-### 6.2 Message (消息)
+### 7.2 Message (消息)
 采用多部分（Multi-part）结构，支持复杂内容的传输。
 *   **Role**: 标识发送方为 `USER` 或 `AGENT`。
 *   **Parts (Union Type)**:
@@ -310,7 +357,7 @@ A2A 将所有交互抽象为 **Task (任务)**。
     *   `url`: 外部资源链接。
 *   **引用机制**：支持 `reference_task_ids`，允许新消息引用之前的任务结果进行精细化修改。
 
-### 6.3 Artifact (产出物)
+### 7.3 Artifact (产出物)
 任务的最终交付结果。
 *   **增量更新**：支持 `append` 模式，允许 Agent 在 `WORKING` 状态下分块推送结果。
 *   **多模态**：通过 `mime_type` 定义内容类型（如 `application/json`, `image/png`）。
@@ -318,15 +365,15 @@ A2A 将所有交互抽象为 **Task (任务)**。
 
 ---
 
-## 7. 可扩展性与自定义 (Extensibility)
+## 8. 可扩展性与自定义 (Extensibility)
 
-### 7.1 协议绑定 (Protocol Bindings)
+### 8.1 协议绑定 (Protocol Bindings)
 A2A 允许通过 **Custom Protocol Bindings** 改变传输层（Transport Layer），而无需更改核心逻辑。
 - **标准绑定**：`JSON-RPC`, `gRPC`, `HTTP+JSON`。
 - **自定义绑定**：例如通过 `WebSockets` 实现极低延迟的双向通信，或通过 `MQTT` 适配 IoT 设备。
 - **约束**：自定义绑定必须支持所有核心操作且保证数据模型等价。
 
-### 7.2 协议扩展 (Extensions)
+### 8.2 协议扩展 (Extensions)
 Extensions 用于在不破坏核心协议的前提下，增加新数据、新方法或新状态。
 - **数据扩展**：在 `AgentCard` 中增加特定领域信息（如 GDPR 合规性）。
 - **方法扩展 (Extended Skills)**：通过定义新的 RPC 方法扩展 Agent 的能力。
@@ -335,7 +382,7 @@ Extensions 用于在不破坏核心协议的前提下，增加新数据、新方
 
 ---
 
-## 8. 实操交互示例 (Interaction Example)
+## 9. 实操交互示例 (Interaction Example)
 
 ### 场景：生成图片 $\rightarrow$ 修改颜色 (Refinement)
 
@@ -391,7 +438,7 @@ Extensions 用于在不破坏核心协议的前提下，增加新数据、新方
       "role": "user",
       "contextId": "ctx-abc-789",
       "referenceTaskIds": ["task-boat-123"],
-      "parts": [{ "text": "请把帆船改成红色的" }],
+      "parts": [{ "text, "请把帆船改成红色的" }],
       "messageId": "msg-user-002"
     }
   }
@@ -423,7 +470,7 @@ Extensions 用于在不破坏核心协议的前提下，增加新数据、新方
 
 ---
 
-## 9. 总结：A2A vs 其他协议
+## 10. 总结：A2A vs 其他协议
 
 | 特性 | MCP (Model Context Protocol) | A2A (Agent2Agent) |
 | :--- | :--- | :--- |
