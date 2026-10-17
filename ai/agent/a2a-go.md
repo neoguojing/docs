@@ -112,6 +112,41 @@ sequenceDiagram
 
 若使用非流式 `SendMessage`，客户端收到的是最终 Message 或 Task；流式调用/任务订阅则逐个收到事件。服务端先应用并保存事件，再向订阅者广播，因而实时事件流与可查询 Task 状态沿用同一更新结果。REST 和 JSON-RPC 的事件在线上使用 SSE，gRPC 使用 server-streaming；进入 SDK 后均转换为 `a2a.Event`。
 
+## 从示例和源码开始读
+
+不必先通读所有 package。先看下面两个例子，它们分别展示“立即答复”和“有状态任务”两种不同结果。
+
+### 例一：Hello World 立即答复
+
+打开 [`examples/helloworld/server/jsonrpc/main.go`](../../examples/helloworld/server/jsonrpc/main.go)：
+
+1. `AgentExecutorFunc` 收到输入后只产出一条 Agent `Message`，内容是 `Hello, world!`。
+2. `NewHandler` 把这个执行器接入服务端；`NewJSONRPCHandler` 把 JSON-RPC 请求转成 SDK 请求。
+3. `SendMessage` 返回这条 Agent Message。这个例子没有发 `NewSubmittedTask`，因此它演示的是一次请求/响应，不是创建并持久化 Task 的工作流。
+
+对应客户端见 [`examples/helloworld/client/main.go`](../../examples/helloworld/client/main.go)：先解析 Agent Card，再创建 Client，最后用 `a2a.NewMessage` 发送用户消息。
+
+### 例二：计数任务与可恢复进度
+
+打开 [`examples/clustermode/server/agent.go`](../../examples/clustermode/server/agent.go)，用输入 `--count-to=3 --interval=10ms` 理解它的事件：
+
+1. 新请求先产出 `NewSubmittedTask`，其中包含初始用户消息，并建立 TaskID、ContextID。
+2. 每计数一次就产出一个 Artifact 更新，例如 `<workerID>: 1`、`<workerID>: 2`、`<workerID>: 3`。这些是 Task 的产物，不是新的对话 Message。
+3. 结束时产出 `TaskStateCompleted`。之后客户端可通过 Task 查询到最终状态、历史和 Artifact。
+4. 若继续向同一个 Task 发送消息，示例会读取已有 Task 最后一个 Artifact，从上次计数继续。这就是 `StoredTask` 对 Agent 的实际用途。
+
+该示例还将同一个 Agent 放入集群模式；队列、存储和部署配置见 [`examples/clustermode/server/main.go`](../../examples/clustermode/server/main.go) 与 [`examples/clustermode/server/deploy/README.md`](../../examples/clustermode/server/deploy/README.md)。
+
+### 按请求顺序跟读代码
+
+| 运行步骤 | 从哪里看 | 这一层做什么 |
+| --- | --- | --- |
+| 发现并创建客户端 | [`a2aclient/agentcard/resolver.go`](../../a2aclient/agentcard/resolver.go)、[`a2aclient/factory.go`](../../a2aclient/factory.go) | 读取 Agent Card，并按接口、协议版本和传输偏好创建 Client。 |
+| 接入服务器请求 | [`a2asrv/jsonrpc.go`](../../a2asrv/jsonrpc.go)、[`a2asrv/handler.go`](../../a2asrv/handler.go) | 解析 JSON-RPC，调用 `RequestHandler`；`handleSendMessage` 校验请求并交给执行管理器。REST 和 gRPC 是同一 RequestHandler 的其他适配器。 |
+| 调用应用 Agent | [`a2asrv/agentexec.go`](../../a2asrv/agentexec.go)、[`internal/taskexec/local_manager.go`](../../internal/taskexec/local_manager.go) | factory 准备 `ExecutorContext`；本地管理器启动执行；executor 把 Agent 产生的事件写入内部管道。 |
+| 更新 Task 并保存 | [`internal/taskupdate/manager.go`](../../internal/taskupdate/manager.go)、[`a2asrv/taskstore/api.go`](../../a2asrv/taskstore/api.go) | 校验事件与 Task 标识，计算新 Task 状态，再通过 Store 创建或更新记录。 |
+| 广播并回传事件 | [`internal/taskexec/execution_handler.go`](../../internal/taskexec/execution_handler.go)、[`a2asrv/eventqueue/queue.go`](../../a2asrv/eventqueue/queue.go) | 只有事件处理成功后才广播给订阅者；服务端传输再编码成响应或事件流。 |
+
 ## 模块职责
 
 | 模块 | 职责与边界 |
