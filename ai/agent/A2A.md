@@ -261,26 +261,26 @@ A2A 协议定义了 `TASK_STATE_AUTH_REQUIRED` 状态，允许 Agent 在执行�
 
 ## 5. 架构抽象分析 (STAR Framework)
 
-### 4.1 背景与挑战 (Situation)
+### 5.1 背景与挑战 (Situation)
 在 AI Agent 的生态演进中，出现了严重的“协议碎片化”现象。不同厂商的智能体被隔离在各自的生态孤岛（Silos）中，缺乏统一的通信标准。现有的集成方式多为点对点（Point-to-Point）的定制开发，且多数协议将 Agent 简单地视为“工具（Tool）”，忽略了 Agent 自身的自主规划和状态管理能力。
 
-### 4.2 核心目标 (Task)
+### 5.2 核心目标 (Task)
 构建一个框架无关、厂商中立的通用通信标准，实现以下目标：
 - **互操作性 (Interoperability)**：允许不同框架的 Agent 无缝协作。
 - **不透明性 (Opacity)**：在不泄露内部 Prompt 和私有逻辑的前提下声明能力。
 - **自主协作**：支持 Agent 之间的双向协商、异步执行和状态跟踪。
 
-### 4.3 实施方案 (Action)
+### 5.3 实施方案 (Action)
 - **能力解耦**：通过 `AgentCard` 定义一套标准的能力清单，实现“能力发现”与“物理连接”的分离。
 - **状态机建模**：引入 `Task` 概念，将交互从简单的请求-响应升级为状态驱动的生命周期管理，支持 `INPUT_REQUIRED` 等中断状态。
 - **标准技术栈**：基于 `JSON-RPC 2.0` 处理指令，`SSE` 处理异步流，`Protobuf` 确保强类型约束。
 
-### 4.4 最终结果 (Result)
+### 5.4 最终结果 (Result)
 形成了一套标准化的 Agent 协作体系，使得 Agent 可以作为对等实体 (Peers) 存在。通过该协议，Agent 能够自主地完成：**发现 $\rightarrow$ 认证 $\rightarrow$ 协商 $\rightarrow$ 执行 $\rightarrow$ 交付** 的闭环。
 
 ---
 
-## 5. 技术架构与逻辑流 (Technical Architecture)
+## 6. 技术架构与逻辑流 (Technical Architecture)
 
 ### 5.1 逻辑架构图
 ```mermaid
@@ -364,10 +364,10 @@ sequenceDiagram
 
 ---
 
-## 6. 技术细节深入 (Detailed Specification)
+## 7. 技术细节深入 (Detailed Specification)
 
-### 6.1 技术栈
-为了确保最大程度的兼容性和低门 threshold，A2A 基于成熟的 Web 标准构建：
+### 7.1 技术栈
+为了确保最大程度的兼容性和低门槛，A2A 基于成熟的 Web 标准构建：
 
 | 维度 | 采用技术 | 说明 |
 | :--- | :--- | :--- |
@@ -377,7 +377,7 @@ sequenceDiagram
 | **接口定义** | `Protobuf` | 在 `a2a.proto` 中定义强类型约束，支持多语言生成 |
 | **序列化** | `JSON` | 通用数据交换格式 |
 
-### 6.2 核心工作流 (Protocol Flow)
+### 7.2 核心工作流 (Protocol Flow)
 
 #### 第一阶段：发现 (Discovery) $\rightarrow$ Agent Card
 当 Agent A 想要与 Agent B 协作时，首先获取 Agent B 的 **Agent Card (智能体名片)**。
@@ -428,7 +428,7 @@ A2A 采用了声明式安全机制，具体实现如下：
 
 ---
 
-## 7. 关键数据模型 (Data Models)
+## 8. 关键数据模型 (Data Models)
 
 ### 7.1 Task (任务)
 任务是 A2A 的核心调度单位。
@@ -454,15 +454,15 @@ A2A 采用了声明式安全机制，具体实现如下：
 
 ---
 
-## 8. 可扩展性与自定义 (Extensibility)
+## 9. 可扩展性与自定义 (Extensibility)
 
-### 8.1 协议绑定 (Protocol Bindings)
+### 9.1 协议绑定 (Protocol Bindings)
 A2A 允许通过 **Custom Protocol Bindings** 改变传输层（Transport Layer），而无需更改核心逻辑。
 - **标准绑定**：`JSON-RPC`, `gRPC`, `HTTP+JSON`。
 - **自定义绑定**：例如通过 `WebSockets` 实现极低延迟的双向通信，或通过 `MQTT` 适配 IoT 设备。
 - **约束**：自定义绑定必须支持所有核心操作且保证数据模型等价。
 
-### 8.2 协议扩展 (Extensions)
+### 9.2 协议扩展 (Extensions)
 Extensions 用于在不破坏核心协议的前提下，增加新数据、新方法或新状态。
 - **数据扩展**：在 `AgentCard` 中增加特定领域信息（如 GDPR 合规性）。
 - **方法扩展 (Extended Skills)**：通过定义新的 RPC 方法扩展 Agent 的能力。
@@ -471,7 +471,7 @@ Extensions 用于在不破坏核心协议的前提下，增加新数据、新方
 
 ---
 
-## 9. 实操交互示例 (Interaction Example)
+## 10. 实操交互示例 (Interaction Example)
 
 ### 场景：生成图片 $\rightarrow$ 修改颜色 (Refinement)
 
@@ -559,18 +559,18 @@ Extensions 用于在不破坏核心协议的前提下，增加新数据、新方
 
 ---
 
-## 12. 常见问题 (FAQ)
+## 11. 常见问题 (FAQ)
 
-### 12.1 A2A 与 MCP 的根本区别是什么？
+### 11.1 A2A 与 MCP 的根本区别是什么？
 **MCP (Model Context Protocol)** 侧重于“能力增强”，旨在标准化模型如何访问工具和数据。而 **A2A** 侧重于“实体协作”，旨在定义两个或多个具备自主规划能力的智能体如何像对等实体一样发现、协商和协作。简单来说，MCP 是 `模型 $\rightarrow$ 工具`，A2A 是 `智能体 $\leftrightarrow$ 智能体`。
 
-### 12.2 如何处理超大规模的 Artifact (例如 GB 级的视频文件)？
+### 11.2 如何处理超大规模的 Artifact (例如 GB 级的视频文件)？
 A2A 协议通过 `Part` 结构提供了三种传输方式。对于超大文件，**严禁使用 `raw` (Base64)**，因为这会导致极高的内存开销。正确的做法是使用 `url` 字段，提供一个指向外部安全存储（如 AWS S3 或 Google Cloud Storage）的预签名 URL (Presigned URL)。
 
-### 12.3 如果 Agent B 拒绝了 Agent A 的请求，应该如何处理？
+### 11.3 如果 Agent B 拒绝了 Agent A 的请求，应该如何处理？
 Agent B 应将 `TaskState` 设置为 `TASK_STATE_REJECTED`。在 `TaskStatus.message` 中，Agent B 应当提供清晰的拒绝理由（例如：“由于安全合规要求，我无法访问该特定域名的财务数据”）。Client Agent 收到此状态后，可决定是尝试调整请求策略，还是向最终用户报告失败。
 
-### 12.4 `context_id` 的生命周期如何管理？
+### 11.4 `context_id` 的生命周期如何管理？
 `context_id` 用于维持一个长期的会话状态。协议并未强制规定有效期，但建议实现方采取以下策略：
 *   **服务端 TTL**：设置一个合理的有效期（如 24 小时），过期后自动清理相关的 Task 历史。
 *   **客户端存储**：客户端应将 `context_id` 与用户会话关联。
@@ -578,7 +578,7 @@ Agent B 应将 `TaskState` 设置为 `TASK_STATE_REJECTED`。在 `TaskStatus.mes
 
 ---
 
-## 11. 实现指南 (Implementation Guide)
+## 12. 实现指南 (Implementation Guide)
 
 对于计划实现 A2A 协议的开发者，以下是确保兼容性和鲁棒性的核心指南。
 
