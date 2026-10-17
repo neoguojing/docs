@@ -146,8 +146,6 @@
 
 ## 3. 整体部署架构 (Deployment Architecture)
 
-为了模拟实际企业场景，A2A 协议支持从简单的点对点调用到复杂的多 Agent 协作网络。
-
 ### 3.1 企业级部署拓扑
 ```mermaid
 graph TD
@@ -193,7 +191,70 @@ graph TD
 
 ---
 
-## 4. 架构抽象分析 (STAR Framework)
+## 4. 深度安全与授权机制 (Deep Dive: Security & Authorization)
+
+A2A 的安全核心在于：**由被调用方（Server Agent）在名片中声明安全要求，由调用方（Client Agent）适配实现。**
+
+### 4.1 声明式安全 (Declarative Security)
+Agent 在 `Agent Card` 中定义 `security_schemes`。这允许 Client 在发起请求前就获知认证方式。
+
+**认证方案定义示例：**
+```json
+"security_schemes": {
+  "api_key_auth": {
+    "api_key_security_scheme": {
+      "location": "header",
+      "name": "X-A2A-API-KEY"
+    }
+  },
+  "oauth_auth": {
+    "oauth2_security_scheme": {
+      "flows": {
+        "client_credentials": {
+          "token_url": "https://auth.example.com/token",
+          "scopes": { "write:tasks": "创建任务" }
+        }
+      }
+    }
+  }
+},
+"security_requirements": [
+  { "api_key_auth": [], "oauth_auth": ["write:tasks"] }
+]
+```
+
+### 4.2 认证实施与调用示例
+根据名片声明，Client 在 HTTP 请求中携带凭证。
+
+*   **API Key 模式**：
+    ```http
+    POST /message:send HTTP/1.1
+    X-A2A-API-KEY: sk-1234567890abcdef
+    Content-Type: application/json
+    ```
+*   **OAuth2 Bearer 模式**：
+    ```http
+    POST /message:send HTTP/1.1
+    Authorization: Bearer eyJhbGciOiJIUzI1Ni...
+    Content-Type: application/json
+    ```
+
+### 4.3 关键特性：认证中断 (Auth Interruption)
+A2A 协议定义了 `TASK_STATE_AUTH_REQUIRED` 状态，允许 Agent 在执行过程中动态请求权限提升。
+
+**交互流程：**
+1.  **触发**：Agent 在 `WORKING` 状态下发现需要访问受限资源 $\rightarrow$ 返回 `TASK_STATE_AUTH_REQUIRED`。
+2.  **引导**：Client 捕捉此状态 $\rightarrow$ 引导用户完成 OIDC/OAuth2 授权 $\rightarrow$ 获取新 Token。
+3.  **恢复**：Client 发送新消息携带升级后的凭证 $\rightarrow$ Task 回到 `WORKING` 状态。
+
+### 4.4 传输与真实性保障
+- **传输加密**：生产环境强制要求 `HTTPS`。
+- **双向认证**：支持 `mTLS` (Mutual TLS)，用于企业内部高安全 Agent 协作。
+- **名片签名**：`Agent Card` 支持 `AgentCardSignature` (基于 **RFC 7515 JWS**)，确保名片未被篡改且来源可信。
+
+---
+
+## 5. 架构抽象分析 (STAR Framework)
 
 ### 4.1 背景与挑战 (Situation)
 在 AI Agent 的生态演进中，出现了严重的“协议碎片化”现象。不同厂商的智能体被隔离在各自的生态孤岛（Silos）中，缺乏统一的通信标准。现有的集成方式多为点对点（Point-to-Point）的定制开发，且多数协议将 Agent 简单地视为“工具（Tool）”，忽略了 Agent 自身的自主规划和状态管理能力。
@@ -329,13 +390,36 @@ sequenceDiagram
 #### 第二阶段：认证 (Authentication)
 Client 根据名片中的 `security_schemes`（如 OAuth2, OIDC, API Key, mTLS）获取凭证，建立加密的信任通道。
 
-#### 第三阶段：交互 (Interaction) $\rightarrow$ Task-Based Communication
-A2A 将所有交互抽象为 **Task (任务)**。
-1.  **提交任务**：发送 `SendMessage` (同步) 或 `SendStreamingMessage` (异步流式)。
-2.  **任务执行**：任务状态经历 `SUBMITTED` $\rightarrow$ `WORKING` $\rightarrow$ `COMPLETED/FAILED/REJECTED`。
-    *   **中断状态**：支持 `INPUT_REQUIRED` (请求补全信息) 和 `AUTH_REQUIRED` (请求授权)。
-3.  **状态跟踪**：通过 `task_id` 订阅进度，实时接收 `TaskArtifactUpdateEvent`。
-4.  **交付产出**：最终结果以 `Artifact (产出物)` 形式交付。
+##### 认证机制细节 (Security Specifications)
+A2A 采用了声明式安全机制，具体实现如下：
+
+1. **API Key 认证 (简单方案)**
+   - **逻辑**：Client 将预共享密钥放入 HTTP Header。
+   - **请求示例**：
+     ```http
+     POST /message:send HTTP/1.1
+     X-API-KEY: your-secret-api-key-123
+     Content-Type: application/json
+     ```
+
+2. **OAuth 2.0 / OIDC (企业级方案)**
+   - **逻辑**：Client 通过 Agent Card 中定义的 `oauth2_metadata_url` 或 `open_id_connect_url` 获取认证端点，完成授权码流 (Authorization Code Flow) 或客户端凭据流 (Client Credentials Flow)。
+   - **请求示例**：
+     ```http
+     POST /message:send HTTP/1.1
+     Authorization: Bearer eyJhbGciOi... (JWT Token)
+     Content-Type: application/json
+     ```
+
+3. **mTLS (高安全方案)**：
+   - **逻辑**：使用双向 TLS 证书进行传输层验证，无需在应用层传递 Token。
+
+##### 特殊安全特性：认证中断 (Auth Interruption)
+在执行 Task 过程中，如果 Agent 发现需要更高的权限（例如：需要访问用户私有邮箱），它可以将 Task 状态设置为 `TASK_STATE_AUTH_REQUIRED`。
+- **流程**：
+  1. Agent 返回 `TASK_STATE_AUTH_REQUIRED` 状态。
+  2. 客户端捕捉到该状态，引导用户完成授权。
+  3. 客户端发送新的消息，携带更新后的凭证 $\rightarrow$ Task 回到 `WORKING` 状态。
 
 ---
 
@@ -438,8 +522,8 @@ Extensions 用于在不破坏核心协议的前提下，增加新数据、新方
       "role": "user",
       "contextId": "ctx-abc-789",
       "referenceTaskIds": ["task-boat-123"],
-      "parts": [{ "text, "请把帆船改成红色的" }],
-      "messageId": "msg-user-002"
+      "parts": [{ "text": "请把帆船改成红色的" }],
+      "messageId":, "msg-user-002"
     }
   }
 }
@@ -467,6 +551,25 @@ Extensions 用于在不破坏核心协议的前提下，增加新数据、新方
   }
 }
 ```
+
+---
+
+## 12. 常见问题 (FAQ)
+
+### 12.1 A2A 与 MCP 的根本区别是什么？
+**MCP (Model Context Protocol)** 侧重于“能力增强”，旨在标准化模型如何访问工具和数据。而 **A2A** 侧重于“实体协作”，旨在定义两个或多个具备自主规划能力的智能体如何像对等实体一样发现、协商和协作。简单来说，MCP 是 `模型 $\rightarrow$ 工具`，A2A 是 `智能体 $\leftrightarrow$ 智能体`。
+
+### 12.2 如何处理超大规模的 Artifact (例如 GB 级的视频文件)？
+A2A 协议通过 `Part` 结构提供了三种传输方式。对于超大文件，**严禁使用 `raw` (Base64)**，因为这会导致极高的内存开销。正确的做法是使用 `url` 字段，提供一个指向外部安全存储（如 AWS S3 或 Google Cloud Storage）的预签名 URL (Presigned URL)。
+
+### 12.3 如果 Agent B 拒绝了 Agent A 的请求，应该如何处理？
+Agent B 应将 `TaskState` 设置为 `TASK_STATE_REJECTED`。在 `TaskStatus.message` 中，Agent B 应当提供清晰的拒绝理由（例如：“由于安全合规要求，我无法访问该特定域名的财务数据”）。Client Agent 收到此状态后，可决定是尝试调整请求策略，还是向最终用户报告失败。
+
+### 12.4 `context_id` 的生命周期如何管理？
+`context_id` 用于维持一个长期的会话状态。协议并未强制规定有效期，但建议实现方采取以下策略：
+*   **服务端 TTL**：设置一个合理的有效期（如 24 小时），过期后自动清理相关的 Task 历史。
+*   **客户端存储**：客户端应将 `context_id` 与用户会话关联。
+*   **显式关闭**：虽然目前协议未定义 `CloseContext` 接口，但建议通过自定义扩展实现会话的显式关闭。
 
 ---
 
