@@ -21,7 +21,43 @@
 ### 2.1 代理卡片 (Agent Card)
 **定义**：一个公共元数据文件（通常位于 `/.well-known/agent-card.json`），它是 Agent 的“数字名片”。
 - **作用**：描述代理的能力、支持的技能、端点 URL 和认证要求。
-- **示例**：一个天气 Agent 的卡片会声明它拥有 `get_weather` 技能，支持 `JSON-RPC` 接口，且需要 `Bearer Token` 认证。
+- **JSON 示例**：
+```json
+{
+  "name": "Weather Agent",
+  "description": "提供全球实时天气查询与预报服务",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    {
+      "url": "https://weather.example.com/a2a/v1",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "capabilities": {
+    "streaming": true,
+    "push_notifications": false
+  },
+  "security_schemes": {
+    "api_key": {
+      "api_key_security_scheme": {
+        "location": "header",
+        "name": "X-API-KEY"
+      }
+    }
+  },
+  "skills": [
+    {
+      "id": "get_weather",
+      "name": "查询天气",
+      "description": "根据城市名称提供当前天气状况",
+      "tags": ["weather", "real-time"],
+      "examples": ["查询北京今天的天气"]
+    }
+  ]
+}
+```
+
 
 ### 2.2 A2A 服务器 (A2A Server)
 **定义**：实现了 A2A 协议接口并暴露 HTTP 端点的智能体服务。
@@ -34,11 +70,52 @@
 ### 2.4 任务 (Task)
 **定义**：A2A 中工作的中心单位，代表一个需要执行的具体目标。
 - **特性**：拥有唯一 ID，经历从 `SUBMITTED` 到 `COMPLETED` 的状态流转。
-- **示例**： “帮我预订一张去东京的机票” 这是一个 Task。
+- **JSON 示例**：
+```json
+{
+  "id": "task-12345",
+  "contextId": "ctx-abc-789",
+  "status": {
+    "state": "TASK_STATE_WORKING",
+    "message": {
+      "role": "ROLE_AGENT",
+      "parts": [{ "text": "正在检索航班信息，请稍候..." }]
+    },
+    "timestamp": "2026-10-17T10:00:00Z"
+  },
+  "artifacts": [],
+  "metadata": {
+    "priority": "high",
+    "category": "travel"
+  }
+}
+```
 
 ### 2.5 消息 (Message)
 **定义**：客户端与代理之间的一次通信轮次（Turn）。
 - **结构**：包含发送者角色（User/Agent）和多个内容部件（Parts）。
+- **JSON 示例**：
+```json
+{
+  "messageId": "msg-user-001",
+  "contextId": "ctx-abc-789",
+  "taskId": "task-12345",
+  "role": "ROLE_USER",
+  "parts": [
+    {
+      "text": "我想预订一张去东京的机票",
+      "mediaType": "text/plain"
+    },
+    {
+      "data": { "date": "2026-12-01", "class": "business" },
+      "mediaType": "application/json"
+    }
+  ],
+  "metadata": {
+    "client_version": "1.2.0"
+  }
+}
+```
 
 ### 2.6 部件 (Part) 与 工件 (Artifact)
 - **部件 (Part)**：消息或工件中的最小内容单位。
@@ -46,7 +123,26 @@
     - `FilePart`: 文件数据（如图片、PDF）。
     - `DataPart`: 结构化 JSON 数据。
 - **工件 (Artifact)**：代理在任务期间生成的最终或中间输出。
-    - **示例**：任务是“生成报告”，最终生成的 `report.pdf` 就是一个 Artifact。
+- **JSON 示例 (Artifact)**：
+```json
+{
+  "artifactId": "art-ticket-v1",
+  "name": "flight_itinerary.pdf",
+  "description": "预订成功的机票行程单",
+  "parts": [
+    {
+      "filename": "itinerary.pdf",
+      "mediaType": "application/pdf",
+      "raw": "base64_encoded_pdf_content..."
+    }
+  ],
+  "metadata": {
+    "page_count": 1,
+    "generated_by": "booking-agent-v1"
+  }
+}
+```
+务是“生成报告”，最终生成的 `report.pdf` 就是一个 Artifact。
 
 ---
 
