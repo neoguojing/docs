@@ -2,604 +2,172 @@
 
 ## 1. 概述 (Overview)
 
-### 1.1 什么是 A2A？
-**Agent2Agent (A2A)** 是一套由 Google 贡献给 Linux 基金会的开源标准协议。它旨在为 AI 智能体（AI Agents）定义一套通用的“外交语言”，使得来自不同框架、不同公司、基于不同模型构建的智能体能够实现互操作性（Interoperability）。
+**Agent2Agent (A2A)** 是一套由 Google 贡献给 Linux 基金会的开源标准协议，旨在为 AI 智能体定义通用的“外交语言”，实现跨框架、跨模型、跨公司的互操作性（Interoperability）。
 
-简单来说，A2A 定义了 AI Agent 之间如何**相互发现、建立信任、协商任务以及交付结果**的标准流程。
+它定义了 AI Agent 之间**相互发现、建立信任、协商任务以及交付结果**的标准流程。
 
-### 1.2 A2A 的核心定位
-*   **不是框架**：它不关心你使用 LangChain, CrewAI 还是 AutoGPT。
-*   **不是模型**：它不关心你底层使用的是 GPT-4, Claude 3.5 还是 Llama 3。
-*   **是协议**：它类似于互联网的 HTTP 协议，定义了通信的格式和行为准则。
-
----
-
-## 2. 核心概念定义 (Core Concepts)
-
-在深入技术架构前，需要理解 A2A 协议定义的六大核心实体：
-
-### 2.1 代理卡片 (Agent Card)
-**定义**：一个公共元数据文件（通常位于 `/.well-known/agent-card.json`），它是 Agent 的“数字名片”。
-- **作用**：描述代理的能力、支持的技能、端点 URL 和认证要求。
-- **JSON 示例**：
-```json
-{
-  "name": "Weather Agent",
-  "description": "提供全球实时天气查询与预报服务",
-  "version": "1.0.0",
-  "supportedInterfaces": [
-    {
-      "url": "https://weather.example.com/a2a/v1",
-      "protocolBinding": "JSONRPC",
-      "protocolVersion": "1.0"
-    }
-  ],
-  "capabilities": {
-    "streaming": true,
-    "push_notifications": false
-  },
-  "security_schemes": {
-    "api_key": {
-      "api_key_security_scheme": {
-        "location": "header",
-        "name": "X-API-KEY"
-      }
-    }
-  },
-  "skills": [
-    {
-      "id": "get_weather",
-      "name": "查询天气",
-      "description": "根据城市名称提供当前天气状况",
-      "tags": ["weather", "real-time"],
-      "examples": ["查询北京今天的天气"]
-    }
-  ]
-}
-```
-
-### 2.2 A2A 服务器 (A2A Server)
-**定义**：实现了 A2A 协议接口并暴露 HTTP 端点的智能体服务。
-- **作用**：作为服务提供方，接收请求、管理任务执行、维护状态机并交付结果。
-
-### 2.3 A2A 客户端 (A2A Client)
-**定义**：消费 A2A 服务的应用程序或另一个智能体。
-- **作用**：作为请求发起方，负责发现服务器、执行认证并发送指令。
-
-### 2.4 任务 (Task)
-**定义**：A2A 中工作的中心单位，代表一个需要执行的具体目标。
-- **特性**：拥有唯一 ID，经历从 `SUBMITTED` 到 `COMPLETED` 的状态流转。
-- **JSON 示例**：
-```json
-{
-  "id": "task-12345",
-  "contextId": "ctx-abc-789",
-  "status": {
-    "state": "TASK_STATE_WORKING",
-    "message": {
-      "role": "ROLE_AGENT",
-      "parts": [{ "text": "正在检索航班信息，请稍候..." }]
-    },
-    "timestamp": "2026-10-17T10:00:00Z"
-  },
-  "artifacts": [],
-  "metadata": {
-    "priority": "high",
-    "category": "travel"
-  }
-}
-```
-
-### 2.5 消息 (Message)
-**定义**：客户端与代理之间的一次通信轮次（Turn）。
-- **结构**：包含发送者角色（User/Agent）和多个内容部件（Parts）。
-- **JSON 示例**：
-```json
-{
-  "messageId": "msg-user-001",
-  "contextId": "ctx-abc-789",
-  "taskId": "task-12345",
-  "role": "ROLE_USER",
-  "parts": [
-    {
-      "text": "我想预订一张去东京的机票",
-      "mediaType": "text/plain"
-    },
-    {
-      "data": { "date": "2026-12-01", "class": "business" },
-      "mediaType": "application/json"
-    }
-  ],
-  "metadata": {
-    "client_version": "1.2.0"
-  }
-}
-```
-
-### 2.6 部件 (Part) 与 工件 (Artifact)
-- **部件 (Part)**：消息或工件中的最小内容单位。
-    - `TextPart`: 纯文本（如指令）。
-    - `FilePart`: 文件数据（如图片、PDF）。
-    - `DataPart`: 结构化 JSON 数据。
-- **工件 (Artifact)**：代理在任务期间生成的最终或中间输出。
-- **JSON 示例 (Artifact)**：
-```json
-{
-  "artifactId": "art-ticket-v1",
-  "name": "flight_itinerary.pdf",
-  "description": "预订成功的机票行程单",
-  "parts": [
-    {
-      "filename": "itinerary.pdf",
-      "mediaType": "application/pdf",
-      "raw": "base64_encoded_pdf_content..."
-    }
-  ],
-  "metadata": {
-    "page_count": 1,
-    "generated_by": "booking-agent-v1"
-  }
-}
-```
+**核心定位**：
+*   **不是框架**：不绑定 LangChain, CrewAI 等任何实现。
+*   **不是模型**：不绑定 GPT-4, Claude 3.5 等任何底层模型。
+*   **是协议**：类似于 HTTP，定义通信格式和行为准则。
 
 ---
 
-## 3. 整体部署架构 (Deployment Architecture)
+## 2. 核心概念 (Core Concepts)
 
-### 3.1 企业级部署拓扑
+### 2.1 关键实体定义
+| 实体 | 定义 | 核心作用 |
+| :--- | :--- | :--- |
+| **代理卡片 (Agent Card)** | 公共元数据文件 (`/.well-known/agent-card.json`) | Agent 的“数字名片”，声明能力、接口 URL 和认证要求。 |
+| **A2A 服务器 (Server)** | 实现 A2A 接口并暴露端点的 Agent 服务 | 服务提供方，管理任务执行与状态机。 |
+| **A2A 客户端 (Client)** | 消费 A2A 服务的应用或另一个 Agent | 请求发起方，负责发现、认证与指令发送。 |
+| **任务 (Task)** | 工作的中心单位 | 代表具体目标，拥有唯一 ID 及状态流转 (SUBMITTED $\rightarrow$ COMPLETED)。 |
+| **消息 (Message)** | 通信轮次 (Turn) | 包含角色 (User/Agent) 和多个内容部件 (Parts)。 |
+| **部件 (Part)** | 最小内容单位 | 分为 `TextPart` (文本), `FilePart` (文件), `DataPart` (结构化数据)。 |
+| **工件 (Artifact)** | 任务产出物 | Agent 生成的最终或中间结果。 |
+
+### 2.2 JSON 示例 (简版)
+- **Agent Card**: 包含 `name`, `supportedInterfaces`, `capabilities`, `security_schemes`, `skills`。
+- **Task**: 包含 `id`, `contextId`, `status` (state, message), `artifacts`。
+- **Message**: 包含 `messageId`, `taskId`, `role`, `parts` (text/data)。
+
+---
+
+## 3. 部署架构 (Deployment Architecture)
+
+### 3.1 企业级拓扑
 ```mermaid
 graph TD
-    subgraph "Client Side (用户端)"
-        UserApp[用户 App / Web] --> Orchestrator[Orchestrator Agent / 调度智能体]
+    subgraph "Client Side"
+        UserApp[用户 App] --> Orchestrator[调度 Agent]
     end
 
-    subgraph "Identity & Governance (身份与治理中心)"
-        AuthSrv[Auth Server / IdP] -- "发放 Token / 验证身份" --> Orchestrator
-        AuthSrv -- "验证凭证" --> AgentA
-        AuthSrv -- "验证凭证" --> AgentB
-        AuthSrv -- "验证凭证" --> AgentC
-        Discovery[Agent Registry / 发现注册表] -- "能力清单 / Endpoint" --> Orchestrator
+    subgraph "Governance"
+        AuthSrv[Auth Server/IdP] -- "Token" --> Orchestrator
+        AuthSrv -- "验证" --> AgentNetwork
+        Discovery[Registry] -- "能力清单" --> Orchestrator
     end
 
-    subgraph "Agent Network (智能体网络)"
-        Orchestrator -- "A2A Protocol (with Token)" --> AgentA[Agent A: 财务审计]
-        Orchestrator -- "A2A Protocol (with Token)" --> AgentB[Agent B: 法务合规]
-        Orchestrator -- "A2A Protocol (with Token)" --> AgentC[Agent C: 数据分析]
-        
-        AgentA <--> AgentB
-        AgentB <--> AgentC
-    end
-
-    subgraph "Infrastructure (基础设施)"
-        AgentA --> DB1[(Private DB)]
-        AgentB --> API1[External Law API]
-        AgentC --> DB2[(Data Warehouse)]
+    subgraph "Agent Network"
+        Orchestrator -- "A2A Protocol" --> AgentNetwork[Agent 集群]
+        AgentNetwork <--> AgentNetwork
     end
 ```
 
-### 3.2 场景模拟：企业自动化审计
-**场景描述**：用户要求“审计 Q3 季度的差旅费用并检查合规性”。
-
-1.  **身份获取**：`User App` 引导用户登录 $\rightarrow$ `Auth Server` 发放包含用户身份的 JWT Token $\rightarrow$ 交给 `Orchestrator`。
-2.  **发现与规划**：`Orchestrator` 查询 `Discovery Registry`，发现 `Agent A (财务)` 和 `Agent B (法务)` 具备相关 Skill。
-3.  **分发任务**：
-    *   `Orchestrator` $\xrightarrow{A2A}$ `Agent A`: 创建 Task-1 (提取所有费用单)，携带用户委托 Token。
-    *   `Agent A` $\rightarrow$ `Artifact`: 生成 `expenses.csv`。
-4.  **跨 Agent 协作**：
-    *   `Orchestrator` $\xrightarrow{A2A}$ `Agent B`: 创建 Task-2 (审核 `expenses.csv` 的合规性)，传递用户 Token 确保审计记录可溯源。
-    *   `Agent B` 接收到 Task-2，通过 `Artifact` 引用读取 `expenses.csv`。
-5.  **汇总交付**：`Agent B` 生成 `audit_report.pdf` $\rightarrow$ `Orchestrator` $\rightarrow$ `User App`。
-
-### 3.3 关键部署模式
-- **Hub-and-Spoke (中心辐射型)**：一个中心 Orchestrator 负责分发任务，所有 Agent 仅与中心通信。适用于强管控场景。
-- **Mesh (网状协作型)**：Agent 之间可以直接通过 A2A 协议互相调用（例如 Agent A 发现需要 Agent B 的帮助，直接发起 `SendMessage`）。适用于高度自主的协作场景。
+### 3.2 关键部署模式
+- **Hub-and-Spoke (中心辐射型)**：由中心 Orchestrator 强管控分发，Agent 仅与中心通信。
+- **Mesh (网状协作型)**：Agent 间直接通过 A2A 协议对等调用，适用于高度自主协作。
 
 ---
 
-## 4. 深度安全与授权机制 (Deep Dive: Security & Authorization)
+## 4. 安全与授权 (Security & Authorization)
 
-A2A 的安全核心在于：**由被调用方（Server Agent）在名片中声明安全要求，由调用方（Client Agent）适配实现。**
+A2A 采用 **“Server 声明 $\rightarrow$ Client 适配”** 的声明式安全模型。
 
-### 4.1 声明式安全 (Declarative Security)
-Agent 在 `Agent Card` 中定义 `security_schemes`。这允许 Client 在发起请求前就获知认证方式。
+### 4.1 认证机制
+- **声明方式**：在 `Agent Card` 的 `security_schemes` 中定义。
+- **常见方案**：
+    - **API Key**: 简单、适用于私有/快速集成。
+    - **OAuth2/OIDC**: 企业级、支持委托身份与权限细粒度控制。
+    - **mTLS**: 传输层双向认证，适用于极高安全场景。
 
-**认证方案定义示例：**
-```json
-"security_schemes": {
-  "api_key_auth": {
-    "api_key_security_scheme": {
-      "location": "header",
-      "name": "X-A2A-API-KEY"
-    }
-  },
-  "oauth_auth": {
-    "oauth2_security_scheme": {
-      "flows": {
-        "client_credentials": {
-          "token_url": "https://auth.example.com/token",
-          "scopes": { "write:tasks": "创建任务" }
-        }
-      }
-    }
-  }
-},
-"security_requirements": [
-  { "api_key_auth": [], "oauth_auth": ["write:tasks"] }
-]
-```
+### 4.2 特色功能：认证中断 (Auth Interruption)
+当 Agent 在执行过程中需要更高权限时，可返回 `TASK_STATE_AUTH_REQUIRED` 状态。Client 捕捉后引导用户授权，携带新凭证后任务恢复执行。
 
-### 4.2 认证实施与调用示例
-根据名片声明，Client 在 HTTP 请求中携带凭证。
-
-*   **API Key 模式**：
-    ```http
-    POST /message:send HTTP/1.1
-    X-A2A-API-KEY: sk-1234567890abcdef
-    Content-Type: application/json
-    ```
-*   **OAuth2 Bearer 模式**：
-    ```http
-    POST /message:send HTTP/1.1
-    Authorization: Bearer eyJhbGciOiJIUzI1Ni...
-    Content-Type: application/json
-    ```
-
-### 4.3 关键特性：认证中断 (Auth Interruption)
-A2A 协议定义了 `TASK_STATE_AUTH_REQUIRED` 状态，允许 Agent 在执行过程中动态请求权限提升。
-
-**交互流程：**
-1.  **触发**：Agent 在 `WORKING` 状态下发现需要访问受限资源 $\rightarrow$ 返回 `TASK_STATE_AUTH_REQUIRED`。
-2.  **引导**：Client 捕捉此状态 $\rightarrow$ 引导用户完成 OIDC/OAuth2 授权 $\rightarrow$ 获取新 Token。
-3.  **恢复**：Client 发送新消息携带升级后的凭证 $\rightarrow$ Task 回到 `WORKING` 状态。
-
-### 4.4 传输与真实性保障
-- **传输加密**：生产环境强制要求 `HTTPS`。
-- **双向认证**：支持 `mTLS` (Mutual TLS)，用于企业内部高安全 Agent 协作。
-- **名片签名**：`Agent Card` 支持 `AgentCardSignature` (基于 **RFC 7515 JWS**)，确保名片未被篡改且来源可信。
+### 4.3 真实性保障
+- **HTTPS**: 强制传输加密。
+- **名片签名**: 基于 **RFC 7515 JWS** 确保 Agent Card 未被篡改。
 
 ---
 
-## 5. 架构抽象分析 (STAR Framework)
+## 5. 架构分析 (STAR Framework)
 
-### 5.1 背景与挑战 (Situation)
-在 AI Agent 的生态演进中，出现了严重的“协议碎片化”现象。不同厂商的智能体被隔离在各自的生态孤岛（Silos）中，缺乏统一的通信标准。现有的集成方式多为点对点（Point-to-Point）的定制开发，且多数协议将 Agent 简单地视为“工具（Tool）”，忽略了 Agent 自身的自主规划和状态管理能力。
-
-### 5.2 核心目标 (Task)
-构建一个框架无关、厂商中立的通用通信标准，实现以下目标：
-- **互操作性 (Interoperability)**：允许不同框架的 Agent 无缝协作。
-- **不透明性 (Opacity)**：在不泄露内部 Prompt 和私有逻辑的前提下声明能力。
-- **自主协作**：支持 Agent 之间的双向协商、异步执行和状态跟踪。
-
-### 5.3 实施方案 (Action)
-- **能力解耦**：通过 `AgentCard` 定义一套标准的能力清单，实现“能力发现”与“物理连接”的分离。
-- **状态机建模**：引入 `Task` 概念，将交互从简单的请求-响应升级为状态驱动的生命周期管理，支持 `INPUT_REQUIRED` 等中断状态。
-- **标准技术栈**：基于 `JSON-RPC 2.0` 处理指令，`SSE` 处理异步流，`Protobuf` 确保强类型约束。
-
-### 5.4 最终结果 (Result)
-形成了一套标准化的 Agent 协作体系，使得 Agent 可以作为对等实体 (Peers) 存在。通过该协议，Agent 能够自主地完成：**发现 $\rightarrow$ 认证 $\rightarrow$ 协商 $\rightarrow$ 执行 $\rightarrow$ 交付** 的闭环。
+- **S (Situation)**: AI Agent 生态碎片化，厂商孤岛严重，缺乏统一通信标准。
+- **T (Task)**: 构建框架无关、厂商中立的标准，实现互操作性、能力不透明性与自主协作。
+- **A (Action)**: 通过 `AgentCard` 解耦能力发现 $\rightarrow$ 引入 `Task` 状态机管理生命周期 $\rightarrow$ 基于 `JSON-RPC/SSE/Protobuf` 构建技术栈。
+- **R (Result)**: 实现了 **发现 $\rightarrow$ 认证 $\rightarrow$ 协商 $\rightarrow$ 执行 $\rightarrow$ 交付** 的闭环对等协作体系。
 
 ---
 
 ## 6. 技术架构与逻辑流 (Technical Architecture)
 
-### 5.1 逻辑架构图
-```mermaid
-graph TD
-    subgraph "Discovery Layer (发现层)"
-        A[Agent Card] --> B{Discovery Strategy}
-        B --> B1[Well-Known URI]
-        B --> B2[Curated Registry]
-        B --> B3[Direct Config]
-    end
+### 6.1 逻辑架构
+**发现层** (Agent Card) $\rightarrow$ **安全层** (Auth Handshake) $\rightarrow$ **执行层** (Task State Machine) $\rightarrow$ **交付层** (Artifacts)。
 
-    subgraph "Security Layer (安全层)"
-        C[Security Schemes] --> D[Auth Handshake]
-        D --> D1[OAuth2/OIDC]
-        D --> D2[API Key/mTLS]
-    end
+### 6.2 任务状态流转
+`SUBMITTED` $\rightarrow$ `WORKING` $\rightleftharpoons$ (`INPUT_REQUIRED` / `AUTH_REQUIRED`) $\rightarrow$ (`COMPLETED` / `FAILED` / `REJECTED`)。
 
-    subgraph "Execution Layer (执行层)"
-        E[SendMessage/Streaming] --> F[Task State Machine]
-        F --> F1[Working]
-        F --> F2[Interrupted]
-        F --> F3[Terminal]
-    end
-
-    subgraph "Delivery Layer (交付层)"
-        G[Artifacts] --> H[Context Memory]
-        H --> I[Final Result]
-    end
-
-    A --> C
-    C --> E
-    E --> G
-```
-
-### 5.2 任务状态流转图
-```mermaid
-stateDiagram-v2
-    [*] --> SUBMITTED
-    SUBMITTED --> WORKING
-    WORKING --> WORKING : Update Artifacts
-    WORKING --> INPUT_REQUIRED : Information Missing
-    WORKING --> AUTH_REQUIRED : Permission Missing
-    INPUT_REQUIRED --> WORKING : User Provides Input
-    AUTH_REQUIRED --> WORKING : User Provides Auth
-    WORKING --> COMPLETED : Success
-    WORKING --> FAILED : System Error
-    WORKING --> REJECTED : Agent Refuses
-    SUBMITTED --> REJECTED : Initial Validation Fail
-    COMPLETED --> [*]
-    FAILED --> [*]
-    REJECTED --> [*]
-```
-
-### 5.3 协作交互序列图
-```mermaid
-sequenceDiagram
-    participant C as Client Agent
-    participant S as Server Agent
-    
-    Note over C, S: Phase 1: Discovery
-    C->>S: GET /.well-known/agent-card.json
-    S-->>C: Return AgentCard (Skills, Interface, Security)
-    
-    Note over C, S: Phase 2: Auth
-    C->>S: Authenticate (OAuth2/API Key)
-    S-->>C: Auth Token
-    
-    Note over C, S: Phase 3: Execution
-    C->>S: SendMessage (Request Task)
-    S-->>C: Return TaskID (State: WORKING)
-    
-    loop Asynchronous Processing
-        S-->>C: SSE: TaskArtifactUpdateEvent (Partial Result)
-        S-->>C: SSE: TaskStatusUpdateEvent (State: WORKING)
-    end
-    
-    S-->>C: SSE: TaskStatusUpdateEvent (State: COMPLETED)
-    C->>S: GetTask (Retrieve Final Artifacts)
-    S-->>C: Return Final Artifacts
-```
+### 6.3 协作序列
+`发现名片` $\rightarrow$ `身份认证` $\rightarrow$ `发送消息 (创建 Task)` $\rightarrow$ `SSE 异步更新` $\rightarrow$ `获取最终 Artifacts`。
 
 ---
 
-## 7. 技术细节深入 (Detailed Specification)
+## 7. 技术细节 (Detailed Specification)
 
 ### 7.1 技术栈
-为了确保最大程度的兼容性和低门槛，A2A 基于成熟的 Web 标准构建：
+- **传输**: `HTTPS`
+- **调用**: `JSON-RPC 2.0`
+- **实时**: `SSE` (Server-Sent Events)
+- **定义**: `Protobuf` (强类型约束)
 
-| 维度 | 采用技术 | 说明 |
-| :--- | :--- | :--- |
-| **传输协议** | `HTTPS` | 确保安全、标准且可穿透防火墙 |
-| **调用规范** | `JSON-RPC 2.0` | 轻量级、无状态的远程过程调用 |
-| **实时通信** | `SSE (Server-Sent Events)` | 用于支持长任务的流式进度更新 |
-| **接口定义** | `Protobuf` | 在 `a2a.proto` 中定义强类型约束，支持多语言生成 |
-| **序列化** | `JSON` | 通用数据交换格式 |
-
-### 7.2 核心工作流 (Protocol Flow)
-
-#### 第一阶段：发现 (Discovery) $\rightarrow$ Agent Card
-当 Agent A 想要与 Agent B 协作时，首先获取 Agent B 的 **Agent Card (智能体名片)**。
-*   **获取策略**：
-    *   **标准周知 URI (Well-Known URI)**：访问 `https://{domain}/.well-known/agent-card.json` (RFC 8615)，适用于公共 Agent。
-    *   **策展注册表 (Curated Registries)**：通过中央目录服务根据 `skills` 或 `tags` 检索，适用于企业级市场。
-    *   **直接配置 (Direct Configuration)**：通过配置文件或环境变量直接指定 URL，适用于私有部署。
-*   **名片内容**：
-    *   `Identity`: 包含 `name`, `description` 和 `provider`。
-    *   `Interfaces`: 通信地址 `url` 和协议绑定（如 `JSONRPC`）。
-    *   `Capabilities`: 是否支持 `streaming` 或 `pushNotifications`。
-    *   `Skills`: 详细的能力定义，包含 `id`, `description`, `input/output_modes` 及 `examples`。
-*   **安全增强**：支持**扩展名片 (`GetExtendedAgentCard`)**，仅在通过身份认证后提供更详细的私有能力定义。
-
-#### 第二阶段：认证 (Authentication)
-Client 根据名片中的 `security_schemes`（如 OAuth2, OIDC, API Key, mTLS）获取凭证，建立加密的信任通道。
-
-##### 认证机制细节 (Security Specifications)
-A2A 采用了声明式安全机制，具体实现如下：
-
-1. **API Key 认证 (简单方案)**
-   - **逻辑**：Client 将预共享密钥放入 HTTP Header。
-   - **请求示例**：
-     ```http
-     POST /message:send HTTP/1.1
-     X-API-KEY: your-secret-api-key-123
-     Content-Type: application/json
-     ```
-
-2. **OAuth 2.0 / OIDC (企业级方案)**
-   - **逻辑**：Client 通过 Agent Card 中定义的 `oauth2_metadata_url` 或 `open_id_connect_url` 获取认证端点，完成授权码流 (Authorization Code Flow) 或客户端凭据流 (Client Credentials Flow)。
-   - **请求示例**：
-     ```http
-     POST /message:send HTTP/1.1
-     Authorization: Bearer eyJhbGciOi... (JWT Token)
-     Content-Type: application/json
-     ```
-
-3. **mTLS (高安全方案)**：
-   - **逻辑**：使用双向 TLS 证书进行传输层验证，无需在应用层传递 Token。
-
-##### 特殊安全特性：认证中断 (Auth Interruption)
-在执行 Task 过程中，如果 Agent 发现需要更高的权限（例如：需要访问用户私有邮箱），它可以将 Task 状态设置为 `TASK_STATE_AUTH_REQUIRED`。
-- **流程**：
-  1. Agent 返回 `TASK_STATE_AUTH_REQUIRED` 状态。
-  2. 客户端捕捉到该状态，引导用户完成授权。
-  3. 客户端发送新的消息，携带更新后的凭证 $\rightarrow$ Task 回到 `WORKING` 状态。
+### 7.2 核心工作流
+1. **发现**: 通过 Well-known URI, 策展注册表或直接配置获取 Agent Card。
+2. **认证**: 根据声明的 `security_schemes` 建立信任通道。
+3. **执行**: 基于 `SendMessage` 发起任务，通过 `context_id` 维持会话，通过 `task_id` 追踪单元。
 
 ---
 
 ## 8. 关键数据模型 (Data Models)
 
-### 7.1 Task (任务)
-任务是 A2A 的核心调度单位。
-*   **层级关系**：`Context` $\supset$ `Tasks`。`context_id` 跨任务维持会话记忆，`task_id` 标识具体工作单元。
-*   **不可变性 (Immutability)**：一旦进入终结状态（Completed/Failed 等），Task 及其关联的 Artifacts 变为不可变快照。任何修改请求必须在同一 `context_id` 下发起新 Task。
-*   **状态管理**：确保长时运行操作（LRO）的可追踪性。
-
-### 7.2 Message (消息)
-采用多部分（Multi-part）结构，支持复杂内容的传输。
-*   **Role**: 标识发送方为 `USER` 或 `AGENT`。
-*   **Parts (Union Type)**:
-    *   `text`: 自然语言指令。
-    *   `data`: 结构化 JSON 数据 (`google.protobuf.Value`)。
-    *   `raw`: 二进制字节流 (Base64 编码)。
-    *   `url`: 外部资源链接。
-*   **引用机制**：支持 `reference_task_ids`，允许新消息引用之前的任务结果进行精细化修改。
-
-### 7.3 Artifact (产出物)
-任务的最终交付结果。
-*   **增量更新**：支持 `append` 模式，允许 Agent 在 `WORKING` 状态下分块推送结果。
-*   **多模态**：通过 `mime_type` 定义内容类型（如 `application/json`, `image/png`）。
-*   **版本追踪**：客户端负责维护同一 `artifact-name` 的版本历史。
+- **Task**: 核心调度单位。强调 **不可变性** (终结状态后不可修改) 和 **LRO** (长时运行) 可追踪性。
+- **Message**: 多部分结构。支持 `text`, `data`, `raw`, `url`。支持 `reference_task_ids` 实现精细化修改 (Refinement)。
+- **Artifact**: 最终交付物。支持 **增量更新 (Append)** 和多模态 `mime_type`。
 
 ---
 
-## 9. 可扩展性与自定义 (Extensibility)
+## 9. 可扩展性 (Extensibility)
 
 ### 9.1 协议绑定 (Protocol Bindings)
-A2A 允许通过 **Custom Protocol Bindings** 改变传输层（Transport Layer），而无需更改核心逻辑。
-- **标准绑定**：`JSON-RPC`, `gRPC`, `HTTP+JSON`。
-- **自定义绑定**：例如通过 `WebSockets` 实现极低延迟的双向通信，或通过 `MQTT` 适配 IoT 设备。
-- **约束**：自定义绑定必须支持所有核心操作且保证数据模型等价。
+改变传输层而不改变逻辑。支持 `JSON-RPC`, `gRPC` 等，允许自定义（如 `WebSockets` 降低延迟）。
 
 ### 9.2 协议扩展 (Extensions)
-Extensions 用于在不破坏核心协议的前提下，增加新数据、新方法或新状态。
-- **数据扩展**：在 `AgentCard` 中增加特定领域信息（如 GDPR 合规性）。
-- **方法扩展 (Extended Skills)**：通过定义新的 RPC 方法扩展 Agent 的能力。
-- **状态扩展**：利用 `metadata` 在 `WORKING` 状态下定义子状态（如 `generating-image`）。
-- **激活机制**：客户端在 HTTP Header 中发送 `A2A-Extensions` 列表，Server 响应确认已激活的扩展。
+在不破坏核心协议前提下增加功能。通过 `A2A-Extensions` HTTP Header 进行协商激活。
+- **类型**: 数据扩展 (GDPR)、方法扩展 (新 RPC)、状态扩展 (子状态)。
 
 ---
 
-## 10. 实操交互示例 (Interaction Example)
+## 10. 实操示例 (Interaction Example)
 
-### 场景：生成图片 $\rightarrow$ 修改颜色 (Refinement)
-
-**1. 发起请求 (创建 Task)**
-`Client` $\rightarrow$ `Agent`:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req-001",
-  "method": "SendMessage",
-  "params": {
-    "message": {
-      "role": "user",
-      "parts": [{ "text": "生成一张海洋上帆船的图片" }],
-      "messageId": "msg-user-001"
-    }
-  }
-}
-```
-
-**2. 返回结果 (Task Completed)**
-`Agent` $\rightarrow$ `Client`:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req-001",
-  "result": {
-    "task": {
-      "id": "task-boat-123",
-      "contextId": "ctx-abc-789",
-      "status": { "state": "TASK_STATE_COMPLETED" },
-      "artifacts": [
-        {
-          "artifactId": "art-boat-v1",
-          "name": "sailboat.png",
-          "parts": [{ "mediaType": "image/png", "raw": "base64_data..." }]
-        }
-      ]
-    }
-  }
-}
-```
-
-**3. 精细化修改请求 (Reference Previous Task)**
-`Client` $\rightarrow$ `Agent` (携带 `contextId` 和 `referenceTaskIds`):
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req-002",
-  "method": "SendMessage",
-  "params": {
-    "message": {
-      "role": "user",
-      "contextId": "ctx-abc-789",
-      "referenceTaskIds": ["task-boat-123"],
-      "parts": [{ "text": "请把帆船改成红色的" }],
-      "messageId":, "msg-user-002"
-    }
-  }
-}
-```
-
-**4. 返回修改后的结果 (New Task, Same Context)**
-`Agent` $\rightarrow$ `Client`:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req-002",
-  "result": {
-    "task": {
-      "id": "task-boat-red-456",
-      "contextId": "ctx-abc-789",
-      "status": { "state": "TASK_STATE_COMPLETED" },
-      "artifacts": [
-        {
-          "artifactId": "art-boat-v2",
-          "name": "sailboat.png",
-          "parts": [{ "mediaType": "image/png", "raw": "base64_red_data..." }]
-        }
-      ]
-    }
-  }
-}
-```
+**场景：图片生成 $\rightarrow$ 颜色修改 (Refinement)**
+1. **请求**: `SendMessage` $\rightarrow$ "生成帆船图片"。
+2. **响应**: 返回 `Task (COMPLETED)` $\rightarrow$ `Artifact (sailboat.png)`。
+3. **修改**: `SendMessage` (携带 `contextId` + `referenceTaskIds`) $\rightarrow$ "改为红色"。
+4. **结果**: 返回新 `Task` $\rightarrow$ 新 `Artifact` (同名，不同 ID)。
 
 ---
 
 ## 11. 常见问题 (FAQ)
 
-### 11.1 A2A 与 MCP 的根本区别是什么？
-**MCP (Model Context Protocol)** 侧重于“能力增强”，旨在标准化模型如何访问工具和数据。而 **A2A** 侧重于“实体协作”，旨在定义两个或多个具备自主规划能力的智能体如何像对等实体一样发现、协商和协作。简单来说，MCP 是 `模型 $\rightarrow$ 工具`，A2A 是 `智能体 $\leftrightarrow$ 智能体`。
-
-### 11.2 如何处理超大规模的 Artifact (例如 GB 级的视频文件)？
-A2A 协议通过 `Part` 结构提供了三种传输方式。对于超大文件，**严禁使用 `raw` (Base64)**，因为这会导致极高的内存开销。正确的做法是使用 `url` 字段，提供一个指向外部安全存储（如 AWS S3 或 Google Cloud Storage）的预签名 URL (Presigned URL)。
-
-### 11.3 如果 Agent B 拒绝了 Agent A 的请求，应该如何处理？
-Agent B 应将 `TaskState` 设置为 `TASK_STATE_REJECTED`。在 `TaskStatus.message` 中，Agent B 应当提供清晰的拒绝理由（例如：“由于安全合规要求，我无法访问该特定域名的财务数据”）。Client Agent 收到此状态后，可决定是尝试调整请求策略，还是向最终用户报告失败。
-
-### 11.4 `context_id` 的生命周期如何管理？
-`context_id` 用于维持一个长期的会话状态。协议并未强制规定有效期，但建议实现方采取以下策略：
-*   **服务端 TTL**：设置一个合理的有效期（如 24 小时），过期后自动清理相关的 Task 历史。
-*   **客户端存储**：客户端应将 `context_id` 与用户会话关联。
-*   **显式关闭**：虽然目前协议未定义 `CloseContext` 接口，但建议通过自定义扩展实现会话的显式关闭。
+- **vs MCP**: MCP 是 `模型 $\rightarrow$ 工具` (能力增强)，A2A 是 `智能体 $\leftrightarrow$ 智能体` (实体协作)。
+- **大文件**: 严禁 Base64，必须使用 `Part.url` 指向预签名 URL。
+- **拒绝请求**: 使用 `TASK_STATE_REJECTED` 并提供理由。
+- **上下文管理**: 建议服务端实现 TTL (如 24h) 自动清理。
 
 ---
 
 ## 12. 实现指南 (Implementation Guide)
 
-对于计划实现 A2A 协议的开发者，以下是确保兼容性和鲁棒性的核心指南。
+### 12.1 服务器端 (Server)
+- **持久化**: Task 状态必须持久化以支持 LRO。
+- **健壮性**: SSE 需处理断线重连，能力声明需精准。
+- **隔离**: 严格实现 `tenant` 路由，确保上下文绝对隔离。
 
-### 11.1 A2A 服务器实现要点 (Server-side)
-如果您正在构建一个 A2A 服务器（智能体提供方），请确保遵循以下原则：
-*   **任务状态的持久化**：`Task` 状态必须持久化。由于 A2A 支持异步 LRO (长时运行操作)，服务器必须能够记录 `task_id` 的状态并在重启后恢复。
-*   **SSE 流的健壮性**：实现 `SubscribeToTask` 时，必须处理客户端断线重连。建议在 `TaskStatusUpdateEvent` 中包含当前的序列号或时间戳，以便客户端同步缺失的事件。
-*   **能力声明的真实性**：`Agent Card` 中的 `skills` 描述应尽量精准。因为对方 Agent 的 LLM 将直接依赖这些文本进行任务规划，描述不准会导致大量的 `TASK_STATE_REJECTED`。
-*   **资源隔离 (Multi-tenancy)**：正确实现 `tenant` 路由逻辑，确保不同租户之间的 `context_id` 和 `task_id` 绝对隔离。
+### 12.2 客户端 (Client)
+- **链路**: 实现 `Well-known` $\rightarrow$ `Registry` $\rightarrow$ `Config` 的自动化发现。
+- **管理**: 实现 Token 自动刷新与 Artifact 版本历史追踪。
+- **降级**: 不支持 streaming 时自动回退至定时轮询。
 
-### 11.2 A2A 客户端实现要点 (Client-side)
-如果您正在构建 A2A 客户端（调度者或消费方）：
-*   **智能发现链路**：实现一个自动化的发现链：`Well-known URI` $\rightarrow$ `Registry` $\rightarrow$ `Fallback Config`。
-*   **认证生命周期管理**：建立 Token 自动刷新机制。当收到 `TASK_STATE_AUTH_REQUIRED` 时，应能无缝触发认证流并重新提交请求。
-*   **工件版本管理**：协议规定服务器不跟踪 Artifact 突变。客户端应建立本地映射表：`artifact-name` $\rightarrow$ `[version1_id, version2_id, ...]`，始终向用户展示最新版本。
-*   **优雅降级**：如果服务器不支持 `streaming` (在 Agent Card 中声明)，客户端应自动将 `SendStreamingMessage` 降级为对 `GetTask` 的定时轮询。
-
-### 11.3 常见陷阱与避坑指南 (Pitfalls)
-| 陷阱 | 现象 | 解决方案 |
-| :--- | :--- | :--- |
-| **Task 重复创建** | 同一个请求因超时发送两次，导致产生两个 Task | 客户端在请求中提供 `idempotency_key` (通过 metadata)，服务器据此去重。 |
-| **上下文丢失** | 忘记传递 `context_id` 导致 Agent 忘记之前的对话 | 强制在所有 `SendMessage` 请求中携带当前的 `context_id`。 |
-| **死锁中断** | Agent 请求 `INPUT_REQUIRED` 但客户端未响应 | 为 Task 设置超时时间，超时后自动转为 `TASK_STATE_FAILED` 并通知用户。 |
-| **大文件阻塞** | 在 `Part.raw` 中发送超大二进制文件导致内存溢出 | 强制使用 `Part.url` 引用外部存储（如 S3），仅在 `raw` 中发送小片段。 |
+### 12.3 避坑指南
+- **重复创建**: 使用 `idempotency_key` 去重。
+- **上下文丢失**: 强制所有请求携带 `context_id`。
+- **死锁**: 为 `INPUT_REQUIRED` 设置超时。
