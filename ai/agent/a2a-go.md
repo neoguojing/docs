@@ -1,4 +1,3 @@
-这个示例监听本机 HTTP，没有配置认证或 TLS，只应用于本地学习；部署到网络环境时应由应用配置认证、授权、TLS 和访问控制。
 # A2A Go SDK 架构说明
 
 本文面向第一次接触 A2A Go SDK 的 Go 开发者，依次说明它解决什么问题、代码如何分层、请求如何执行，以及如何部署和扩展。
@@ -81,6 +80,8 @@ func main() {
 
 ### 客户端
 
+这个示例监听本机 HTTP，没有配置认证或 TLS，只应用于本地学习；部署到网络环境时应由应用配置认证、授权、TLS 和访问控制。
+
 ```go
 package main
 
@@ -155,7 +156,9 @@ if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil) {
 }
 ```
 
-`NewSubmittedTask` 为新执行建立 TaskID、ContextID 和初始历史。Working 表示任务开始处理；Artifact 保存 Agent 输出，不会被误记为新的对话消息；Completed 是终态。每次 `yield` 都把事件交给服务端处理，服务端更新并保存 Task 后才向订阅者广播。若调用方停止接收事件，`yield` 返回 `false`，执行器应立即停止产出。
+`NewSubmittedTask` 使用执行上下文中的 TaskID、ContextID 构造首个 Task，并把初始用户 Message 放入 History；只有执行上下文中的 ID 为空时，构造函数才会生成缺省 ID。Working 表示任务开始处理；Artifact 保存 Agent 输出，不会被误记为新的对话消息；Completed 是终态。每次 `yield` 都把事件交给服务端处理，服务端更新并保存 Task 后才向订阅者广播。若调用方停止接收事件，`yield` 返回 `false`，执行器应立即停止产出。
+若调用方停止接收事件，`yield` 返回 `false`，执行器应立即停止产出。
+
 ## 已实现能力
 
 | 能力域 | 当前实现 |
@@ -572,7 +575,6 @@ classDiagram
 ```
 
 对象读法：`TaskID` 标识一个可读写的任务，`ContextID` 关联多轮/相关任务；`Message` 是对话内容，`Artifact` 是任务产物；`Event` 是执行输出以及流式传输的统一抽象。单进程模式不需要 WorkQueue；集群模式才用它把执行请求交给 Worker。
-对象读法：`TaskID` 标识一个可读写的任务，`ContextID` 关联多轮/相关任务；`Message` 是对话内容，`Artifact` 是任务产物；`Event` 是执行输出以及流式传输的统一抽象。单进程模式不需要 WorkQueue；集群模式才用它把执行请求交给 Worker。
 
 类图对象说明：
 
@@ -628,7 +630,14 @@ executor := a2asrv.AgentExecutorFunc(func(
         if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
             return
         }
-        if !yield(a2a.NewArtifactEvent(execCtx, a2a.NewTextPart("report section")), nil) {
+        firstChunk := a2a.NewArtifactEvent(execCtx, a2a.NewTextPart("报告标题"))
+        artifactID := firstChunk.Artifact.ID
+        if !yield(firstChunk, nil) {
+            return
+        }
+        lastChunk := a2a.NewArtifactUpdateEvent(execCtx, artifactID, a2a.NewTextPart("报告正文"))
+        lastChunk.LastChunk = true
+        if !yield(lastChunk, nil) {
             return
         }
         if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil) {
@@ -655,6 +664,56 @@ handler := a2asrv.NewHandler(executor)
 4. 事件处理端读取事件，校验 TaskID/ContextID 和状态转换，计算更新后的 Task，并调用 TaskStore 保存。
 5. 只有保存成功的 Event 才写入 EventQueue；订阅者再将 Event 编码成 SSE/gRPC 流，或由非流式 `SendMessage` 汇总为最终 Message/Task。
 
+#### 一次请求的具体数据
+
+假设客户端要生成报告。为便于阅读，下面使用固定 ID；真实运行时 Message、Task、Context 和 Artifact ID 都由构造函数/服务端生成随机 ID。JSON-RPC 请求中 `params` 是 `a2a.SendMessageRequest` 的 JSON 表示，`text` Part 解码后成为 `a2a.Part`：
+
+```json
+{
+    "jsonrpc": "2.0",
+    "id": "rpc-1",
+    "method": "SendMessage",
+    "params": {
+        "message": {
+            "messageId": "msg-100",
+            "role": "ROLE_USER",
+            "parts": [
+                {"text": "生成一份关于 A2A 的报告"}
+            ]
+        }
+    }
+}
+```
+
+客户端通常不手写这段 JSON，而是构造 Go 值，由 JSON-RPC Transport 序列化：
+
+```go
+message := a2a.NewMessage(
+        a2a.MessageRoleUser,
+        a2a.NewTextPart("生成一份关于 A2A 的报告"),
+)
+request := &a2a.SendMessageRequest{Message: message}
+result, err := client.SendMessage(ctx, request)
+```
+
+编码时，`NewMessage` 生成 `messageId`，`MessageRoleUser` 编码为 `ROLE_USER`，`NewTextPart` 编码为 `{"text":"..."}`。服务端 JSON-RPC Handler 将 `params` 解码回 `*a2a.SendMessageRequest`；`RequestHandler` 再验证 Message ID、Role 和 Parts。此时 Message 已变成 Go 对象，但尚未单独写进新 Task。
+
+本地执行路径接着分配 `TaskID`。Factory 使用请求中已有的 `ContextID`，若没有则创建一个，并构造 `ExecutorContext`。因此本次运行可用下面的符号表示：`TaskID=task-42`、`ContextID=ctx-9`、`Message=msg-100`。新任务的首个 `NewSubmittedTask(execCtx, execCtx.Message)` 把 Task/Context 标识和原始用户 Message 一起写入 Task；如果是续跑，SDK 会先把本轮 Message 追加到已有 Task 的 History，再把只读快照放进 `execCtx.StoredTask`。
+
+#### Event 如何变成存储状态
+
+事件处理器不只是把 Event 原样塞进数据库：它会先校验事件关联的 TaskID/ContextID，再由 materializer 把 Event 应用到当前 Task，得到新的完整 Task 快照。下面以默认内存 TaskStore 为例；它创建时版本从 1 开始，每次成功更新加 1。外部 Store 的版本号可以不同，但必须按 `PrevVersion` 原子检测并发写入。
+
+| 顺序 | Agent 产出的 Event | 应用后 Task 的关键字段 | Store 操作与版本 |
+| --- | --- | --- | --- |
+| 1 | `*a2a.Task`，状态 Submitted | `id=task-42`，`contextId=ctx-9`，`history=[msg-100]`，`artifacts=[]` | `Create(task)`，版本 `1` |
+| 2 | `TaskStatusUpdateEvent(Working)` | Status 变为 Working；History 和 Artifacts 不变 | `Update(PrevVersion=1)`，版本 `2` |
+| 3 | `TaskArtifactUpdateEvent`，新 Artifact，Part=`报告标题` | 新增 Artifact `artifact-8`，Parts=`[报告标题]` | `Update(PrevVersion=2)`，版本 `3` |
+| 4 | `TaskArtifactUpdateEvent`，`Append=true`、`LastChunk=true`，Part=`报告正文` | 同一 `artifact-8` 的 Parts 变为 `[报告标题, 报告正文]` | `Update(PrevVersion=3)`，版本 `4` |
+| 5 | `TaskStatusUpdateEvent(Completed)` | Status 变为 Completed；History 和 Artifact 保留 | `Update(PrevVersion=4)`，版本 `5` |
+
+对每个状态/Artifact Event，`Store.Update` 收到的不仅是 Event，还包括应用后的 Task、旧 Task 和 `PrevVersion`。只有版本匹配且更新成功，事件处理器才把该 Event 写入 EventQueue；版本冲突或事件校验失败时不会广播一个未保存的状态。订阅者因此看到的顺序与持久化成功的状态一致。
+
 ### R | Result：调用方最终能观察到什么
 
 - 只产出 Agent Message：`SendMessage` 返回一条 Message；没有可查询的 Task。
@@ -664,8 +723,38 @@ handler := a2asrv.NewHandler(executor)
 
 执行错误也要按阶段表达：任务创建前的校验/初始化错误可以作为序列错误返回；已经开始并产出事件后，通常应产出 `TaskStateFailed`，让失败状态和原因进入 Task，而不是只让当前 HTTP 请求报错。
 
-### 进阶：外部 Agent 适配（Claude Code 示例）
+在本例中，Agent 最后产出的是 Completed 状态事件，而不是 Message。非流式 `RequestHandler.SendMessage` 消费完事件后，会按 TaskID 从 Store 重新读取完整 Task 并返回；JSON-RPC Transport 将其解码为 `*a2a.Task`（`SendMessageResult` 的一种）。响应的关键字段如下，省略了时间戳和可选 Metadata：
 
+```json
+{
+    "jsonrpc": "2.0",
+    "id": "rpc-1",
+    "result": {
+        "task": {
+            "id": "task-42",
+            "contextId": "ctx-9",
+            "status": {"state": "TASK_STATE_COMPLETED"},
+            "history": [
+                {
+                    "messageId": "msg-100",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "生成一份关于 A2A 的报告"}]
+                }
+            ],
+            "artifacts": [
+                {
+                    "artifactId": "artifact-8",
+                    "parts": [{"text": "报告标题"}, {"text": "报告正文"}]
+                }
+            ]
+        }
+    }
+}
+```
+
+如果改用 `SendStreamingMessage`，Task、Working、两个 Artifact 更新和 Completed 会作为多个 Event 逐个返回；每个 Event 都是在该次 Store 更新成功后才对订阅者可见。非流式调用只返回最终 Message 或最终 Task，不会把中间 Event 列表作为结果返回。
+
+### 进阶：外部 Agent 适配（Claude Code 示例）
 仓库没有内置 Claude Code 连接器；`a2asrv` 也不会自动启动 Claude Code。集成方式是在你的 Go Server Agent 应用中实现一个 `AgentExecutor` 适配器：它接收 A2A 的 `ExecutorContext`，调用外部运行时，再把运行时输出转换为 `a2a.Event`。外部运行时可以是本机 CLI 子进程、独立的内部服务，或应用已使用的 Agent SDK；A2A 层只依赖适配器，不依赖 Claude Code 的具体接口。
 
 | A2A 输入/输出 | 适配器要做的映射 |
