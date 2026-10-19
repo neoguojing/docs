@@ -140,7 +140,7 @@ go run ./cmd/client
 
 ```go
 if execCtx.StoredTask == nil {
-    if !yield(a2a.NewSubmittedTask(execCtx, a2a.TaskStateSubmitted, nil), nil) {
+    if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
         return
     }
 }
@@ -588,27 +588,81 @@ classDiagram
 
 箭头表示职责依赖而非所有权：请求入口通过执行管理器安排执行；Factory 将应用执行器与事件处理器配对；事件处理结果写入 Store 后才能发布给 EventQueue。`ExecutorContext.StoredTask` 是已有 Task 的只读快照，不应由 Agent 修改。
 
-## 核心概念
+## 核心概念与执行流程（STAR）
 
-### 先区分请求、执行和任务
+用一个贯穿示例理解四个词：客户端提交“生成报告”；Agent 需要读取本轮输入，可能续接旧任务，逐步产出报告，并允许客户端查询进度或取消。
 
-一次 `SendMessage` 是客户端发起的协议请求；它可能启动一个新的 Task，也可能向已有 Task 追加一条用户消息并继续执行。Task 是可持久化、可查询、可取消的工作单元。执行则是 AgentExecutor 对某次请求实际运行的一次过程，不等同于 HTTP 请求的生命周期：默认本地管理器使用脱离请求取消信号的执行上下文，因此客户端断开后执行仍可继续并保存结果。集群模式下，执行工作可能由不同 Worker 处理，取消和执行通过共享 TaskStore 的版本号协调。
+### S | Situation：为什么不能只返回一个字符串
 
-### AgentExecutor：应用逻辑的适配器
+一次 `SendMessage` 是一次协议请求，不等于一次完整的 Agent 工作。简单问候可以立即返回一条 Message；生成报告可能持续数秒或数分钟，需要保存进度、流式返回内容、支持续跑和取消。如果把所有结果都压成一个 HTTP 字符串，客户端断开后无法查询进度，多个请求也无法关联到同一工作。
 
-**是什么：** `a2asrv.AgentExecutor` 是 SDK 与应用 Agent 代码之间的接口，包含 `Execute` 和 `Cancel`。执行方法返回 `iter.Seq2[a2a.Event, error]`，也就是一串事件及可能的错误，而不是直接返回 HTTP 响应或数据库对象。
+### T | Task：SDK 和应用分别要负责什么
 
-**为什么需要它：** Agent 只需描述“任务已提交、正在进行、产出了什么、何时结束”，不需要知道客户端使用 REST、JSON-RPC 还是 gRPC，也不需要自行实现任务存储、订阅和协议序列化。
+应用负责决定“如何生成报告”：调用模型/工具，并把中间结果与最终状态交给 SDK。SDK 负责把本轮调用关联到正确的任务、校验状态变化、保存 Task，并将已保存事件返回给订阅者。为了让这个分工成立，需要区分下面这些对象：
 
-**如何工作：** `a2asrv` 的 factory 为调用加载/创建 `ExecutorContext`，再由内部 executor 遍历 Agent 返回的事件并写入事件管道。另一个处理阶段负责校验、更新 Task、存储和广播。取消请求会调用 `Cancel`；`a2asrv.AgentExecutorFunc` 提供了默认取消行为，便于只用函数实现 `Execute`。
+| 名称 | 它是什么 | 它不是什么 |
+| --- | --- | --- |
+| `context.Context` | Go 的控制上下文，携带取消信号、deadline 和调用期值；作为 `Execute` 的第一个参数传入。 | 不是 A2A 对话历史，也不是 Task 的 ID。 |
+| `ContextID` | A2A 标识符，用来把多个相关 Task 归为同一段交互上下文。 | 不是 Go context，也不代表某个 goroutine 的生命周期。 |
+| `ExecutorContext` | SDK 为一次 Execute/Cancel 组装的业务输入，含当前 Message、TaskID、ContextID、已有 Task 快照和调用身份信息。 | 不是 Go 的 `context.Context`；不要修改其中的 `StoredTask`。 |
+| `Task` | 可持久化的工作记录，包含 ID、ContextID、Status、History 和 Artifacts。 | 不等于单次 HTTP 请求；一个 Task 可以跨多个请求继续。 |
+| `Event` | 一次可处理、可持久化并可流式传递的变化。 | 不只是“发给客户端的消息”；Task 本身、Message、状态和产物更新都可以是 Event。 |
+| `AgentExecutor` | 应用实现的接口，把业务运行过程转换为 Event 序列。 | 不处理 REST/JSON-RPC/gRPC 编码，也不直接写 TaskStore。 |
 
-`Execute` 返回 `iter.Seq2[a2a.Event, error]`：它不是一次性返回值，而是一个可逐项消费的事件序列。Agent 通过 `yield(event, err)` 交出下一项；返回 `false` 表示消费者不再需要数据，执行器必须停止。
+### A | Action：对象如何配合，数据如何流动
 
-服务端内部把这条序列分成生产和处理两步：执行 goroutine 调用 Agent 并将事件写入本进程的 `eventpipe`；另一个处理阶段读取事件，检查事件和 Task 标识，计算新 Task 状态并写入 TaskStore。写入成功后才广播到 EventQueue，最后由当前请求的订阅者编码为响应或流事件。这样 Agent 无需等待网络写出，也不需要自行维护数据库。
+下面代码是一个可直接嵌入服务端的任务式执行器。它使用真实构造函数签名：`NewSubmittedTask(execCtx, execCtx.Message)`。
 
-新 Task 的首个事件应是 Task（通常用 `NewSubmittedTask` 建立 TaskID、ContextID 和初始历史）；已有 Task 的用户消息在 Agent 执行前已追加到历史。Agent 应用 `ExecutorContext` 构造关联同一任务的事件，并将它视为只读输入。事件及其引用的 Part、Metadata 等对象在 `yield` 后可能被存储和订阅端同时读取，因此不能再修改。
+```go
+executor := a2asrv.AgentExecutorFunc(func(
+    ctx context.Context,
+    execCtx *a2asrv.ExecutorContext,
+) iter.Seq2[a2a.Event, error] {
+    return func(yield func(a2a.Event, error) bool) {
+        if execCtx.StoredTask == nil {
+            if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+                return
+            }
+        }
 
-错误处理有明确边界：Task 尚未创建时发生的输入/初始化错误可以作为序列错误返回；执行已开始后，通常产出 `TaskStateFailed` 事件，让失败状态被保存和订阅，而不是只让 HTTP 调用失败。取消则调用 `AgentExecutor.Cancel`；`AgentExecutorFunc` 提供的默认实现只发 Canceled 状态，若 Agent 启动了子进程或远端工作，应用还必须实现真正的停止逻辑。
+        if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
+            return
+        }
+        if !yield(a2a.NewArtifactEvent(execCtx, a2a.NewTextPart("report section")), nil) {
+            return
+        }
+        if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil) {
+            return
+        }
+    }
+})
+handler := a2asrv.NewHandler(executor)
+```
+
+这段代码中的对象关系是：
+
+1. `Execute(ctx, execCtx)` 中的 `ctx` 控制本次运行是否应停止；`execCtx` 告诉 Agent“谁触发了执行、当前任务是什么、以前已保存了什么”。新任务的 `StoredTask` 为 `nil`；续接任务时它是已有 Task 的只读快照，SDK 已把本次用户 Message 追加到历史中。
+2. `ExecutorContext` 实现 `a2a.TaskInfoProvider`。把它传给 `NewSubmittedTask`、`NewStatusUpdateEvent`、`NewArtifactEvent` 等构造函数，SDK 就能让所有事件携带一致的 TaskID 和 ContextID。新执行在调用 Agent 前已准备好 TaskID；ContextID 沿用请求值或由服务端生成，续跑时则使用已存 Task 的 ContextID。构造 `NewSubmittedTask` 和后续 Event 时都使用同一个 `execCtx`，确保它们关联同一任务；不要依赖构造函数单独生成 ID 后再期待它回写到 `execCtx`。
+3. `NewSubmittedTask` 产生第一个 Task Event，包含初始用户消息和 Submitted 状态。它不是普通进度通知，而是告诉处理管线“从现在开始有一条需要追踪的 Task”。若 Agent 只需直接回答、不需要持久化任务，可以像 Hello World 示例那样只产出 Agent Message。
+4. 状态 Event 推进 Task 生命周期；Artifact Event 保存报告内容。若要分块输出，首次调用 `NewArtifactEvent` 获取 Artifact ID，之后用 `NewArtifactUpdateEvent` 追加同一 Artifact 的内容，而不是为每个 chunk 新建产物。
+5. `yield` 把 Event 交回 SDK。`yield` 返回 `false` 时，表示接收端已停止消费，Agent 必须尽快退出。Event、Part 和 Metadata 在交给 `yield` 后不可再修改，因为后续处理与订阅可能并发读取它们。
+
+服务端的数据流按这个顺序发生：
+
+1. Transport 把线上请求解码成 `a2a.SendMessageRequest`，`RequestHandler` 校验请求。
+2. 执行管理器为新请求准备 TaskID；如果请求带有已有 TaskID，则从 TaskStore 读取 Task 并追加用户 Message。随后 factory 构造 `ExecutorContext`。
+3. AgentExecutor 在独立执行 goroutine 中产出事件。生产端写入进程内 `eventpipe`，不直接依赖客户端连接是否仍打开。
+4. 事件处理端读取事件，校验 TaskID/ContextID 和状态转换，计算更新后的 Task，并调用 TaskStore 保存。
+5. 只有保存成功的 Event 才写入 EventQueue；订阅者再将 Event 编码成 SSE/gRPC 流，或由非流式 `SendMessage` 汇总为最终 Message/Task。
+
+### R | Result：调用方最终能观察到什么
+
+- 只产出 Agent Message：`SendMessage` 返回一条 Message；没有可查询的 Task。
+- 产出 Submitted Task、状态和 Artifact：TaskStore 保存完整任务；客户端可以查询 Task、订阅事件或后续带 TaskID 继续执行。
+- 产出 Completed、Failed、Canceled 等终态：任务生命周期结束，普通更新不再继续应用。
+- 客户端断开：默认本地执行使用脱离请求取消信号的执行上下文，因此工作仍可能继续并保存结果。取消必须调用 `AgentExecutor.Cancel`；默认 `AgentExecutorFunc` 只产出 Canceled 状态，若应用启动了子进程或远端任务，还要自行发送实际停止信号。
+
+执行错误也要按阶段表达：任务创建前的校验/初始化错误可以作为序列错误返回；已经开始并产出事件后，通常应产出 `TaskStateFailed`，让失败状态和原因进入 Task，而不是只让当前 HTTP 请求报错。
 
 ### 进阶：外部 Agent 适配（Claude Code 示例）
 
@@ -640,7 +694,7 @@ func (e *ExternalAgent) Execute(
 ) iter.Seq2[a2a.Event, error] {
     return func(yield func(a2a.Event, error) bool) {
         if execCtx.StoredTask == nil {
-            if !yield(a2a.NewSubmittedTask(execCtx, a2a.TaskStateSubmitted, nil), nil) {
+            if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
                 return
             }
         }
