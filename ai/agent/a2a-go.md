@@ -1,13 +1,20 @@
+这个示例监听本机 HTTP，没有配置认证或 TLS，只应用于本地学习；部署到网络环境时应由应用配置认证、授权、TLS 和访问控制。
 # A2A Go SDK 架构说明
 
-本文从代码组织、模块依赖、部署形态、核心对象和运行流程说明 A2A Go SDK。它面向实现自定义 Agent 或接入自有后端的开发者。默认本地执行在客户端断开后仍可继续；取消与执行并发时由任务版本检查避免状态互相覆盖。
+本文面向第一次接触 A2A Go SDK 的 Go 开发者，依次说明它解决什么问题、代码如何分层、请求如何执行，以及如何部署和扩展。
 
-建议先看[项目结构与架构图](#项目结构与架构图)和[部署视图](#部署视图)，再沿[关键流程](#关键流程)跟踪请求。要快速跑通 SDK，可直接看本页的[使用示例](#使用示例)。
+先建立三个概念：Client Agent 是发起调用的应用，Server Agent 是接收请求并运行 Agent 的应用；Message 是一条对话输入/输出，Task 是需要保存、查询、续跑或取消的工作单元。SDK 提供两端协议能力与服务端任务执行管线，不提供模型运行时或业务数据库。
+
+建议按本文顺序阅读：先跑通示例，再看模块和部署边界，最后沿请求流程理解事件、存储和并发处理。
 
 ## 使用示例
-## 使用示例
 
-下面是一个完整的 JSON-RPC 服务端和客户端。把两段程序分别放入同一个 Go 模块的 `cmd/server/main.go` 与 `cmd/client/main.go`，在两个终端中运行。模块需要依赖本 SDK 的 v2 模块版本。
+下面是一个完整的 JSON-RPC 服务端和客户端。创建一个 Go 模块，在模块根目录初始化依赖，并把两段程序分别放入 `cmd/server/main.go` 与 `cmd/client/main.go`：
+
+```bash
+go mod init example.com/hello-agent
+go get github.com/a2aproject/a2a-go/v2@latest
+```
 
 ### 服务端
 
@@ -113,10 +120,13 @@ func main() {
 
 ### 运行与调用过程
 
-在 Go 模块根目录分别启动服务端和客户端：
+打开两个终端并保持服务端运行。先在终端一启动服务端，再在终端二启动客户端：
 
 ```bash
 go run ./cmd/server
+```
+
+```bash
 go run ./cmd/client
 ```
 
@@ -126,7 +136,7 @@ go run ./cmd/client
 
 ### 改为有状态任务
 
-需要保存进度、查询结果或继续执行时，执行器应产出 Task 事件。新任务先产出 Submitted Task；已有任务从 `StoredTask` 读取只读快照。随后状态事件推进任务，Artifact 事件累积结果，Completed 结束执行：
+需要保存进度、查询结果或继续执行时，执行器应产出 Task 事件。下面片段放在 `AgentExecutorFunc` 返回的 `func(yield ...)` 中：新任务先产出 Submitted Task；已有任务从 `StoredTask` 读取只读快照。随后状态事件推进任务，Artifact 事件累积结果，Completed 结束执行。
 
 ```go
 if execCtx.StoredTask == nil {
@@ -140,10 +150,12 @@ if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
 if !yield(a2a.NewArtifactEvent(execCtx, a2a.NewTextPart("result")), nil) {
     return
 }
-yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
+if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil) {
+    return
+}
 ```
 
-每次 `yield` 都把一个不可变事件交给服务端处理；服务端更新并保存 Task 后才向订阅者广播。若调用方停止接收事件，`yield` 返回 `false`，执行器应立即停止产出。
+`NewSubmittedTask` 为新执行建立 TaskID、ContextID 和初始历史。Working 表示任务开始处理；Artifact 保存 Agent 输出，不会被误记为新的对话消息；Completed 是终态。每次 `yield` 都把事件交给服务端处理，服务端更新并保存 Task 后才向订阅者广播。若调用方停止接收事件，`yield` 返回 `false`，执行器应立即停止产出。
 ## 已实现能力
 
 | 能力域 | 当前实现 |
@@ -158,6 +170,18 @@ yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
 | 横切能力 | 请求用户上下文、租户传播、日志上下文和结构化错误详情。认证身份验证、凭据获取、租户隔离及具体后端由应用或部署方提供。 |
 
 该 SDK 提供的是 A2A 协议客户端/服务端构件，不是 Agent 模型运行时，也不内置生产级数据库、消息代理、身份提供方或授权策略。
+
+## 核心对象速览
+
+| 对象 | 初学者可以这样理解 |
+| --- | --- |
+| Agent Card | 服务目录项：告诉 Client 去哪里调用、支持什么协议和能力，不包含 Agent 的实现。 |
+| Message | 一条对话内容，由一个或多个 Part 组成；最简单的请求/响应可以只有 Message。 |
+| Task | 有状态工作记录：保存状态、历史和产物，可查询、继续、取消；不是每条 Message 都必须属于 Task。 |
+| Event | 执行期间发生的一次变化；Message、Task、状态更新和 Artifact 更新都能作为 Event 被流式传递。 |
+| AgentExecutor | 应用提供的业务适配器：接收执行上下文，调用模型/工具，并把结果转换成 Event。 |
+
+最小调用链是：Client 发现 Agent Card 并发送 Message；服务端把请求交给 AgentExecutor；Agent 可以直接返回 Message，也可以通过 Task/Event 表达可持久化的长任务。传输层只负责把这些对象编码到 REST、JSON-RPC 或 gRPC。
 
 ## 项目结构与架构图
 
@@ -289,6 +313,22 @@ flowchart LR
 ```
 
 节点职责：负载均衡器只负责将外部请求送到 Server 副本；前端负责协议接入、创建订阅并提交工作，不一定与 Worker 分进程。WorkQueue 保存待执行的 Execute/Cancel 工作，Worker 调用 Agent 并产出事件。TaskStore 保存版本化任务快照；EventQueue 将已保存事件送回前端订阅者。客户端只访问 Server 的公开 A2A 地址，不直接连接这些内部后端。
+
+每个 Server 副本都可以用同一段初始化代码连接共享后端。三个对象必须由部署方提供具备跨进程语义的实现；仅把内存实现放进配置并不能形成集群。
+
+```go
+clusterConfig := a2asrv.ClusterConfig{
+    TaskStore:    sharedTaskStore,
+    QueueManager: sharedEventQueue,
+    WorkQueue:    sharedWorkQueue,
+}
+requestHandler := a2asrv.NewHandler(
+    executor,
+    a2asrv.WithClusterMode(clusterConfig),
+)
+```
+
+`WithClusterMode` 切换到分布式执行管理器，前端将工作投递给 WorkQueue，注册在队列上的 Worker 消费任务。代码中前端与 Worker 可以是同一个服务进程的两个职责；若要单独部署 Worker，应用仍需按队列 API 启动处理端并共享相同的后端。
 
 ## 请求数据流：发现、调用、事件返回
 
@@ -512,11 +552,11 @@ classDiagram
 
     Client --> AgentCard : created from / refreshed with
     AgentCard "1" o-- "1..*" AgentInterface : advertises
-        RequestHandler --> ExecutionManager : routes execution
-        ExecutionManager --> ExecutionFactory : creates pipeline
-        ExecutionFactory --> AgentExecutor : invokes
-        ExecutionFactory --> EventProcessor : pairs processor
-        EventProcessor --> Store : persists processed events
+    RequestHandler --> ExecutionManager : routes execution
+    ExecutionManager --> ExecutionFactory : creates pipeline
+    ExecutionFactory --> AgentExecutor : invokes
+    ExecutionFactory --> EventProcessor : pairs processor
+    EventProcessor --> Store : persists processed events
     AgentExecutor --> ExecutorContext : receives
     ExecutorContext --> Message : current input
     ExecutorContext o-- Task : optional StoredTask
@@ -531,6 +571,7 @@ classDiagram
     RequestHandler --> WorkQueue : cluster dispatch
 ```
 
+对象读法：`TaskID` 标识一个可读写的任务，`ContextID` 关联多轮/相关任务；`Message` 是对话内容，`Artifact` 是任务产物；`Event` 是执行输出以及流式传输的统一抽象。单进程模式不需要 WorkQueue；集群模式才用它把执行请求交给 Worker。
 对象读法：`TaskID` 标识一个可读写的任务，`ContextID` 关联多轮/相关任务；`Message` 是对话内容，`Artifact` 是任务产物；`Event` 是执行输出以及流式传输的统一抽象。单进程模式不需要 WorkQueue；集群模式才用它把执行请求交给 Worker。
 
 类图对象说明：
@@ -547,38 +588,6 @@ classDiagram
 
 箭头表示职责依赖而非所有权：请求入口通过执行管理器安排执行；Factory 将应用执行器与事件处理器配对；事件处理结果写入 Store 后才能发布给 EventQueue。`ExecutorContext.StoredTask` 是已有 Task 的只读快照，不应由 Agent 修改。
 
-
-## 请求执行的实际步骤
-
-一次调用从客户端到 Agent 再回到客户端，按以下步骤传递数据：
-
-1. 客户端从 Agent Card 读取地址、协议版本和能力，创建对应 Transport，并发送包含用户 Message 的请求。
-2. 服务端 Binding 将 REST、JSON-RPC 或 gRPC 负载转换成 `a2a` 请求；`RequestHandler` 校验字段、任务状态和服务端能力。
-3. 执行管理器为新任务生成标识，或读取已有 Task 并追加用户消息；随后构造 `ExecutorContext`，交给 `AgentExecutor.Execute`。
-4. Agent 逐个产出 `Event`。新任务通常先发 Submitted Task，再发 Working、Artifact 更新和 Completed；Hello World 则可只返回一条 Agent Message。
-5. 事件处理器校验事件并计算新的 Task 快照，通过 TaskStore 按版本创建/更新。成功后才写入 EventQueue，订阅者收到事件后由 Binding 编码成 SSE、gRPC 流或最终响应。
-
-客户端断开不会默认终止已启动的本地执行；执行结果仍由服务端保存。取消会产出 Canceled 状态；若取消与执行更新同时写入，TaskStore 的 `PrevVersion` 比较会拒绝过期写入，服务端再读取最新任务状态处理冲突。
-
-## 模块职责
-
-| 模块 | 职责与边界 |
-| --- | --- |
-| `a2a` | 协议领域模型、常量、请求/响应、任务、消息、事件、Agent Card 及构造函数。与传输和具体 Agent 实现无关。 |
-| `a2aevent` | 将消息、状态和产物更新应用到任务状态，提供事件更新及终态判断等工具。 |
-| `a2asrv` | 服务端核心。`RequestHandler` 处理协议操作，`AgentExecutor` 连接应用逻辑；提供拦截器、认证上下文、Agent Card、推送、任务存储、事件队列和工作队列等扩展接口。 |
-| `a2aclient` | 协议无关客户端、拦截器和传输工厂；可从 Agent Card 或已知接口创建客户端，并按兼容版本及偏好选择传输。 |
-| `a2agrpc` | gRPC 服务端/客户端绑定。实现协议类型与生成的 Protobuf 类型之间的转换，并委托给服务端 `RequestHandler`。 |
-| `a2apb` | A2A v1.0 的生成 Protobuf 类型；其 v1 转换层负责 Go 核心模型与 Protobuf 类型之间的转换。 |
-| `a2acompat/a2av0` | A2A v0.3 兼容实现及迁移辅助，不应与当前 v1.0 核心模型混为一层。 |
-| `a2acrypto` | Agent Card 的 JWS 签名和验证工具。 |
-| `a2aext` | A2A 扩展激活、元数据及上下文传播辅助工具。 |
-| `log` 与 `errordetails` | 结构化日志上下文，以及可跨协议编码的类型化错误详情。 |
-| `internal` | 非公开实现细节，包括执行协调、任务更新、事件管道、JSON-RPC/REST/SSE 辅助实现和测试工具；应用不应依赖这些内部包。 |
-| `e2e` 与 `examples` | 跨模块行为验证和可运行参考实现。 |
-
-服务端可替换的持久化/分发接口位于 `a2asrv` 下，而不是 `internal`：`taskstore.Store` 管理任务状态，`eventqueue.Manager` 分发已处理事件，`workqueue.Queue` 在集群模式下分派执行工作。默认单进程模式使用内存任务存储和内存事件队列。
-
 ## 核心概念
 
 ### 先区分请求、执行和任务
@@ -593,35 +602,15 @@ classDiagram
 
 **如何工作：** `a2asrv` 的 factory 为调用加载/创建 `ExecutorContext`，再由内部 executor 遍历 Agent 返回的事件并写入事件管道。另一个处理阶段负责校验、更新 Task、存储和广播。取消请求会调用 `Cancel`；`a2asrv.AgentExecutorFunc` 提供了默认取消行为，便于只用函数实现 `Execute`。
 
-最小的任务式执行器可以按下面的顺序发事件。示例省略了导入和外层服务启动代码：
+`Execute` 返回 `iter.Seq2[a2a.Event, error]`：它不是一次性返回值，而是一个可逐项消费的事件序列。Agent 通过 `yield(event, err)` 交出下一项；返回 `false` 表示消费者不再需要数据，执行器必须停止。
 
-```go
-executor := a2asrv.AgentExecutorFunc(func(
-    ctx context.Context,
-    execCtx *a2asrv.ExecutorContext,
-) iter.Seq2[a2a.Event, error] {
-    return func(yield func(a2a.Event, error) bool) {
-        if execCtx.StoredTask == nil {
-            if !yield(a2a.NewSubmittedTask(execCtx, a2a.TaskStateSubmitted, nil), nil) {
-                return
-            }
-        }
+服务端内部把这条序列分成生产和处理两步：执行 goroutine 调用 Agent 并将事件写入本进程的 `eventpipe`；另一个处理阶段读取事件，检查事件和 Task 标识，计算新 Task 状态并写入 TaskStore。写入成功后才广播到 EventQueue，最后由当前请求的订阅者编码为响应或流事件。这样 Agent 无需等待网络写出，也不需要自行维护数据库。
 
-        if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
-            return
-        }
-        if !yield(a2a.NewArtifactEvent(execCtx, a2a.NewTextPart("result")), nil) {
-            return
-        }
-        yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
-    }
-})
-handler := a2asrv.NewHandler(executor)
-```
+新 Task 的首个事件应是 Task（通常用 `NewSubmittedTask` 建立 TaskID、ContextID 和初始历史）；已有 Task 的用户消息在 Agent 执行前已追加到历史。Agent 应用 `ExecutorContext` 构造关联同一任务的事件，并将它视为只读输入。事件及其引用的 Part、Metadata 等对象在 `yield` 后可能被存储和订阅端同时读取，因此不能再修改。
 
-新 Task 的首个持久化事件应是 Task（常用 `NewSubmittedTask`，它同时建立 TaskID、ContextID 和初始历史）；已有 Task 的用户消息在调用 Agent 前已由 SDK 追加到历史。Agent 应使用 `ExecutorContext` 构造关联同一任务的事件，并在 `yield` 返回 false 时停止产出。发出事件及它引用的 Part、Metadata 等数据后，不得再修改这些对象，因为存储和订阅处理会并发读取它们。
+错误处理有明确边界：Task 尚未创建时发生的输入/初始化错误可以作为序列错误返回；执行已开始后，通常产出 `TaskStateFailed` 事件，让失败状态被保存和订阅，而不是只让 HTTP 调用失败。取消则调用 `AgentExecutor.Cancel`；`AgentExecutorFunc` 提供的默认实现只发 Canceled 状态，若 Agent 启动了子进程或远端工作，应用还必须实现真正的停止逻辑。
 
-### 外部 Agent 适配（Claude Code 示例）
+### 进阶：外部 Agent 适配（Claude Code 示例）
 
 仓库没有内置 Claude Code 连接器；`a2asrv` 也不会自动启动 Claude Code。集成方式是在你的 Go Server Agent 应用中实现一个 `AgentExecutor` 适配器：它接收 A2A 的 `ExecutorContext`，调用外部运行时，再把运行时输出转换为 `a2a.Event`。外部运行时可以是本机 CLI 子进程、独立的内部服务，或应用已使用的 Agent SDK；A2A 层只依赖适配器，不依赖 Claude Code 的具体接口。
 
@@ -751,12 +740,6 @@ func (e *ExternalAgent) Execute(
 
 集群模式是可选能力。仓库提供基于 MySQL 的任务存储和队列示例，并用 Docker Compose 启动多个服务副本、MySQL 和 Nginx。仅注入接口不会使内存实现自动具备跨进程能力；部署方还需保证版本冲突检测、跨实例事件分发、工作确认/重试和长任务心跳等语义。
 
-## 客户端连接路径
-
-客户端可直接使用已知 `AgentInterface`，也可先由 `a2aclient/agentcard` 的 Resolver 获取 `AgentCard`，再由 `Factory` 根据接口声明和配置偏好选择兼容的传输和协议版本；连接建立失败时可继续尝试其他兼容接口。Resolver 支持自定义 HTTP 客户端/解析器，并可选用 `a2acrypto.Verifier` 校验卡片签名。服务端可用静态或动态卡片处理器公开 Agent Card，也可包装 Producer 为卡片签名。
-
-默认 Factory 注册 JSON-RPC 和 REST；gRPC 通过 `a2agrpc/v1.WithGRPCTransport` 显式注册。客户端拦截器适合处理调用级的观测、认证等逻辑。内置 `AuthInterceptor` 可根据 Agent Card 安全要求从应用提供的 CredentialsService 取凭据并放入请求参数，但不负责获取或刷新凭据。服务端可通过传输适配器/拦截器设置调用用户身份，认证和授权策略仍由应用决定。
-
 ## 安全、扩展与租户边界
 
 - **认证集成**：服务端 `CallContext.User` 可由认证中间件或拦截器填充；客户端凭据存储和附加通过 `CredentialsService`/`AuthInterceptor` 接入。SDK 没有绑定具体身份提供方。
@@ -775,7 +758,6 @@ func (e *ExternalAgent) Execute(
 - **协议与扩展**：新增传输时适配 `a2aclient.Transport`/`TransportFactory` 和服务器请求处理器；协议扩展通过 `a2aext` 与调用上下文交互。
 
 实现新 TaskStore 时，`Get` 应返回与版本号匹配的完整 Task 快照；`Update` 必须原子比较 `PrevVersion` 并更新，版本不匹配时返回 `ErrConcurrentModification`。集群 EventQueue 必须让不同实例上的写入者与订阅者交换同一 Task 的事件；WorkQueue 必须定义工作确认、失败重试和长任务心跳行为。只在单进程内有效的内存队列不满足集群契约。
-
 ## 使用场景对照
 
 - **立即答复**：Agent 产出一条 Agent Message，`SendMessage` 返回 Message；无需创建 Task。
