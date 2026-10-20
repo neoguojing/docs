@@ -1,28 +1,10 @@
-RPC 的 `id`、Message 的 `messageId` 和 TaskID 是三种不同标识，不能互相替代。
-
-例如，客户端发送的 JSON-RPC 请求体如下。`params.message.parts` 是内容数组；这里的单个对象 `{"text":...}` 会变成一个 Text Part：
-
-```json
-{
-    "jsonrpc": "2.0",
-    "id": "rpc-1",
-    "method": "SendMessage",
-    "params": {
-        "message": {
-            "messageId": "msg-100",
-            "role": "ROLE_USER",
-            "parts": [{"text": "生成一份关于 A2A 的报告"}]
-        }
-    }
-}
-```
 # A2A Go SDK 架构说明
 
-本文面向第一次接触 A2A Go SDK 的 Go 开发者，依次说明它解决什么问题、代码如何分层、请求如何执行，以及如何部署和扩展。
+本文面向第一次接触 A2A Go SDK 的 Go 开发者，先用对象关系理解 SDK，再看代码分层、请求边界和部署方式。
 
-先建立三个概念：Client Agent 是发起调用的应用，Server Agent 是接收请求并运行 Agent 的应用；Message 是一条对话输入/输出，Task 是需要保存、查询、续跑或取消的工作单元。SDK 提供两端协议能力与服务端任务执行管线，不提供模型运行时或业务数据库。
+把 SDK 想成一座“翻译台 + 任务台”：Client/Server 传输绑定负责翻译网络协议；`a2a` 的结构体承载共同语言；服务端执行管线把 Agent 产出的事件变成可查询的 Task。Client Agent 是发起调用的应用，Server Agent 是接收请求并运行 Agent 的应用。SDK 提供两端协议能力与服务端任务执行管线，不提供模型运行时或业务数据库。
 
-建议按本文顺序阅读：先跑通示例，再看模块和部署边界，最后沿请求流程理解事件、存储和并发处理。
+建议先跑通示例，再用对象图理解 Message、Task 和 Event 的关系，最后看请求如何穿过模块边界。
 
 ## 使用示例
 
@@ -175,7 +157,6 @@ if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil) {
 ```
 
 `NewSubmittedTask` 使用执行上下文中的 TaskID、ContextID 构造首个 Task，并把初始用户 Message 放入 History；只有执行上下文中的 ID 为空时，构造函数才会生成缺省 ID。Working 表示任务开始处理；Artifact 保存 Agent 输出，不会被误记为新的对话消息；Completed 是终态。每次 `yield` 都把事件交给服务端处理，服务端更新并保存 Task 后才向订阅者广播。若调用方停止接收事件，`yield` 返回 `false`，执行器应立即停止产出。
-若调用方停止接收事件，`yield` 返回 `false`，执行器应立即停止产出。
 
 ## 已实现能力
 
@@ -351,135 +332,92 @@ requestHandler := a2asrv.NewHandler(
 
 `WithClusterMode` 切换到分布式执行管理器，前端将工作投递给 WorkQueue，注册在队列上的 Worker 消费任务。代码中前端与 Worker 可以是同一个服务进程的两个职责；若要单独部署 Worker，应用仍需按队列 API 启动处理端并共享相同的后端。
 
-## 请求数据流：发现、调用、事件返回
+## 一次调用的三个视角
 
-下面展示 Client Agent 依次调用两个独立 Server Agent 的典型路径。实际应用可只调用其中一个，也可自行并发调用；Task 和结果默认不会在两个服务端之间自动复制。
+不必把请求理解成一长串函数调用。先看三个不同的问题：网络边界传什么、应用代码拿到什么、Task 最后保存什么。
 
-```mermaid
-sequenceDiagram
-    participant U as 用户/上游
-    participant App as Client Agent 编排逻辑
-    participant F as a2aclient.Factory / Resolver
-    participant CA as a2aclient.Client
-    participant T as 服务端传输绑定
-    participant H as a2asrv.RequestHandler
-    participant M as taskexec 管理器
-    participant A as AgentExecutor
-    participant P as 事件处理器
-    participant S as TaskStore
-    participant Q as EventQueue
+### 视角一：网络载荷如何落到 Go 结构体
 
-    U->>App: 输入业务请求
-    App->>F: 解析 Agent A / B 的 Agent Card
-    F-->>App: 返回接口、能力和安全要求
-    App->>F: 按 AgentInterface 创建 Client A / B
-    F-->>App: 返回已选传输的 Client
-
-    loop 对应用选中的每个 Server Agent
-        App->>CA: SendMessage 或 SendStreamingMessage
-        CA->>T: 编码并发送 A2A 请求
-        T->>H: 解码为 a2a 请求
-        H->>M: 校验请求并开始/恢复 Task 执行
-        M->>A: 提供 ExecutorContext 并调用 Execute
-        A-->>P: 依次产出 Task / 状态 / 产物 / Message 事件
-        P->>S: 校验事件、更新 Task 并提交版本
-        P->>Q: 持久化成功后广播事件
-        Q-->>H: 交付当前调用的事件订阅
-        H-->>T: 返回最终结果或事件流
-        T-->>CA: 编码为 REST/JSON-RPC SSE 或 gRPC 流
-        CA-->>App: 还原为 a2a 结果或事件
-    end
-
-    App->>App: 按自身业务规则组合或转换结果
-    App-->>U: 返回应用层响应
+```text
+JSON-RPC envelope                 SDK 的核心模型
+┌─────────────────────────┐       ┌─────────────────────────────────┐
+│ id: "rpc-1"             │       │ SendMessageRequest              │
+│ method: "SendMessage"   │──────▶│ └─ Message                       │
+│ params                  │       │    ├─ ID: "msg-100"              │
+│ └─ message              │       │    ├─ Role: ROLE_USER            │
+│    └─ parts: [{text}]   │       │    └─ Parts: [Text("...")]       │
+└─────────────────────────┘       └─────────────────────────────────┘
+              Transport 解码 / 编码边界
 ```
 
-若使用非流式 `SendMessage`，客户端收到的是最终 Message 或 Task；流式调用/任务订阅则逐个收到事件。服务端先应用并保存事件，再向订阅者广播，因而实时事件流与可查询 Task 状态沿用同一更新结果。REST 和 JSON-RPC 的事件在线上使用 SSE，gRPC 使用 server-streaming；进入 SDK 后均转换为 `a2a.Event`。
+REST、JSON-RPC 和 gRPC 外层各不相同；进入 `a2asrv.RequestHandler` 后，操作的是 `a2a.SendMessageRequest`、`a2a.Message` 和 `a2a.Part`。RPC `id` 只关联一次 RPC 往返，不会成为 Message ID 或 Task ID。JSON-RPC SSE 与 gRPC stream 最终也都会还原为统一的 `a2a.Event`。
 
-时序图参与者说明：`App` 是决定调用哪个 Agent、是否组合结果的业务编排层；`Factory / Resolver` 读取并选择 Agent Card 接口；`Client` 调用已选 Transport。服务端 `Binding` 负责线协议转换，`RequestHandler` 路由协议操作，执行管理器创建执行管线。`AgentExecutor` 只生成业务事件；处理器更新 TaskStore 后才写入 EventQueue，订阅端再把事件送回客户端。
+### 视角二：Agent 收到的执行上下文
 
-## 关键流程
-
-### Agent Card 发现与客户端创建
-
-```mermaid
-flowchart TD
-    Start[已知 Agent Card URL 或 Card] --> Resolve{是否需要远程发现?}
-    Resolve -->|是| Fetch[Resolver 获取 Agent Card]
-    Resolve -->|否| Card[使用已有 Agent Card]
-    Fetch --> Verify{是否配置签名验证器?}
-    Verify -->|是| Check[验证签名与来源]
-    Verify -->|否| Card
-    Check -->|失败| Error[返回解析/验证错误]
-    Check -->|通过| Card
-    Card --> Interfaces[按协议版本与客户端偏好检查接口]
-    Interfaces --> Available{存在可用 Transport?}
-    Available -->|否| Error
-    Available -->|是| Create[创建绑定具体 Transport 的 Client]
-    Create --> Call[调用 SendMessage 或流式 API]
+```text
+                  ┌───────────────────────────┐
+传入 Message ────▶│ ExecutorContext           │
+                  │ Message     本轮用户输入  │
+                  │ TaskID      本次工作的 ID │
+                  │ ContextID   相关任务分组  │
+                  │ StoredTask  可选旧任务快照│
+                  │ User/Tenant/Metadata      │
+                  └─────────────┬─────────────┘
+                                │ AgentExecutor.Execute
+                                ▼
+                  Event 序列（应用的输出）
+         Task ──▶ StatusUpdate ──▶ ArtifactUpdate ──▶ Completed
 ```
 
-Factory 只会从已注册的 Transport 中选择；JSON-RPC/REST 默认可用，gRPC 需要显式注册。解析卡片并不自动代表其可信，是否验证签名由 Resolver 配置决定。
+`context.Context` 是另一个东西：它携带 deadline、取消信号和调用期值，负责控制 Go 执行；`ContextID` 是协议字段，用于关联业务任务。`StoredTask` 仅在继续已有 Task 时提供，含本轮 Message 的只读快照。Agent 不直接写 Store，而是把 Event 交给 SDK。
 
-节点说明：URL 是 Agent Card 的发现入口；Resolver 获取并解析卡片，Verifier（可选）检查卡片签名。卡片的接口列表包含 URL、协议与版本；Factory 只从已注册的 Transport 中选择兼容接口。创建出的 Client 才负责后续请求。没有兼容接口或验证失败时，流程在创建 Client 前结束并返回错误。
+### 视角三：执行与持久化的边界
 
-### SendMessage 执行与事件持久化
-
-```mermaid
-flowchart TD
-    Request[REST / JSON-RPC / gRPC 请求] --> Decode[Binding 解码为 a2a 请求]
-    Decode --> Validate[RequestHandler 校验请求与能力]
-    Validate --> Valid{请求有效?}
-    Valid -->|否| Error[编码协议错误并返回]
-    Valid -->|是| Route{执行模式}
-    Route -->|单进程| Local[localManager 启动执行]
-    Route -->|集群| Dispatch[distributedManager 写入 WorkQueue]
-    Dispatch --> Worker[Worker 调用相同 Factory / Processor 管线]
-    Local --> Context[加载 Task 并构造 ExecutorContext]
-    Worker --> Context
-    Context --> Agent[AgentExecutor 产出 Event]
-    Agent --> Process[校验 Event 并物化新 Task]
-    Process --> Save[TaskStore 创建或按版本更新]
-    Save --> Saved{保存成功?}
-    Saved -->|否| Conflict[处理 OCC 冲突或返回错误]
-    Saved -->|是| Publish[EventQueue 广播已处理 Event]
-    Publish --> Stream{是否终态/本轮结束?}
-    Stream -->|否| Agent
-    Stream -->|是| Response[返回最终结果或结束事件流]
+```text
+应用 Agent                 SDK 执行管线                    可替换后端
+┌────────────┐  Event   ┌───────────────────────────┐   ┌─────────────┐
+│ Execute()  │─────────▶│ eventpipe → Processor     │──▶│ TaskStore   │
+│ 产出事件   │          │ 校验 → 应用到 Task → OCC  │   └──────┬──────┘
+└────────────┘          └───────────────────────────┘          │成功
+                                                               ▼
+                                                         ┌─────────────┐
+                                                         │ EventQueue  │
+                                                         └──────┬──────┘
+                                                                ▼
+                                                      当前请求的订阅者
 ```
 
-流式和非流式接口共享服务端执行及持久化管线；差别在于客户端如何消费结果。事件只有在成功处理并保存后才广播。执行器应对已开始的任务用 Failed 状态表达运行失败；不要在发出部分事件后把普通运行失败当作未开始请求错误返回。
+保存成功才广播，所以订阅者不会先看到未持久化的 Task 状态。`SendMessage` 消费事件后返回最终 Message 或 Task；`SendStreamingMessage` 把事件逐个交给调用方。两种接口共用执行与存储管线，差别在结果如何被消费。
 
-节点说明：Binding 解码网络请求，RequestHandler 做协议级校验并路由；`localManager` 在当前进程运行工作，`distributedManager` 则将工作投递给 Worker。`ExecutorContext` 携带本轮 Message、Task 标识和已有任务快照。Agent 产出事件后，Processor 校验事件并计算新 Task；TaskStore 持久化成功才允许 EventQueue 广播。OCC 冲突表示写入者使用了过期版本，服务端据最新 Task 判断是可恢复取消还是并发执行错误。终态事件或 Message 结束本轮响应。
+发现 Agent 时，Resolver 取得 Agent Card，Factory 再从已注册的 Transport 中选择兼容接口。默认注册 REST/JSON-RPC；gRPC 需显式注册。签名验证是可选配置，不应把“成功解析卡片”误认为“卡片已可信”。
 
-### 取消任务
-
-```mermaid
-flowchart TD
-    Cancel[CancelTask 请求] --> Load[从 TaskStore 加载 Task]
-    Load --> State{Task 是否仍可取消?}
-    State -->|否，已终态| Return[返回当前 Task 或状态错误]
-    State -->|是| Mode{执行模式}
-    Mode -->|本地有活跃执行| Pipe[向该执行的事件管道写入取消事件]
-    Mode -->|无本地执行/集群| Dispatch[创建 Cancel 工作并交由执行器处理]
-    Pipe --> Executor[AgentExecutor.Cancel]
-    Dispatch --> Executor
-    Executor --> Canceled[产出 Canceled 状态事件]
-    Canceled --> OCC[TaskStore 按版本更新]
-    OCC --> Conflict{发生并发版本冲突?}
-    Conflict -->|是| Reload[重读最新 Task；已取消则视为完成]
-    Reload --> Return
-    Conflict -->|否| Publish[广播已保存的终态事件]
-    Publish --> Return
-```
-
-本地管理器可以合并同一实例内并发的重复取消；集群节点间不共享该内存状态，跨实例协调依赖共享 TaskStore 的版本检查和 WorkQueue。取消更新遇到版本冲突时，服务端重新读取 Task：若已取消则视为成功，若已进入其他终态则返回当前状态。
-
-节点说明：`CancelTask` 首先读取当前 Task 并判断是否可取消；若本地正在执行，取消事件进入同一执行管线，否则（或在集群模式）作为独立工作分派。`AgentExecutor.Cancel` 负责通知外部运行时并产出 Canceled 事件。TaskStore 通过版本比较避免取消覆盖完成结果；已经取消时可幂等返回，已由其他状态终结时则保留当前终态。EventQueue 只广播成功写入的状态。
+取消也不是一个独立的旁路状态写入：本地有活跃执行时，取消信号进入同一执行管线；没有本地执行或处于集群模式时，会作为工作分派。Agent 产出 Canceled 状态后仍须通过 TaskStore 的版本检查；重复取消可在单个本地管理器内合并，跨节点则依赖共享后端协调。更细的并发时序见 [CONCURRENCY_MODEL.md](./CONCURRENCY_MODEL.md)。
 
 ## 核心对象关系
 
 这张类图只画公共概念和依赖关系，不代表每个类型都由接口实现直接持有。`defaultRequestHandler`、执行 Factory 和 Processor 是 `a2asrv` 的内部实现；应用实现 `AgentExecutor`，后端通过公开接口注入。
+
+先把核心数据看成三层，而不是一条调用链：
+
+```text
+SendMessageRequest
+└── Message                         一条对话输入
+    ├── ID: messageId
+    ├── TaskID / ContextID           可选关联信息
+    └── Parts: [Part, ...]           有序文本、文件或结构化内容
+
+Task                                可持久化工作记录
+├── ID: TaskID
+├── ContextID
+├── Status: TaskStatus
+├── History: [Message, ...]
+└── Artifacts: [Artifact, ...]
+    └── Parts: [Part, ...]
+
+Event = Message | Task | StatusUpdate | ArtifactUpdate
+```
+
+`Message` 是对话，`Artifact` 是 Agent 交付的结果，二者都可以装多个 `Part`；`Task` 把状态、对话历史和产物聚合成可查询的工作快照。`Event` 表示执行期间的一次输出，并非与 Task 平级的另一份存储对象：状态/产物事件会被应用到 Task 上，再持久化新快照。
 
 ```mermaid
 classDiagram
@@ -631,19 +569,17 @@ classDiagram
 
 ### 3. 请求如何变成 Go 结构体
 
-```mermaid
-flowchart LR
-    Wire[HTTP JSON-RPC<br/>method + params] --> Decode[JSON 解码]
-    Decode --> Req[a2a.SendMessageRequest]
-    Req --> Msg[a2a.Message + ContentParts]
-    Msg --> Validate[RequestHandler 校验]
-    Validate --> IDs[执行管理器准备 TaskID]
-    IDs --> ExecCtx[ExecutorContext<br/>Message / IDs / StoredTask]
-    ExecCtx --> Agent[AgentExecutor 产出 Event]
-    Agent --> Materialize[应用 Event 到当前 Task]
-    Materialize --> Store[TaskStore Create / Update]
-    Store -->|成功后| Queue[EventQueue 发布]
-    Queue --> Result[最终 Message/Task 或流事件]
+先分清请求外壳与 A2A 内容：外壳的 `id` 配对一次 RPC 请求/响应，`params` 才是要交给 SDK 的 A2A 请求。
+
+```text
+JSON-RPC envelope                        Go 值
+┌──────────────────────────┐             ┌─────────────────────────────┐
+│ id: "rpc-1"              │             │ *a2a.SendMessageRequest     │
+│ method: "SendMessage"    │  decode     │ └─ Message                  │
+│ params                   │ ──────────▶ │    ├─ ID: "msg-100"         │
+│ └─ message               │             │    ├─ Role: ROLE_USER       │
+│    └─ parts: [{text}]    │             │    └─ Parts: [Text("...")]  │
+└──────────────────────────┘             └─────────────────────────────┘
 ```
 
 数据在边界上的对应关系如下：
@@ -744,13 +680,33 @@ handler := a2asrv.NewHandler(executor)
 4. 状态 Event 推进 Task 生命周期；Artifact Event 保存报告内容。若要分块输出，首次调用 `NewArtifactEvent` 获取 Artifact ID，之后用 `NewArtifactUpdateEvent` 追加同一 Artifact 的内容，而不是为每个 chunk 新建产物。
 5. `yield` 把 Event 交回 SDK。`yield` 返回 `false` 时，表示接收端已停止消费，Agent 必须尽快退出。Event、Part 和 Metadata 在交给 `yield` 后不可再修改，因为后续处理与订阅可能并发读取它们。
 
-服务端的数据流按这个顺序发生：
+执行时有两条协作路径：请求准备上下文，事件则沿生产者/消费者管线处理。客户端连接不是 Agent 直接写入的目标。
 
-1. Transport 把线上请求解码成 `a2a.SendMessageRequest`，`RequestHandler` 校验请求。
-2. 执行管理器为新请求准备 TaskID；如果请求带有已有 TaskID，则从 TaskStore 读取 Task 并追加用户 Message。随后 factory 构造 `ExecutorContext`。
-3. AgentExecutor 在独立执行 goroutine 中产出事件。生产端写入进程内 `eventpipe`，不直接依赖客户端连接是否仍打开。
-4. 事件处理端读取事件，校验 TaskID/ContextID 和状态转换，计算更新后的 Task，并调用 TaskStore 保存。
-5. 只有保存成功的 Event 才写入 EventQueue；订阅者再将 Event 编码成 SSE/gRPC 流，或由非流式 `SendMessage` 汇总为最终 Message/Task。
+```text
+请求线程                         Agent goroutine                   处理/订阅侧
+Transport → RequestHandler
+              │
+              ├─ 新任务：分配 TaskID
+              └─ 续跑：读 Task、追加 Message
+                         │
+                         ▼
+                  ExecutorContext
+                         │
+                         ▼
+                  AgentExecutor
+                         │ Event
+                         ▼
+                    eventpipe ─────▶ Processor → TaskStore
+                                                │ 保存成功
+                                                ▼
+                                           EventQueue
+                                                │
+                              ┌─────────────────┴────────────────┐
+                              ▼                                  ▼
+                     SSE / gRPC 订阅者                 SendMessage 汇总结果
+```
+
+`eventpipe` 是进程内的生产者/消费者通道，不是网络连接；即使客户端断开，本地执行也可继续并保存结果。Processor 校验事件并物化 Task，TaskStore 成功后才广播到 EventQueue。
 
 #### 服务端 Task 快照与续跑上下文
 
@@ -759,8 +715,7 @@ handler := a2asrv.NewHandler(executor)
 本地执行管理器在 Factory 创建上下文前生成 TaskID；Factory 沿用请求中已有的 ContextID，若为空则生成一个。若是续跑，Factory 先读取 Task、校验 ContextID 与终态，把本轮用户 Message 追加到 History 并写回 Store，再将更新后的 Task 快照放入 `execCtx.StoredTask`。因此首次请求由 `NewSubmittedTask(execCtx, execCtx.Message)` 创建初始 History；续跑的 Message 则在 Agent 开始运行前已加入旧 Task。
 
 ### 5. Event 如何变成存储状态
-对每个状态/Artifact Event，`Store.Update` 收到的不仅是 Event，还包括应用后的 Task、旧 Task 和 `PrevVersion`。只有版本匹配且更新成功，事件处理器才把该 Event 写入 EventQueue；版本冲突或事件校验失败时不会广播一个未保存的状态。订阅者因此看到的顺序与持久化成功的状态一致。
-对每个状态/Artifact Event，`Store.Update` 收到的不仅是 Event，还包括应用后的 Task、旧 Task 和 `PrevVersion`。SDK 的调用形状如下；`updatedTask` 已由 materializer 将 Event 应用到 `previousTask` 后得到：
+对每个状态/Artifact Event，SDK 先校验事件并将其应用到当前 Task，得到完整的新快照。`Store.Update` 收到新旧快照、触发更新的 Event 和 `PrevVersion`；只有原子版本检查与保存成功，Event 才会进入 EventQueue。调用形状如下：
 
 ```go
 update := &taskstore.UpdateRequest{
@@ -772,7 +727,7 @@ update := &taskstore.UpdateRequest{
 nextVersion, err := taskStore.Update(ctx, update)
 ```
 
-`Update` 原子比较 `PrevVersion`：版本仍为 3 时保存新 Task 并返回新版本；如果另一执行已先写入，Store 返回 `ErrConcurrentModification`，当前 Event 不会广播。只有版本匹配且更新成功，事件处理器才把 Event 写入 EventQueue，因此订阅者看到的顺序与成功持久化的状态一致。
+`Update` 原子比较 `PrevVersion`：版本仍为 3 时保存新 Task 并返回新版本；如果另一执行已先写入，Store 返回 `ErrConcurrentModification`，当前 Event 不会广播。
 
 事件处理器不只是把 Event 原样塞进数据库：它会先校验事件关联的 TaskID/ContextID，再由 materializer 把 Event 应用到当前 Task，得到新的完整 Task 快照。下面以默认内存 TaskStore 为例；它创建时版本从 1 开始，每次成功更新加 1。外部 Store 的版本号可以不同，但必须按 `PrevVersion` 原子检测并发写入。
 
@@ -784,7 +739,6 @@ nextVersion, err := taskStore.Update(ctx, update)
 | 4 | `TaskArtifactUpdateEvent`，`Append=true`、`LastChunk=true`，Part=`报告正文` | 同一 `artifact-8` 的 Parts 变为 `[报告标题, 报告正文]` | `Update(PrevVersion=3)`，版本 `4` |
 | 5 | `TaskStatusUpdateEvent(Completed)` | Status 变为 Completed；History 和 Artifact 保留 | `Update(PrevVersion=4)`，版本 `5` |
 
-对每个状态/Artifact Event，`Store.Update` 收到的不仅是 Event，还包括应用后的 Task、旧 Task 和 `PrevVersion`。只有版本匹配且更新成功，事件处理器才把该 Event 写入 EventQueue；版本冲突或事件校验失败时不会广播一个未保存的状态。订阅者因此看到的顺序与持久化成功的状态一致。
 流式 JSON-RPC 中，Event 会放在 `StreamResponse` 对应的单一字段里；例如 Artifact 追加事件的核心 payload 如下（省略外层 JSON-RPC/SSE 包装）：
 
 ```json
@@ -842,4 +796,15 @@ nextVersion, err := taskStore.Update(ctx, update)
 ```
 
 如果改用 `SendStreamingMessage`，Task、Working、两个 Artifact 更新和 Completed 会作为多个 Event 逐个返回；每个 Event 都是在该次 Store 更新成功后才对订阅者可见。非流式调用只返回最终 Message 或最终 Task，不会把中间 Event 列表作为结果返回。
+
 ### TaskStore 与并发版本
+
+TaskStore 的版本号是并发写入的“门闩”，不是业务状态。每次更新都携带读取旧 Task 时的版本；只有版本仍匹配，更新才提交。可把两路竞争想成：
+
+```text
+执行 A 读到 v3 ──更新 Working────▶ Store: v3 → v4   ✓
+执行 B 也读到 v3 ──更新 Completed─▶ Store: 当前是 v4，拒绝 v3   ✗
+                                        └─ ErrConcurrentModification
+```
+
+SDK 对取消状态更新有专门的冲突重读/重试逻辑：若重读发现 Task 已取消，可视为取消已成功；若它已进入其他终态，则不能用取消覆盖。其他并发冲突不能简单“最后写入者获胜”，否则可能把已经完成或取消的 Task 改回旧状态。共享 TaskStore 的集群部署必须实现 `PrevVersion` 的原子比较；仅在进程内比较版本不足以协调不同节点。
