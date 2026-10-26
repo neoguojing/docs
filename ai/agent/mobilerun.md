@@ -476,3 +476,24 @@ Executor 的“可用工具”不是在 `ExecutorAgent` 中硬编码的一份独
 6. `mobilerun/agent/tool_registry.py`、`agent/utils/signatures.py`、`agent/utils/actions.py`：理解 Executor 可见工具、过滤规则及从工具签名到设备动作的调用链。
 7. `mobilerun/tools/ui/`：理解观察如何归一化为模型上下文。
 8. `mobilerun/config_manager/`、`mcp/`、`app_cards/`、`telemetry/`：理解配置和可选集成。
+
+### 专题：研究 Agent Loop 的阅读路线
+
+**从哪个入口开始？** 如果想从用户命令一路追踪，先从 [`cli/main.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/cli/main.py) 找到 CLI 创建并运行 `MobileAgent` 的位置；如果只关心 Agent Loop 本身，直接从 [`MobileAgent.start_handler`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/droid_agent.py) 开始。它完成运行时组装，并按 `agent.reasoning` 选择 FastAgent 或 Manager/Executor。
+
+以下 10 个关键文件按建议阅读顺序排列。无需一开始通读全文件，先定位表中方法/职责，再沿调用关系追踪：
+
+| 顺序 | 文件 | 阅读重点 |
+| --- | --- | --- |
+| 1 | [`mobilerun/cli/main.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/cli/main.py) | 从命令入口确认 goal、配置和 LLM 如何传给 `MobileAgent`。如果你从 Python SDK 启动，可略读此项。 |
+| 2 | [`mobilerun/agent/droid/droid_agent.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/droid_agent.py) | 先读 `start_handler` 的依赖装配与模式分流；再读 `run_manager`、`handle_manager_plan`、`run_executor`、`handle_executor_result`，理解父 Workflow 的循环与终止条件。 |
+| 3 | [`mobilerun/agent/droid/state.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/state.py) | 查看 `MobileAgentState` 字段，理解目标、设备观察、消息/动作历史、记忆和完成状态如何跨子 Agent 共享。 |
+| 4 | [`mobilerun/agent/fast_agent/fast_agent.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/fast_agent.py) | 阅读 `prepare_chat`、`handle_llm_input`、`handle_llm_output`、`execute_code`、`handle_execution_result`；串起直接执行模式的 observe → LLM → tool → result 循环。 |
+| 5 | [`mobilerun/agent/fast_agent/xml_parser.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/xml_parser.py) | 了解 FastAgent 如何将模型的 XML 文本调用解析成工具名、参数和解析错误。 |
+| 6 | [`mobilerun/agent/manager/manager_agent.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/manager/manager_agent.py) | 阅读 `prepare_context`、`get_response`、`process_response`；理解规划模式下 Manager 怎样观察、生成计划/最终答案并更新共享状态。 |
+| 7 | [`mobilerun/agent/manager/prompts.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/manager/prompts.py) | 跟进 `parse_manager_response` 和 `validate_manager_response`，看 Manager 的输出如何变成 subgoal 或最终结果。 |
+| 8 | [`mobilerun/agent/executor/executor_agent.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/executor/executor_agent.py) | 阅读 `prepare_context`、`process_response`、`execute`；看 Executor 如何从 subgoal 选择一个 JSON 动作并返回执行结果。JSON 响应解析器在同目录的 `prompts.py`。 |
+| 9 | [`mobilerun/agent/tool_registry.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/tool_registry.py) | 重点看 `get_signatures` 和 `execute`：模型可见的工具签名如何生成，以及名称如何分发到实际函数。 |
+| 10 | [`mobilerun/agent/utils/actions.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/utils/actions.py) | 选一个具体动作（如 `click`）：跟踪它如何使用 `ActionContext.ui` 找坐标、调用 `ctx.driver`，并返回 `ActionResult`。 |
+
+FastAgent 与 Manager/Executor 是两条不同的循环，不是前后串联的两个阶段；初次阅读建议先跟完其中一条。若从零理解推荐先读 Manager/Executor 路径（第 6–10 项），再读 FastAgent 路径（第 4–5 项）比较差异。需要继续追设备观察链路时，再补读 [`tools/ui/provider.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/tools/ui/provider.py) 和 [`tools/ui/state.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/tools/ui/state.py)；需要追 Android 底层操作时，注意 driver 实现在 `mobilerun-core-local` 依赖中，不在本仓库的 `mobilerun/tools/driver/` 兼容导出目录。
