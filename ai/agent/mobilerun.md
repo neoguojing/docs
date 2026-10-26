@@ -243,6 +243,219 @@ CLI / SDK
 
 其中，`MobileAgent` 负责创建和注入依赖；`MobileAgentState` 让父/子 Workflow 共享任务进度和历史；`ActionContext` 把已连接的 driver、当前 UI 和状态依赖传给工具函数；`ToolRegistry` 只负责工具名到函数的映射、过滤和调用，不直接连接设备。MCP/custom tools 可以扩展工具注册表；它们仍由 Agent 经同一注册表调用。Driver 和 StateProvider 是两条互补路径：前者执行设备操作，后者读取并规范化设备状态。
 
+#### Agent Loop 关键类图
+
+下图描述运行时对象之间的依赖关系，不代表每个对象都由另一个对象独占创建。`MobileAgent` 装配共享状态、Agent、设备 driver、状态 provider 和工具注册表；在 reasoning 模式下，它持有 Manager/Executor，在直接执行模式下创建 FastAgent。
+
+```mermaid
+classDiagram
+    class Workflow
+    class MobileAgent
+    class FastAgent
+    class ManagerAgent
+    class StatelessManagerAgent
+    class ExecutorAgent
+    class MobileAgentState {
+        instruction
+        step_number
+        formatted_device_state
+        message_history
+        action_history
+        agent_memory
+    }
+    class ActionContext {
+        driver
+        ui
+        shared_state
+        state_provider
+    }
+    class StateProvider {
+        get_state()
+    }
+    class AndroidStateProvider
+    class IOSStateProvider
+    class ScreenshotOnlyStateProvider
+    class UIState {
+        elements
+        formatted_text
+        focused_text
+        phone_state
+    }
+    class ToolRegistry {
+        tools
+        get_signatures()
+        execute()
+    }
+    class ToolEntry {
+        fn
+        params
+        description
+        deps
+    }
+    class ActionResult {
+        success
+        summary
+    }
+    class DeviceDriver
+
+    Workflow <|-- MobileAgent
+    Workflow <|-- FastAgent
+    Workflow <|-- ManagerAgent
+    Workflow <|-- StatelessManagerAgent
+    Workflow <|-- ExecutorAgent
+    MobileAgent --> MobileAgentState : shares with child workflows
+    MobileAgent --> FastAgent : reasoning=false
+    MobileAgent --> ManagerAgent : reasoning=true
+    MobileAgent --> ExecutorAgent : reasoning=true
+    FastAgent --> MobileAgentState : reads/updates
+    ManagerAgent --> MobileAgentState : reads/updates
+    ExecutorAgent --> MobileAgentState : reads/updates
+
+    MobileAgent --> ToolRegistry : builds and filters
+    FastAgent --> ToolRegistry : dispatches calls
+    ExecutorAgent --> ToolRegistry : dispatches action
+    ToolRegistry "1" *-- "*" ToolEntry : registers
+    ToolRegistry ..> ActionContext : passes ctx
+    ToolRegistry ..> ActionResult : returns
+
+    MobileAgent --> ActionContext : creates
+    ActionContext --> DeviceDriver : invokes
+    ActionContext --> StateProvider : exposes
+    ActionContext o-- UIState : current snapshot
+    StateProvider ..> DeviceDriver : reads device
+    StateProvider ..> UIState : produces
+    StateProvider <|-- AndroidStateProvider
+    StateProvider <|-- IOSStateProvider
+    StateProvider <|-- ScreenshotOnlyStateProvider
+```
+
+#### Event 类图与 Agent Loop 路由
+
+Workflow event 是步骤之间传递的消息/结果；它与 `MobileAgentState` 的职责不同：event 表示“当前发生了什么/下一步交给谁”，state 保存跨步骤可继续读取的任务上下文。下图列出控制流中的主要事件类型及其路由：
+
+```mermaid
+classDiagram
+    class Event
+    class StopEvent
+    class StartEvent
+    class FastAgentExecuteEvent {
+        instruction
+    }
+    class FastAgentResultEvent {
+        success
+        reason
+    }
+    class ManagerInputEvent
+    class ManagerPlanEvent {
+        plan
+        current_subgoal
+        answer
+        success
+    }
+    class ExecutorInputEvent {
+        current_subgoal
+    }
+    class ExecutorResultEvent {
+        action
+        outcome
+        summary
+        error
+    }
+    class FinalizeEvent {
+        success
+        reason
+    }
+    class ResultEvent {
+        success
+        reason
+        steps
+    }
+    class FastAgentResponseEvent
+    class FastAgentToolCallEvent
+    class FastAgentOutputEvent
+    class FastAgentEndEvent
+    class ManagerContextEvent
+    class ManagerResponseEvent
+    class ManagerPlanDetailsEvent
+    class ExecutorContextEvent
+    class ExecutorResponseEvent
+    class ExecutorActionEvent
+    class ExecutorActionResultEvent
+    class ToolExecutionEvent
+
+    Event <|-- StartEvent
+    Event <|-- FastAgentExecuteEvent
+    Event <|-- FastAgentResultEvent
+    Event <|-- ManagerInputEvent
+    Event <|-- ManagerPlanEvent
+    Event <|-- ExecutorInputEvent
+    Event <|-- ExecutorResultEvent
+    Event <|-- FinalizeEvent
+    Event <|-- FastAgentResponseEvent
+    Event <|-- FastAgentToolCallEvent
+    Event <|-- FastAgentOutputEvent
+    Event <|-- FastAgentEndEvent
+    Event <|-- ManagerContextEvent
+    Event <|-- ManagerResponseEvent
+    Event <|-- ManagerPlanDetailsEvent
+    Event <|-- ExecutorContextEvent
+    Event <|-- ExecutorResponseEvent
+    Event <|-- ExecutorActionEvent
+    Event <|-- ExecutorActionResultEvent
+    Event <|-- ToolExecutionEvent
+    StopEvent <|-- ResultEvent
+
+    MobileAgent ..> FastAgentExecuteEvent : starts direct mode
+    MobileAgent ..> FastAgentResultEvent : receives result
+    MobileAgent ..> ManagerInputEvent : starts reasoning loop
+    MobileAgent ..> ManagerPlanEvent : routes on plan or answer
+    MobileAgent ..> ExecutorInputEvent : sends subgoal
+    MobileAgent ..> ExecutorResultEvent : receives action result
+    MobileAgent ..> FinalizeEvent : starts cleanup
+    FastAgent ..> FastAgentResponseEvent : emits
+    FastAgent ..> FastAgentToolCallEvent : emits
+    FastAgent ..> FastAgentOutputEvent : emits
+    ManagerAgent ..> ManagerContextEvent : emits
+    ManagerAgent ..> ManagerResponseEvent : emits
+    ManagerAgent ..> ManagerPlanDetailsEvent : emits
+    ExecutorAgent ..> ExecutorContextEvent : emits
+    ExecutorAgent ..> ExecutorResponseEvent : emits
+    ExecutorAgent ..> ExecutorActionEvent : emits
+    ExecutorAgent ..> ExecutorActionResultEvent : emits
+```
+
+其中 `ManagerAgent` 和 `StatelessManagerAgent` 是两种并列的 Manager Workflow 实现（都继承 LlamaIndex `Workflow`），由配置选择；上一个类图中它们分别列出，并非继承关系。
+
+下一张图强调事件的**控制流顺序**，并非事件类的继承关系：
+
+```mermaid
+flowchart LR
+    Start[StartEvent] --> MobileStart[MobileAgent.start_handler]
+    MobileStart -->|reasoning=false| FastInput[FastAgentExecuteEvent]
+    FastInput --> FastLoop[FastAgent]
+    FastLoop --> FastResponse[FastAgentResponseEvent]
+    FastResponse --> FastCall[FastAgentToolCallEvent]
+    FastCall --> FastOutput[FastAgentOutputEvent]
+    FastOutput --> FastLoop
+    FastLoop -->|complete / limit| FastResult[FastAgentResultEvent]
+    FastResult --> Finalize[FinalizeEvent]
+
+    MobileStart -->|reasoning=true| ManagerInput[ManagerInputEvent]
+    ManagerInput --> Manager[ManagerAgent]
+    Manager --> Plan[ManagerPlanEvent]
+    Plan -->|has subgoal| ExecutorInput[ExecutorInputEvent]
+    ExecutorInput --> Executor[ExecutorAgent]
+    Executor --> ActionResult[ExecutorResultEvent]
+    ActionResult --> ManagerInput
+    Plan -->|final answer| Finalize
+    Finalize --> Result[ResultEvent]
+
+    ToolCall[Tool invocation] --> ToolEvent[ToolExecutionEvent]
+    ToolEvent -. stream/observe .-> WorkflowEvents[CLI / trajectory listeners]
+```
+
+类定义分别位于 `agent/droid/events.py`、`agent/fast_agent/events.py`、`agent/manager/events.py`、`agent/executor/events.py` 和 `agent/common/events.py`。这些是独立的 LlamaIndex `Event` 子类，并非彼此继承；箭头表示 workflow 步骤的路由关系。子 workflow 的内部 response/action events 用于步骤和流式观察，`MobileAgent` 使用 `ManagerPlanEvent`、`ExecutorResultEvent` 等协调事件决定后续分支。
+
 #### 数据怎么流动
 
 一次循环包含两个方向：
