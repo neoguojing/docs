@@ -212,6 +212,55 @@ description: '源码目录职责、核心文件索引与 Mobilerun 运行时架�
 
 ## 3. 结合源码的运行时架构
 
+### 系统总览：模块、连接与数据流
+
+可以把 Mobilerun 运行时分成七类模块。它们不是彼此独立的服务，而是在一次 `MobileAgent` Workflow 中通过 Python 对象依赖、共享状态和 Workflow events 协作。
+
+| 模块 | 主要职责 | 关键实现 |
+| --- | --- | --- |
+| 入口与配置 | 接收目标、加载配置和模型，创建运行实例。 | `cli/main.py`、`config_manager/loader.py`、`MobileConfig`、`MobileAgent` |
+| 流程编排 | 初始化设备和依赖，按配置选择 Agent 模式，控制循环和结束。 | `MobileAgent`、`MobileAgentState`、`droid/events.py` |
+| 决策与推理 | 观察上下文、请求 LLM、解释响应并决定下一步。 | `FastAgent`，或 `ManagerAgent` + `ExecutorAgent`；`agent/utils/inference.py`、prompt 模板 |
+| 设备观察 | 从当前设备取得无障碍树/截图，整理成统一 UI 状态。 | `StateProvider`、`AndroidStateProvider`、`IOSStateProvider`、`ScreenshotOnlyStateProvider`、`UIState` |
+| 工具与动作 | 向模型提供工具 schema，将工具调用分发到对应函数。 | `ToolRegistry`、`build_tool_registry`、`agent/utils/actions.py`、`ActionContext` |
+| 设备驱动 | 建立设备连接并执行点击、输入、滑动、截图等底层操作。 | `AndroidDriver`、iOS/Visual Remote drivers；实现来自 `mobilerun-core-local` |
+| 扩展与观测 | 接入用户/MCP 工具、凭据、应用卡片，并记录事件、轨迹和遥测。 | `mcp/`、`credential_manager/`、`app_cards/`、`TrajectoryWriter`、`telemetry/` |
+
+#### 模块之间怎么连接
+
+主要连接可以概括为：
+
+```text
+CLI / SDK
+  └─> Config + LLMs
+       └─> MobileAgent (Workflow)
+            ├─> MobileAgentState ───────────────┐
+            ├─> DeviceDriver <─> StateProvider ─┤─> Agent prompt / 当前观察
+            ├─> ToolRegistry ─> ActionContext ─┴─> action function ─> DeviceDriver
+            └─> FastAgent 或 Manager ─> Executor
+                      └─> LLM
+```
+
+其中，`MobileAgent` 负责创建和注入依赖；`MobileAgentState` 让父/子 Workflow 共享任务进度和历史；`ActionContext` 把已连接的 driver、当前 UI 和状态依赖传给工具函数；`ToolRegistry` 只负责工具名到函数的映射、过滤和调用，不直接连接设备。MCP/custom tools 可以扩展工具注册表；它们仍由 Agent 经同一注册表调用。Driver 和 StateProvider 是两条互补路径：前者执行设备操作，后者读取并规范化设备状态。
+
+#### 数据怎么流动
+
+一次循环包含两个方向：
+
+1. **观察进入模型**：`StateProvider.get_state()` 从 driver 获取设备信息，构造 `UIState`；Agent 更新 `MobileAgentState` 中的当前/上一轮 UI、截图、焦点和应用信息；prompt builder 把任务、状态、计划/历史、记忆和可选图像组装成 LLM 输入。
+2. **动作返回设备**：LLM 输出工具调用；Agent 解析为工具名和参数；`ToolRegistry` 找到函数并传入 `ActionContext`；动作函数调用 `ctx.driver`；执行结果被规范化为 `ActionResult`，再写入 Workflow event 和共享状态/对话历史。
+3. **循环控制**：FastAgent 把工具结果追加到对话后重新观察；Manager/Executor 模式把 Executor 结果交还 Manager，由 Manager 根据新观察和历史生成下一子目标或最终答案。
+
+可将数据通路简写为：
+
+```text
+设备 ─> Driver ─> StateProvider ─> UIState ─> MobileAgentState ─> Prompt ─> LLM
+设备 <─ Driver <─ ActionContext <─ Action function <─ ToolRegistry <─ Tool Call <─ LLM
+                                      └─ ActionResult / Workflow Event ─> Agent 状态更新
+```
+
+截图、UI 状态和工具执行等 Workflow events 也会沿父/子 Workflow 的事件流向外转发，供 CLI 展示或 trajectory 记录；它们是观测/通知路径，不替代 `MobileAgentState` 中用于下一轮推理的状态。
+
 ### 3.1 组件与依赖关系
 
 ```mermaid
@@ -317,6 +366,98 @@ sequenceDiagram
 
 具体源码锚点：[`cli.main.run_command`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/cli/main.py) 加载配置并创建 Agent；[`MobileAgent.start_handler`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/droid_agent.py) 装配运行时依赖并按 `agent.reasoning` 分流；[`ToolRegistry.execute`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/tool_registry.py) 统一执行动作并返回 `ActionResult`；[AndroidStateProvider](https://github.com/droidrun/mobilerun/blob/main/mobilerun/tools/ui/provider.py)、[IOSStateProvider](https://github.com/droidrun/mobilerun/blob/main/mobilerun/tools/ui/ios_provider.py) 和 [ScreenshotOnlyStateProvider](https://github.com/droidrun/mobilerun/blob/main/mobilerun/tools/ui/screenshot_provider.py) 将平台观察统一成 `UIState`。
 
+### 3.3 Agent 如何规划和执行
+
+运行入口 [`MobileAgent`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/droid_agent.py) 是顶层 Workflow。它根据 `AgentConfig.reasoning` 选择执行策略；两种模式都会使用共享状态、设备观察、工具注册表和 `ActionContext`，但决策循环不同。
+
+#### 直接执行：FastAgent
+
+当 `reasoning=False` 时，`MobileAgent.start_handler` 将原始目标交给 [`FastAgent`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/fast_agent.py)。FastAgent 自己完成观察、推理和动作循环：
+
+1. `prepare_chat` 创建初始目标消息并准备 prompt。
+2. `handle_llm_input` 读取最新 `UIState` 和可选截图，构建本次 LLM 请求。
+3. LLM 在文本中输出 `<function_calls>`；[`xml_parser.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/xml_parser.py) 解析工具名和参数。
+4. `handle_llm_output` 决定重试、执行工具，或在模型未输出工具调用时要求其补充。
+5. `execute_code` 经 `ToolRegistry` 执行调用；工具结果被格式化为 `<function_results>`。
+6. `handle_execution_result` 将工具结果加入消息历史，下一轮重新读取设备状态。
+7. 调用 `complete` 后结束循环；`finalize` 返回成功状态和结果。
+
+可顺着 [`FastAgent.prepare_chat`、`handle_llm_input`、`handle_llm_output`、`execute_code`、`handle_execution_result`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/fast_agent.py) 阅读完整闭环。FastAgent 的工具协议是解析 XML 文本，而不是直接执行任意生成代码。
+
+#### 分层规划：Manager + Executor
+
+当 `reasoning=True` 时，`MobileAgent` 选择 [`ManagerAgent`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/manager/manager_agent.py)（或配置启用的 `StatelessManagerAgent`）与 [`ExecutorAgent`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/executor/executor_agent.py)，由父 Workflow 逐轮调度：
+
+1. `MobileAgent.run_manager` 启动 Manager。Manager 获取当前 UI/截图，结合指令、历史、计划和记忆构造 prompt。
+2. Manager 输出一个 `<plan>` 或最终答案。[`manager/prompts.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/manager/prompts.py) 负责解析与校验；无效格式最多触发 3 次重试。
+3. `MobileAgent.handle_manager_plan` 发现计划时，将第一条子目标交给 Executor；发现最终答案时则结束主流程。
+4. `ExecutorAgent.prepare_context` 把计划、当前子目标、设备状态、近期动作和工具签名放入 prompt；LLM 输出一个动作。
+5. Executor 解析 JSON 动作，通过 `ToolRegistry.execute` 执行，并将结果作为 `ExecutorActionResultEvent` 返回。
+6. `MobileAgent.run_executor` 将动作、摘要、成功与错误写入 `MobileAgentState`；`handle_executor_result` 再将控制权交回 Manager。
+
+因此，Manager 决定“接下来要完成什么”，Executor 决定“本步调用哪个动作以及参数”，而实际设备操作由动作函数和 driver 完成。相关控制流集中在 [`droid_agent.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/droid_agent.py) 的 `run_manager`、`handle_manager_plan`、`run_executor` 和 `handle_executor_result`。
+
+### 3.4 上下文、记忆与上下文长度
+
+上下文不是单一的聊天记录。核心状态模型是 [`MobileAgentState`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/state.py)，通过 [`ActionContext`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/action_context.py) 向工具提供当前 driver、UI、state provider、凭据管理器等依赖。
+
+| 数据 | 保存位置和用途 |
+| --- | --- |
+| 当前/前一轮设备状态、截图、无障碍树 | `MobileAgentState.formatted_device_state`、`previous_formatted_device_state`、`screenshot`、`a11y_tree` 等字段。Manager/FastAgent 每轮从 StateProvider 刷新；Executor 使用共享状态中 Manager 最近一次采集的状态和截图。 |
+| 计划和进度 | `plan`、`previous_plan`、`current_subgoal`、`progress_summary` 等字段，由 Manager 更新、Executor 消费。 |
+| 动作历史 | `action_history`、`summary_history`、`action_outcomes`、`error_descriptions`。Executor 和 Stateless Manager 在 prompt 中只使用最近最多 5 条。 |
+| 对话消息 | `message_history: List[ChatMessage]`。普通 Manager 追加每轮 user/assistant 消息；FastAgent 追加 assistant 响应与工具结果消息。FastAgent 开始任务时会清空这份对话历史并创建新的目标消息。 |
+| Agent 记忆 | `agent_memory` 是共享状态中的字符串，由 `append_memory` 追加。FastAgent 从 `<add_memory>` 提取，Manager 从响应的 `<add_memory>` 标签提取；两者在 prompt 构造时都可将其提供给模型。它是当前共享状态中的工作记忆，不是跨任务的持久记忆库。 |
+| Workflow 临时数据 | LlamaIndex `Context.store` 存放单次 Workflow 内传递的数据，例如 Executor prompt 消息和待执行的 FastAgent 工具调用；它不等同于对话历史。 |
+| 运行轨迹 | [`Trajectory`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/utils/trajectory.py) 与 [`TrajectoryWriter`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/trajectory/writer.py) 可选保存事件、UI 状态、截图和宏操作，主要用于诊断/回放，不会自动成为后续推理记忆。 |
+
+上下文长度方面，当前代码提供的是**有限的消息数量裁剪，而非通用的 token 预算或记忆压缩**：
+
+- FastAgent 在发送请求前通过 [`limit_history`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/utils/chat_utils.py) 限制对话消息数。[`LLM_HISTORY_LIMIT`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/common/constants.py) 为 100，调用处乘以 2，即最多保留 200 条消息，并尽可能保留首条消息和近期消息。当前设备状态、记忆、截图和前一状态是在请求副本上追加，不写回原始历史。
+- 普通 Manager 会将完整 `message_history` 复制到请求中；代码没有像 FastAgent 那样按消息数截断这份历史。
+- Stateless Manager 不累计完整消息对话，而是每轮从共享状态重新构造 prompt；其中动作历史取最近最多 5 条，但 `agent_memory`、计划、当前状态等仍按 prompt 内容传入。
+- Executor 每次是一个子目标对应的一次动作决策；prompt 中含当前状态、计划和最多 5 条动作记录，不使用 FastAgent 的对话历史裁剪逻辑。
+- `agent_memory` 本身没有长度上限或摘要压缩；消息数限制也不等于 token 数限制。长任务、超长设备树/截图、持续增长的记忆或普通 Manager 历史仍可能触及模型上下文窗口。最终模型上下文窗口受具体 LLM/provider 配置影响。
+
+后续排查上下文问题时，建议一起看 [`state.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/state.py)、[`fast_agent.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/fast_agent.py) 的 `handle_llm_input`、[`manager_agent.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/manager/manager_agent.py) 的 `_build_messages_with_context`、[`stateless_manager_agent.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/manager/stateless_manager_agent.py) 的 `_build_prompt`，以及 [`chat_utils.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/utils/chat_utils.py) 的 `limit_history`。
+
+### 3.5 Executor 的工具列表
+
+Executor 的“可用工具”不是在 `ExecutorAgent` 中硬编码的一份独立清单。工具由 [`build_tool_registry`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/utils/signatures.py) 注册到 [`ToolRegistry`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/tool_registry.py)，再由 `ExecutorAgent.prepare_context` 调用 `registry.get_signatures(exclude={"complete"})` 放进 prompt。调用时 `ExecutorAgent.execute` 再以工具名和参数调用 `registry.execute`。
+
+内置工具大致分为：
+
+| 类别 | 工具 | 用途 |
+| --- | --- | --- |
+| 元素/坐标交互 | `click`、`long_press`、`click_at`、`click_area`、`long_press_at` | 按 UI 元素索引或屏幕坐标点击、长按。坐标描述会根据普通 UI 树、截图模式及归一化坐标配置变化。 |
+| 输入 | `type`、`type_text` | 输入文本；前者可选定并聚焦元素，后者对当前已聚焦输入框直接输入。 |
+| 手势/系统 | `swipe`、`system_button` | 滑动，或按设备支持情况触发 `back`、`home`、`enter` 等系统按键。 |
+| 等待/应用 | `wait`、`open_app` | 等待动画/页面加载；启动应用。`open_app` 的参数和实现因平台或精确应用启动模式不同。 |
+| 凭据 | `type_secret`（条件注册） | 通过凭据管理器输入秘密值；仅在配置了可用凭据时注册。 |
+| 用户扩展 | custom tools、MCP tools | 用户注册或 MCP server 发现的扩展工具，也可进入同一 registry。 |
+
+`complete` 虽然由标准工具注册器注册，但 [`ExecutorAgent._EXCLUDE_TOOLS`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/executor/executor_agent.py) 会将它从 Executor 的模型工具签名中排除；推理模式下由 Manager 的最终答案控制完成。FastAgent 则可以使用 `complete` 工具结束任务。
+
+以上是注册器定义的候选工具，并不保证每次运行全部可用：`ToolRegistry.disable_unsupported` 会按 driver 与 StateProvider 的能力过滤；配置中的禁用工具列表也会继续过滤。自定义/MCP 工具是否可见，还取决于是否成功注册以及后续过滤。动作实现见 [`actions.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/utils/actions.py)。
+
+### 3.6 一次 Tool Call 从用户到 Android 的完整链路
+
+下面按“谁接收 → 哪个 Agent 决策 → LLM 看到什么 → 如何判断下一步 → 生成什么 Tool Call → Tool 如何定位设备 → Android 如何执行 → 结果如何返回 → 如何继续/结束”串起源码调用链。`reasoning=False` 和 `reasoning=True` 共用设备、工具和动作层，但模型输出格式、决策层级和结束条件不同。
+
+| 环节 | 源码中的实现 |
+| --- | --- |
+| **谁接收用户目标？** | CLI 路径由 [`cli/main.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/cli/main.py) 读取目标并创建 `MobileAgent`；Python SDK 路径由调用方直接创建 `MobileAgent(goal=...)`。目标进入 `MobileAgentState.instruction`。运行后，LlamaIndex Workflow 的 `start_handler` 开始装配本次运行。 |
+| **哪个 Agent 决策？** | `MobileAgent.start_handler` 根据 `AgentConfig.reasoning` 分流。`False` 时由 [`FastAgent`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/fast_agent.py) 同时负责观察、决策和工具循环；`True` 时由 [`ManagerAgent`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/manager/manager_agent.py) 规划目标，[`ExecutorAgent`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/executor/executor_agent.py) 为当前子目标选择一个动作。 |
+| **LLM 看到什么？** | FastAgent prompt 由 system/user prompt、有限的对话历史、当前设备状态、累计记忆和可选截图组成；Manager prompt 加入任务、计划、最近动作、状态/截图、错误上下文和记忆；Executor prompt 加入当前计划和子目标、设备状态、最多 5 条动作历史、工具签名及可选截图。数据由 `MobileAgentState` 提供，UI 由 StateProvider 获取；各 Agent 的 `prepare_context`/`handle_llm_input` 负责组装请求。 |
+| **如何判断下一步？** | FastAgent 解析当前 LLM 输出：有合法工具调用就执行；没有调用时要求模型补充；格式错误时重试，达到连续错误上限则失败结束；工具结果进入下一轮后再次观察。Manager/Executor 模式下，Manager 的 `<plan>` 产生当前 subgoal 并交给 Executor，最终答案则结束任务；Executor 每次只执行一个动作，父流程收集结果后回到 Manager 重新判断。主流程还受 `max_steps` 限制。 |
+| **生成什么 Tool Call？** | FastAgent 的 LLM 输出 `<function_calls><invoke name="...">...</invoke></function_calls>`，由 [`fast_agent/xml_parser.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/xml_parser.py) 解析。Executor 输出包含 `action` 字段的 JSON，由 [`executor/prompts.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/executor/prompts.py) 解析，例如 `{"action":"click","index":3}`。两种格式最后都变成工具名和参数，再进入 `ToolRegistry`。 |
+| **Tool 怎么找到手机？** | Tool 不会根据工具名自行搜索手机。`MobileAgent.start_handler` 先选择并连接设备 driver；Android 未显式指定 serial 时会调用 `resolve_android_serial()`，随后建立 `AndroidDriver`。根据配置，driver 还可能被 StealthDriver 或 RecordingDriver 包装。构造好的 driver 放入 [`ActionContext`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/action_context.py)，注册表执行工具时把这个 context 作为 `ctx` 参数传给动作函数。 |
+| **Android 怎么执行？** | [`ToolRegistry.execute`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/tool_registry.py) 依据名称找到注册的函数并传入参数和 `ActionContext`。例如 `click(index)` 从 `ctx.ui` 查出元素坐标，再调用 `ctx.driver.tap(x, y)`；`type` 调用 driver 的输入接口。具体 Android 设备通信由 `mobilerun-core-local` 中的 driver 实现负责；本仓库的 `agent/utils/actions.py` 负责把 Agent 动作转成 driver 调用。 |
+| **执行结果如何返回？** | 动作函数返回 [`ActionResult`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/action_result.py)（`success`、`summary`）；`ToolRegistry` 归一化结果，并可发送 `ToolExecutionEvent`。FastAgent 将摘要格式化成 `<function_results>` 并追加到对话，Executor 将结果放入 `ExecutorActionResultEvent`，父级 `MobileAgent.run_executor` 再将动作、成功状态、摘要和错误写入共享状态。 |
+| **Agent 如何决定继续或结束？** | FastAgent 在工具结果之后回到下一轮观察与推理；只有 `complete` 设置完成状态后，或达到步数/错误上限时结束。推理模式下，Executor 的结果会经 `handle_executor_result` 返回 Manager；Manager 看到更新后的 UI 和动作历史后，可继续给出下一计划或返回最终答案。父级遇到最终答案、最大步数或不可恢复错误时进入 finalize，并产生最终 `ResultEvent`。 |
+
+关键阅读入口：[`MobileAgent.start_handler`、`run_manager`、`handle_manager_plan`、`run_executor`、`handle_executor_result`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/droid/droid_agent.py)、[`FastAgent.handle_llm_input` 与 `execute_code`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/fast_agent/fast_agent.py)、[`ExecutorAgent.execute`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/executor/executor_agent.py)、[`ToolRegistry.execute`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/tool_registry.py)、[`actions.py`](https://github.com/droidrun/mobilerun/blob/main/mobilerun/agent/utils/actions.py)。注意区分：工具注册表负责按名称分发；`ActionContext.driver` 指向本次运行已连接的设备；driver 实现负责具体平台通信。
+
 ## 4. 关键边界与阅读路径
 
 - **任务编排边界：** `MobileAgent` 拥有整次运行和共享 `MobileAgentState`；Manager/Executor/FastAgent 是被编排的子 workflow。
@@ -330,7 +471,8 @@ sequenceDiagram
 1. `mobilerun/cli/main.py`：理解入口如何创建运行。
 2. `mobilerun/agent/droid/droid_agent.py`：理解设备装配、分支和生命周期。
 3. `mobilerun/agent/droid/state.py` 与 `mobilerun/agent/action_context.py`：理解共享状态和动作依赖。
-4. `mobilerun/agent/fast_agent/fast_agent.py`、`manager/manager_agent.py`、`executor/executor_agent.py`：理解两种执行策略。
-5. `mobilerun/agent/tool_registry.py`、`agent/utils/signatures.py`、`agent/utils/actions.py`：理解从模型工具签名到设备动作的调用链。
-6. `mobilerun/tools/ui/`：理解观察如何归一化为模型上下文。
-7. `mobilerun/config_manager/`、`mcp/`、`app_cards/`、`telemetry/`：理解配置和可选集成。
+4. `mobilerun/agent/fast_agent/fast_agent.py`、`manager/manager_agent.py`、`executor/executor_agent.py`：理解两种执行策略和决策循环。
+5. `mobilerun/agent/droid/state.py`、`agent/utils/chat_utils.py`、Manager/FastAgent 的 prompt 构造方法：理解共享状态、消息裁剪、记忆注入及上下文长度边界。
+6. `mobilerun/agent/tool_registry.py`、`agent/utils/signatures.py`、`agent/utils/actions.py`：理解 Executor 可见工具、过滤规则及从工具签名到设备动作的调用链。
+7. `mobilerun/tools/ui/`：理解观察如何归一化为模型上下文。
+8. `mobilerun/config_manager/`、`mcp/`、`app_cards/`、`telemetry/`：理解配置和可选集成。
