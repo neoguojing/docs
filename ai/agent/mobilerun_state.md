@@ -1,257 +1,3 @@
-我会沿着这些类型的定义与调用链梳理状态来源、共享方式和各 agent 的使用方式，再给出对应源码位置。先定位相关符号与项目结构。
-
-Search for `MobileAgentState|AndroidStateProvider|UIState|ActionContext`
-
-Ran terminal command: git status --short && printf '\nTop-level:\n' && find . -maxdepth 2 -type f | sort | sed -n '1,100p'
-
-Read 
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/state.py"
-}
-
-Read 
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/action_context.py"
-}
-
-Read 
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/tools/ui/state.py"
-}
-
-Read 
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/tools/ui/provider.py"
-}
-
-Search for `shared_state\.(\w+)|action_ctx\.(\w+)|ctx\.(\w+)|state_provider\.get_state|An...`
-
-初步定位显示这里有两层“状态”：设备采集形成的 `UIState`，以及由多个 agent 共享的 `MobileAgentState`；`ActionContext` 则把共享状态和设备依赖交给动作函数。接下来我会核对状态字段定义、初始化/刷新点及 Manager、Executor、FastAgent 的读写路径。
-
-Read , lines 1 to 210
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/state.py",
-  "view_range": [
-    1,
-    210
-  ]
-}
-
-Read , lines 1 to 230
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/tools/ui/state.py",
-  "view_range": [
-    1,
-    230
-  ]
-}
-
-Read , lines 1 to 250
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/tools/ui/provider.py",
-  "view_range": [
-    1,
-    250
-  ]
-}
-
-Read , lines 290 to 335
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/droid_agent.py",
-  "view_range": [
-    290,
-    335
-  ]
-}
-
-Read , lines 720 to 870
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/droid_agent.py",
-  "view_range": [
-    720,
-    870
-  ]
-}
-
-Search for `MobileAgentState\(|shared_state=|state_provider=|action_ctx\.ui|\.a11y_tree|p...`
-
-Read , lines 199 to 410
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/tools/ui/provider.py",
-  "view_range": [
-    199,
-    410
-  ]
-}
-
-Read , lines 180 to 240
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/tools/ui/state.py",
-  "view_range": [
-    180,
-    240
-  ]
-}
-
-Read , lines 185 to 215
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/state.py",
-  "view_range": [
-    185,
-    215
-  ]
-}
-
-Read , lines 390 to 565
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/manager/manager_agent.py",
-  "view_range": [
-    390,
-    565
-  ]
-}
-
-Read , lines 285 to 425
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/fast_agent/fast_agent.py",
-  "view_range": [
-    285,
-    425
-  ]
-}
-
-Read , lines 75 to 250
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/executor/executor_agent.py",
-  "view_range": [
-    75,
-    250
-  ]
-}
-
-Read , lines 365 to 410
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/tools/ui/provider.py",
-  "view_range": [
-    365,
-    410
-  ]
-}
-
-Read , lines 425 to 485
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/droid_agent.py",
-  "view_range": [
-    425,
-    485
-  ]
-}
-
-Read , lines 910 to 960
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/droid_agent.py",
-  "view_range": [
-    910,
-    960
-  ]
-}
-
-Read , lines 235 to 350
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/executor/executor_agent.py",
-  "view_range": [
-    235,
-    350
-  ]
-}
-
-Search for `ctx\.(shared_state|ui|state_provider|driver|app_opener_llm|credential_manager...`
-
-Read , lines 90 to 150
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/tool_registry.py",
-  "view_range": [
-    90,
-    150
-  ]
-}
-
-Read , lines 60 to 225
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/manager/stateless_manager_agent.py",
-  "view_range": [
-    60,
-    225
-  ]
-}
-
-Read , lines 995 to 1150
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/droid_agent.py",
-  "view_range": [
-    995,
-    1150
-  ]
-}
-
-Read , lines 930 to 1015
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/droid/droid_agent.py",
-  "view_range": [
-    930,
-    1015
-  ]
-}
-
-Read , lines 1 to 60
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/action_context.py",
-  "view_range": [
-    1,
-    60
-  ]
-}
-
-Search for `class MobileAgentState|instruction: str|step_number: int|formatted_device_sta...`
-
-Search for `class ActionContext|def __init__|self\.(driver|ui|shared_state|state_provider...`
-
-Search for `class AndroidStateProvider|async def get_state|def _state_from_data|return se...`
-
-Search for `self\.shared_state = shared_state|step_number \+=|action_history\.append|summ...`
-
-Search for `shared_state\.(width|height|current_package_name|current_activity_name|visite...`
-
-Read , lines 21 to 45
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/action_context.py",
-  "view_range": [
-    21,
-    45
-  ]
-}
-
-Read , lines 130 to 205
-Completed with input: {
-  "path": "/workspaces/mobilerun/mobilerun/agent/tool_registry.py",
-  "view_range": [
-    130,
-    205
-  ]
-}
-
-调用路径已确认：reasoning 模式中 Manager 与 Executor 收到同一个共享状态对象和同一个 ActionContext；FastAgent 也接收同一对象，但它直接执行工具而非经由 Executor。最后我会核对一些边界点（例如快照与共享状态哪些字段并非一一同步），避免把 `UIState` 和工作流状态混为一谈。
-
-Search for `MobileAgentState\(|self\.shared_state = shared_state|ActionContext\(|self\.ma...`
-
-Search for `^class UIState|^    def __init__|^        self\.(elements|formatted_text|focu...`
-
-Search for `^class AndroidStateProvider|^    supported =|^    async def get_state|^    de...`
-
-Search for `^class MobileAgentState|^    (instruction|step_number|platform|device_date|fo...`
-
-Search for `^class ActionContext|^    def __init__|^        self\.(driver|ui|shared_state...`
-
 ## 一句话区分
 
 - **`MobileAgentState`**：整个任务生命周期内由多个 agent 共同读写的协调状态。
@@ -338,3 +84,48 @@ FastAgent 自己递增 `step_number`、读取新 UI 快照并更新共享 UI 字
 工具注册表执行 action 时，会把这个对象作为 `ctx` 传入；见 `ToolRegistry.execute`。动作实现随后通过 `ctx` 使用依赖：例如元素点击通过 `ctx.ui` 解析坐标、再由 `ctx.driver` 点击；`complete` action 则更新 `ctx.shared_state`。相应实现可见 `actions.py` 和 `actions.py 的完成动作`。
 
 **概括来说**：`MobileAgentState` 解决“各 agent 如何协调并记住任务进展”；`StateProvider` 与 `UIState` 解决“当前设备看起来怎样、如何定位 UI”；`ActionContext` 解决“一个 action 如何拿到执行所需的对象”。这些职责相连，但不应当把三者视为同一种状态。
+
+
+## `ActionContext` 由谁创建？
+
+由顶层工作流 `MobileAgent` 在 `start_handler` 中创建，而不是由 Manager、Executor 或 FastAgent 各自创建。此时 driver、state provider 和 tool registry 等依赖已经准备好，创建代码把它们以及共享状态装入同一个 `ActionContext`。初始 `ui=None`，因为当前 UI 快照要等 agent 采集设备状态后才有。见 `start_handler 创建 ActionContext`。
+
+Manager、Executor 在 `MobileAgent` 初始化时先以 `action_ctx=None` 构造；启动阶段再被接入这个实例。reasoning 模式中 Manager 和 Executor 持有的是**同一个 `ActionContext` 对象**，不是各自的一份副本。见 `Manager/Executor 初始化` 和 `start_handler 注入依赖`。
+
+FastAgent 创建时也拿到同一个 `action_ctx`，见 `FastAgent 创建`。所以无论采用 reasoning 流程还是 FastAgent 流程，动作执行都沿用 MobileAgent 创建的上下文。
+
+## 哪些地方引用和使用？
+
+| 使用方 | 怎么使用 |
+|---|---|
+| **Manager** | 通过 `action_ctx.driver` 截取截图；每次采集到新 UI 后设置 `action_ctx.ui`；也会通过 `credential_manager` 获取可用凭据列表。见 `ManagerAgent`。 |
+| **Stateless Manager** | 同样用上下文访问 driver，并在采集设备状态后刷新 `action_ctx.ui`。见 `StatelessManagerAgent`。 |
+| **Executor** | 用 `state_provider` 处理截图坐标空间，并把 `action_ctx` 传给工具注册表执行动作。见 `ExecutorAgent` 和 `Executor 执行动作`。 |
+| **FastAgent** | 用上下文截屏、刷新当前 UI，并将上下文传给工具注册表执行动作。见 `FastAgent` 和 `FastAgent 工具执行`。 |
+| **动作函数** | 由 `ToolRegistry.execute()` 以关键字参数 `ctx` 传入；动作从 `ctx` 取得 driver、UI 快照、共享状态等依赖。见 `ToolRegistry.execute`。 |
+| **MobileAgent 自身** | 也会通过 `action_ctx.driver` 做最终阶段的设备操作，例如截取最终截图。见 `droid_agent.py`。 |
+
+## 它在架构上的作用
+
+`ActionContext` 是一个**动作执行依赖的统一入口**，可以理解为 dependency bundle / dependency injection boundary：
+
+```text
+MobileAgent 创建并组装依赖
+        │
+        ├── Manager / Executor / FastAgent
+        │
+        └── ToolRegistry.execute(..., ctx=action_ctx)
+                         │
+                         └── action 函数使用 ctx.driver / ctx.ui / ...
+```
+
+动作函数不必依赖 `MobileAgent` 或某个具体 agent，也不需要把 driver、状态、凭据等依赖分别作为一长串参数传递。它只接收一个 `ctx`，从中取自己需要的内容。这样可以让动作实现与工作流编排相对解耦，并让多种 agent 共用相同的执行依赖。
+
+注意，**`ActionContext` 不负责拥有或维护所有状态**：
+
+- `shared_state` 是任务级跨 agent 状态的引用。
+- `ui` 是当前轮 `UIState` 快照的引用；每轮采集后由 agent 更新它。
+- `driver` 和 `state_provider` 是设备操作及观察能力的引用。
+- 其他字段则提供凭据管理、流式配置、应用启动 LLM 和宏记录器等可选依赖。
+
+因此它更像是一个“**动作执行时的依赖视图**”，而不是另一份独立的 agent 状态。字段定义见 `ActionContext`。
