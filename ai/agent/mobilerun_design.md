@@ -44,6 +44,16 @@ flowchart LR
 
 Reasoning 模式的关键设计是让 Executor 每次只执行一个动作。动作之后由 Manager 基于新的设备状态和执行历史决定继续、调整计划还是结束。这缩小了每次决策的影响范围，也让失败可以在下一轮被重新评估。实现可见 [`droid_agent.py`](../../mobilerun/agent/droid/droid_agent.py) 与 [`executor_agent.py`](../../mobilerun/agent/executor/executor_agent.py)。
 
+从代码上看，Manager 没有直接执行动作：有答案时转入 finalize，否则把子目标交给 Executor；Executor 返回后，顶层 workflow 更新 action history，再回到 Manager：
+
+```python
+if ev.answer.strip():
+    return FinalizeEvent(success=success, reason=ev.answer)
+return ExecutorInputEvent(current_subgoal=ev.current_subgoal)
+```
+
+`run_executor()` 将 action、summary、outcome 和 error 写回共享状态，`handle_executor_result()` 再返回 `ManagerInputEvent()`。这是一个显式的“规划 → 单步执行 → 记录结果 → 再规划”闭环，代码位置在 [`droid_agent.py`](../../mobilerun/agent/droid/droid_agent.py)。
+
 Direct 模式不是把“工具列表”交给模型后就放任执行。[`FastAgent`](../../mobilerun/agent/fast_agent/fast_agent.py) 将解析、执行、结果回传、完成判定组织成 loop；每轮重新读取 UI 状态，并在达到最大步数或连续格式错误时停止。
 
 **可迁移做法**
@@ -58,6 +68,24 @@ Direct 模式不是把“工具列表”交给模型后就放任执行。[`FastA
 Mobilerun 的上下文分为几类：原始任务、当前 UI 状态、上一状态、最近动作及结果、计划/进度、可选记忆、应用专属说明、截图和结构化输出约束。它们由 [`MobileAgentState`](../../mobilerun/agent/droid/state.py) 保存，并按 Manager、Executor、FastAgent 的职责分别注入。
 
 值得借鉴的是“共享事实，按角色组装上下文”，而不是让每个 Agent 持有一份彼此矛盾的状态副本。例如 Executor 构造 prompt 时只取最近五个动作；Manager 用错误标记决定是否带入最近失败记录；FastAgent 限制历史长度，并把当前设备状态和记忆注入发送给模型的消息副本，不污染持久对话历史。视觉输入也受配置控制，截图会按 provider / 模型的坐标契约缩放。
+
+Executor 的上下文组装体现了“共享状态不等于全部塞进 prompt”：
+
+```python
+n = min(5, len(self.shared_state.action_history))
+action_history = [
+    {"action": act, "summary": summ, "outcome": outcome, "error": err}
+    for act, summ, outcome, err in zip(
+        self.shared_state.action_history[-n:],
+        self.shared_state.summary_history[-n:],
+        self.shared_state.action_outcomes[-n:],
+        self.shared_state.error_descriptions[-n:],
+        strict=True,
+    )
+]
+```
+
+随后它只把当前子目标、计划、设备状态、最近动作、工具签名等组装进本轮 prompt；视觉开启时再附加截图。可从 [`executor_agent.py`](../../mobilerun/agent/executor/executor_agent.py) 的 `prepare_context()` 看到完整上下文边界。
 
 Manager 还可以选择有状态或 stateless 变体。前者保留多模态消息历史；后者每轮基于共享状态重建上下文。它体现的是上下文策略的显式选择，而不是“一种记忆方案适合所有任务”。
 
@@ -74,6 +102,70 @@ Manager 还可以选择有状态或 stateless 变体。前者保留多模态消�
 [`ToolRegistry`](../../mobilerun/agent/tool_registry.py) 是工具注册、能力过滤、prompt 描述和执行分发的单一入口。工具 schema 同时用于向模型说明可用操作及解析参数；执行时统一注入 [`ActionContext`](../../mobilerun/agent/action_context.py)，并将返回值规整成 [`ActionResult`](../../mobilerun/agent/action_result.py)。未知工具、参数错误和工具异常会变成失败结果；工作流还可收到 `ToolExecutionEvent`。
 
 该边界让设备操作、用户自定义工具和 MCP 工具能共用一套调用路径。启动时，harness 根据 driver 与 provider 的 capabilities 移除不支持的工具；模型不会被告知一项实际无法执行的能力。凭据也只有在 `type_secret` 工具确实注册时才进入可用密钥上下文。
+
+### 源码示例：工具能力过滤
+
+可以把 capability 理解为“当前环境实际具备的操作原语”。例如设备 driver 可能支持 `tap`，UI provider 可能支持 `element_index` 或 `convert_point`。工具注册时声明自己依赖哪些原语：
+
+```python
+registry.register(
+    "click",
+    fn=click,
+    params={"index": {"type": "number", "required": True}},
+    description="Click the point on the screen with specified index.",
+    deps={"tap", "element_index"},
+)
+
+registry.register(
+    "click_at",
+    fn=click_at,
+    params={"x": ..., "y": ...},
+    description=click_at_description,
+    deps={"tap", "convert_point"},
+)
+```
+
+这是 [`signatures.py`](../../mobilerun/agent/utils/signatures.py) 中标准动作注册逻辑的简化摘录。过滤规则位于 [`tool_registry.py`](../../mobilerun/agent/tool_registry.py)：
+
+```python
+to_remove = [
+    name
+    for name, entry in self.tools.items()
+    if entry.deps is not None and not entry.deps <= capabilities
+]
+self.disable(to_remove)
+```
+
+`entry.deps <= capabilities` 表示“这个工具需要的每一种能力，当前环境都具备”。如果 capabilities 是 `{"tap", "convert_point"}`：
+
+- `click` 需要 `{"tap", "element_index"}`，缺少 `element_index`，因此被移除。
+- `click_at` 需要 `{"tap", "convert_point"}`，依赖满足，因此保留。
+- `deps=None` 的工具没有声明平台能力依赖，不会被这一步移除；它仍可能被后续配置或策略禁用。
+
+这里不是让模型调用后再碰运气，而是在构造模型可用工具列表之前，先按环境能力裁剪工具表。`get_signatures()` 和 `get_tool_descriptions_xml()` 都从裁剪后的 `self.tools` 生成，所以模型看到的工具与 registry 实际可执行的工具保持一致。
+
+### 过滤发生在哪里
+
+`MobileAgent.start_handler()` 的顺序很重要：先创建 driver 和 state provider，再注册标准/自定义/MCP 工具，然后做能力过滤，最后再做配置级禁用并注入子 Agent。
+
+```python
+capabilities = driver.supported | self.state_provider.supported
+registry.disable_unsupported(capabilities)
+
+if disabled_tools:
+    registry.disable(disabled_tools)
+
+self.registry = registry
+```
+
+这段逻辑来自 [`droid_agent.py`](../../mobilerun/agent/droid/droid_agent.py)。因此有两道不同的门：
+
+1. **能力过滤**：根据 driver 与 provider 的真实能力，移除无法运行的工具。
+2. **配置过滤**：根据默认禁用列表或用户配置，移除环境虽支持但当前运行不允许/不希望使用的工具。
+
+检查一个工具为何没出现在模型 prompt 中，可以依次看：它是否在 [`signatures.py`](../../mobilerun/agent/utils/signatures.py) 注册、`deps` 是否被 `driver.supported | state_provider.supported` 满足、是否被配置禁用，最后再看 Agent prompt 如何从 registry 生成工具描述。
+
+**用同一模式设计自己的工具过滤**：给每个工具标注依赖、权限和副作用；启动时按运行环境裁剪，再按用户策略裁剪；工具描述只由最终允许集生成。能力过滤回答“能不能做”，策略过滤回答“这次允不允许做”，不要把两种问题混成一个布尔开关。
 
 **可迁移做法**
 
@@ -94,6 +186,8 @@ Manager 还可以选择有状态或 stateless 变体。前者保留多模态消�
 - **扩展入口**：允许注入 driver、state provider、LLM、prompt、自定义工具和 MCP 工具，让测试与真实部署共享主体执行路径。
 
 其中尤其值得学的是职责分离：provider 负责“观察和解释 UI”，driver 负责“执行设备 I/O”，registry 负责“调用工具”，Agent 负责“决定下一步”，MobileAgent 负责“组装并控制一次运行”。这让平台适配不必渗入每个 prompt 和 agent loop。
+
+在 [`droid_agent.py`](../../mobilerun/agent/droid/droid_agent.py) 中，这个装配顺序可直接追踪：选择并连接 driver → 选择匹配的 provider → `build_tool_registry()` 注册标准工具 → 加入自定义/MCP 工具 → 能力和配置过滤 → 创建 `ActionContext` → 把 registry/context/provider 注入 Manager 与 Executor。这个顺序也解释了为什么工具过滤必须发生在 Agent 构造或 prompt 生成之前。
 
 **新项目的最小 harness 清单**
 
@@ -138,6 +232,18 @@ Manager 还可以选择有状态或 stateless 变体。前者保留多模态消�
 > 如果把这些经验用于新项目，我会先定义任务状态机、工具副作用和独立成功判据，再实现 observe-decide-act-verify loop；之后补齐预算、错误分类和事件追踪，最后用固定任务集评测真实成功率，而不是把单测通过或模型自报完成当成 Agent 能力。
 
 面试追问时可以用具体实现展开：[`droid_agent.py`](../../mobilerun/agent/droid/droid_agent.py) 展示 harness 和两种 loop 的路由；[`state.py`](../../mobilerun/agent/droid/state.py) 展示共享状态；[`tool_registry.py`](../../mobilerun/agent/tool_registry.py) 展示工具契约；[`test_fast_agent_malformed_tool_guard.py`](../../tests/test_fast_agent_malformed_tool_guard.py) 展示协议失败的停止边界；[`test_android_vision_coordinate_contract.py`](../../tests/test_android_vision_coordinate_contract.py) 展示视觉坐标契约测试。
+
+## 源码阅读路线
+
+| 想理解什么 | 建议阅读 | 重点看什么 |
+|---|---|---|
+| 一次运行如何启动和结束 | [`droid_agent.py`](../../mobilerun/agent/droid/droid_agent.py) | `start_handler()` 装配依赖；Manager/Executor workflow steps；`finalize()` |
+| Manager/Executor 如何形成 loop | [`manager_agent.py`](../../mobilerun/agent/manager/manager_agent.py)、[`executor_agent.py`](../../mobilerun/agent/executor/executor_agent.py) | context、响应解析、单动作执行和结果返回 |
+| Direct loop 如何解析和调用工具 | [`fast_agent.py`](../../mobilerun/agent/fast_agent/fast_agent.py)、[`xml_parser.py`](../../mobilerun/agent/fast_agent/xml_parser.py) | LLM 输入、工具调用解析、结果回传、完成与停止条件 |
+| 工具何时可见、如何调用 | [`signatures.py`](../../mobilerun/agent/utils/signatures.py)、[`tool_registry.py`](../../mobilerun/agent/tool_registry.py) | 工具 schema、`deps`、能力过滤、dispatch 与结果归一化 |
+| 工具依赖哪些运行时对象 | [`action_context.py`](../../mobilerun/agent/action_context.py)、[`action_result.py`](../../mobilerun/agent/action_result.py) | 工具依赖注入和统一成功/失败结果 |
+| Agent 间如何共享事实 | [`state.py`](../../mobilerun/agent/droid/state.py) | 设备快照、动作历史、计划、记忆、错误与完成状态 |
+| 设计是否被测试保护 | [`test_fast_agent_malformed_tool_guard.py`](../../tests/test_fast_agent_malformed_tool_guard.py)、[`test_manager_response_validation.py`](../../tests/test_manager_response_validation.py)、[`test_android_vision_coordinate_contract.py`](../../tests/test_android_vision_coordinate_contract.py) | 协议失败停止、Manager 响应校验、视觉与坐标契约 |
 
 ## 8. 带走的设计原则
 
