@@ -130,14 +130,78 @@ flowchart TD
 
 ## Checkpoint 与 Checker 在 Graph 中的位置
 
-检查能力是附着在主控制流上的支路，不是额外的 LangGraph 主干节点：
+### 名词：Checkpoint、Checker 与 LangGraph Checkpointer
 
-- **中途 checkpoint**：计划中的顶层子目标完成时，若启用 midway checks 且该目标包含 `on_complete` 检查项，计划编辑逻辑将 checkpoint 排队。`execution_check_node()` 先记录当前步骤，再将其作为证据锚点启动异步检查；后续回合收割已完成结果，结束时由结算屏障统一收尾。
-- **最终检查**：`exit_settlement_node()` 在结算后调用 Checker 审核原始目标和最终检查项；失败的 verify 可以让图返回 Perception/Operator 修复，不通过无限追加循环实现。
-- **assert / verify 区别**：两者都进入 verdict ledger，但失败政策和最终统计语义不同；assert 失败可依 `assert_failure_policy` 锁存 halt，verify 未满足可在最终审核预算内重试。
-- **结论依据可追溯**：检查尝试、证据锚点、Verdict 和汇总结果由 `artemis/graph/checkpoints.py` 管理；Graph 通过 State 传递控制信号，不将全部检查明细塞进 State。
+这里的 **checkpoint（检查点）** 是 ARTEMIS Checker 对计划中已完成子目标做的一次中途验收：在 task plan 的顶层子目标完成时，按该子目标声明的 `on_complete` 检查项核对证据。它让系统有机会在任务继续或结束前发现“计划标记完成，但验收条件还没满足”的情况。
 
-配置总开关与独立中途/最终开关定义在 `artemis/context.py::ExecutionSetup`。默认配置下中途检查关闭、最终检查开启；实际值可被运行配置覆盖。需要确认某次运行的行为时，应同时检查配置和执行上下文，不能只依据图结构推断“检查一定会执行”。
+- **Checker** 是执行判断的审核 Agent，核心实现位于 `artemis/agents/checker/checker.py`。
+- **Checkpoint** 是一次与某个已完成子目标关联的审核尝试；排队、并发管理、结果记账和修复触发由 `artemis/graph/checkpoints.py` 实现。
+- 这里的 checkpoint **不是** LangGraph Checkpointer / CheckpointSaver。ARTEMIS 代码中的这套逻辑没有把它用作 LangGraph State 的持久化、跨进程恢复或图执行快照；它是计划验收机制。LangGraph 节点之间的运行状态仍通过本次执行中的 `State` 传递。
+
+检查项由 Planner 写进 task plan，语法解析和 `on_complete` / `at_end` 归类由 `artemis/utils/plan_grammar.py` 负责。中途检查只针对刚完成顶层子目标下的 `on_complete` 项；最终检查还会审核用户原始目标及计划中的检查项。
+
+### 生命周期：从完成里程碑到审核反馈
+
+```mermaid
+flowchart TD
+    plan["Planner / Operator 更新 task_plan"]
+    done["顶层子目标首次标记完成"]
+    queue["queue_checkpoints()<br/>只排队 on_complete 检查项"]
+    record["execution_check_node()<br/>记录本轮 DataEngine step"]
+    spawn["spawn_pending_checkpoints()<br/>以新 step 为证据锚点启动异步 Checker"]
+    checker["run_checkpoint_check()<br/>检查历史证据与持久状态"]
+    harvest["后续 execution_check<br/>非阻塞收割已完成尝试"]
+    ledger["Verdict Ledger / Checker 事件"]
+    fail{"verify 失败且结果仍适用？"}
+    repair["有限修复<br/>子目标恢复进行中 + operator_feedback"]
+    resume["回到主 Graph 循环<br/>Operator 读取反馈并继续"]
+    finish["主 Graph 满足退出条件"]
+    settle["exit_settlement<br/>等待所有已启动检查并记录结果"]
+    final["按配置执行 final check"]
+    outcome["RunOutcome / END"]
+
+    plan --> done --> queue --> record --> spawn --> checker --> harvest
+    harvest --> ledger --> fail
+    fail -->|是，仍有修复额度| repair --> resume
+    fail -->|否，继续主循环| resume
+    resume --> finish --> settle
+    queue -. 尚未启动的排队项在退出时清理 .-> settle
+    checker -. 已启动任务在退出时统一等待 .-> settle
+    settle --> final --> outcome
+```
+
+完整流程如下：
+
+1. **识别计划变更。** Planner 或 Operator 通过受控的计划写入流程更新 `task_plan`。当顶层子目标从未完成变为完成，且其下有 `on_complete` 检查项时，`queue_checkpoints()` 将 `PendingCheckpoint` 放入 `ctx.pending_checkpoints`。这一步只排队，不立刻请求模型。
+2. **先落步骤，再启动检查。** 到达 `execution_check_node()` 后，当前 Operator 回合的截图、UI、动作和元数据写入 DataEngine。之后 `spawn_pending_checkpoints()` 才创建 Checker 异步任务，并将新 step id、触发时计划快照等打包为 `EvidenceAnchor`，避免审核错误地引用上一个回合。
+3. **并行审核且不阻塞主循环。** Checker 针对刚完成的子目标和检查项审核。checkpoint 使用锚定的执行历史（锚点 step 的执行前截图、前一步的执行后状态等）及允许的持久状态探查，不读取任意的实时屏幕状态，避免把任务后来进入的界面误当成该子目标完成时的证据。之后 Operator/Validator 主循环可以继续；后续 `execution_check_node()` 只收割已完成的任务，不等待仍在运行的任务。
+4. **把结果记账，按适用性决定是否产生副作用。** 每项 verdict 写入 ledger，包含 attempt/checkpoint id、检查类型、状态、证据、建议和锚点。只有仍对应当前计划、检查项未被用户撤回、且是可应用的当前尝试，结果才可改变执行状态；过期或已撤回的结果仍可记账，但不会触发修复或 halt。
+5. **失败时有限修复。** 当前有效的 `verify` 失败且用户没有请求停止时，在 `checkpoint_max_repairs` 配额内撤销该子目标的完成状态、登记待处理发现，并通过 `operator_feedback` 告知 Operator。Operator 可修复后再次完成该子目标，触发新的尝试；超过配额后停止该检查点的修复循环，失败结果保留在 ledger。
+6. **结束时结算。** 正常结束或提前退出时，`exit_settlement_node()` 调用 `settle_all_checkpoints()` 等待已启动的检查，等待受 `settlement_timeout` 限制。未完成的任务会取消并记录为 `unchecked`；尚未启动的队列项会清理，且不会在退出阶段新开检查。结算只补齐记录，不再启动修复。之后如启用了最终检查，再执行 final review 并生成 `run_outcome`。
+
+### 特性与配置
+
+| 特性 | 行为 | 主要配置 / 实现 |
+| --- | --- | --- |
+| 按计划声明验收 | 一个顶层子目标只会针对其关联的 `on_complete` 检查项排中途 checkpoint；`at_end` 项留到最终审核。 | `artemis/utils/plan_grammar.py`、`queue_checkpoints()` |
+| 延迟启动、证据锚定 | 计划写入阶段只排队；DataEngine 记录本轮步骤后才启动，审核保留完成时的计划快照与步骤锚点。 | `PendingCheckpoint`、`EvidenceAnchor`、`execution_check_node()` |
+| 异步与有限并发 | Checker 在后台运行，不阻塞正常 Agent 循环；同时运行数受限。相同 checkpoint 出现更新完成时会替换旧尝试，旧结果先被收割/记账，避免静默丢弃。 | `max_concurrent_checkpoints`、`checkpoint_timeout`、`ctx.checkpoint_tasks` |
+| 有限、定向修复 | `verify` 失败可将对应里程碑退回进行中并给 Operator 反馈；每个 checkpoint 有单独修复额度。 | `checkpoint_max_repairs`、`ctx.checkpoint_repairs` |
+| Assert 策略独立 | `assert` 失败仍记录；仅当 `assert_failure_policy="halt"` 时锁存 `ctx.assert_halt`，使后续到达 convergence 时转入退出结算，而不是开启新的常规循环。 | `assert_failure_policy`、`convergence_gate()` |
+| 过期结果隔离 | 计划内容变更、用户撤回检查项、任务停止等情况下，结果可以只写 ledger，不作用于当前执行状态。 | `harvest_run()` 的 applicability / guidance gate |
+| 错误可见且不中断主循环 | 超时或异常不会伪造通过；对应结果记为 `inconclusive`，审核 fail-open 放行，任务继续并在结果中保留不确定状态。 | `checkpoint_timeout`、`harvest_run()` |
+| 结束前统一结算 | 已启动检查会在退出前受限等待；超时任务记录为 `unchecked`，不会无限拖住任务结束。 | `settlement_timeout`、`settle_all_checkpoints()` |
+| 结果可追溯 | Verdict ledger、尝试事件、证据锚点、Checker repair note 和可选历史 chunk 注释能追踪“检查了什么、凭什么、是否修复”。 | `artemis/graph/checkpoints.py`、DataEngine |
+
+配置总开关与独立中途/最终开关定义在 `artemis/context.py::ExecutionSetup`，其上游设置见 `artemis/config/agent.py::CheckerConfig`。默认 factory layering 是中途 checkpoint 关闭、最终检查开启；`off`、`final`、`checkpoints`、`strict` 预设分别提供不同检查强度。CLI 可通过 `--verification-level` 选择预设；具体默认值和覆盖以生效的运行配置为准。
+
+### 对整个系统的作用与边界
+
+- **把计划完成转成可验证的里程碑。** Operator 标记子目标完成不再是唯一的成功信号；有 `on_complete` 条件时，Checker 会用执行证据复核。
+- **尽早发现并修复局部失败。** 中途审核将失败反馈到 Operator，并只回滚对应的子目标状态，避免等到整项长任务结束才暴露问题。
+- **将执行和验收解耦。** Graph 主循环负责推进任务；checkpoint 是异步验收支路，不直接取代 Operator 的设备操作，也不将所有审核都塞进主状态图节点。
+- **为结束结果提供审计依据。** Verdict ledger 汇入最终摘要；`run_outcome` 分开表达目标完成状态和检查项统计，供任务收尾、轨迹复盘及调用方结果处理使用。
+- **并非万能证明。** 结论受计划所声明的检查项、可用历史证据、配置开关和 Checker 能力限制。中途检查默认关闭；超时会按 inconclusive 记录并 fail-open，不等于“验证通过”。若没有检查项或检查未启用，也不能把无失败记录解释为目标已被独立证明。
 
 ## 修改与测试从哪里入手
 
