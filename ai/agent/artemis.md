@@ -63,6 +63,60 @@ flowchart TD
 
 > 图中节点和条件路由会随配置启用或跳过部分检查。需要理解具体分支时，以 `artemis/graph/graph.py` 的节点注册和边定义为准。
 
+### CLI 从输入到输出：源码流程
+
+下面聚焦 `artemis run "<目标>"`。普通 CLI 默认先提交给 Artemis Daemon；Daemon 不可用时回退到本地执行。Daemon worker 通过同一 CLI 入口进入任务执行，避免将调度层和 Agent 执行层混为一谈。
+
+```mermaid
+flowchart TD
+    Input["CLI 输入：artemis run &quot;目标&quot; --profile pro/flash"]
+    Entry["pyproject.toml<br/>artemis.interfaces.cli.main:cli"]
+    Register["artemis/interfaces/cli/main.py<br/>Typer app / run_command 注册"]
+    Run["artemis/interfaces/cli/commands/run.py<br/>run_command(goal, options)"]
+    Route{"worker 或 --standalone？"}
+    Daemon["artemis/runtime/daemon_client.py<br/>ensure_daemon_running()<br/>submit_task_to_daemon()"]
+    Queue["apps/admin_console/services/task_queue_service.py<br/>TaskQueueService<br/>worker 启动 artemis.main"]
+    Worker["artemis/main.py<br/>normalize_argv() 兼容入口"]
+    Fallback["Daemon 不可用 / 提交失败<br/>回退本地执行"]
+    Execute["run.py::execute_task()<br/>配置、profile、设备与会话参数"]
+    Automation["third_party/mobile_use/main.py<br/>run_automation()"]
+    Create["创建 artemis.sdk.agent.Agent<br/>AgentBase.init() 连接设备<br/>构建 TaskRequest / Task"]
+    Lifecycle["third_party/mobile_use/sdk/agent.py<br/>AgentBase._run_task()<br/>设备锁、ArtemisContext、DataEngine、初始 State"]
+    Profile{"执行 profile"}
+    Flash["artemis/agents/flash/runner.py<br/>FlashRunner.run() 反应式循环"]
+    Graph["artemis/graph/graph.py<br/>get_graph() / LangGraph"]
+    ProLoop["Planner → Perception → Operator<br/>execution_check → Validator → Summarizer<br/>收敛 / 退出检查"]
+    Actions["artemis/mcp/action_executor.py<br/>McpActionExecutor / ActionSession"]
+    Device["artemis/controllers/ + artemis/drivers/<br/>统一控制器 / Driver / Android 设备"]
+    FlashOut["FlashRunner 结果与状态"]
+    ProOut["AgentBase._extract_output()<br/>按配置调用 artemis/agents/outputter/outputter.py::outputter()<br/>attach_test_summary()"]
+    Finalize["third_party/mobile_use/sdk/types/task.py<br/>Task.finalize() → TaskResult"]
+    Persist["AgentBase._finalize_tracing_safely()<br/>DataEngine 会话、trace / GIF / steps.json<br/>run_automation() finally → Agent.clean()"]
+    CliResult["CLI 结束：任务状态 / 错误提示<br/>结果与轨迹保存在 TaskResult、DataEngine 和 trace 目录"]
+    Wait["artemis/runtime/daemon_client.py<br/>wait_for_daemon_task()<br/>CLI 等待 worker 并显示状态"]
+
+    Input --> Entry --> Register --> Run --> Route
+    Route -->|是| Execute
+    Route -->|否：普通 CLI| Daemon
+    Daemon -->|已提交| Queue
+    Daemon -->|启动或提交失败| Fallback --> Execute
+    Queue --> Worker --> Run
+    Queue --> Wait
+    Execute --> Automation --> Create --> Lifecycle --> Profile
+    Profile -->|flash| Flash --> Actions
+    Profile -->|pro / default| Graph --> ProLoop --> Actions
+    Actions --> Device
+    Device -->|观察与动作反馈| Flash
+    Device -->|下一轮感知| ProLoop
+    Flash --> FlashOut --> Finalize
+    ProLoop --> ProOut --> Finalize
+    Finalize --> Persist --> CliResult
+    Persist --> Wait
+    Wait --> CliResult
+```
+
+图中路径对应的主要入口：CLI 注册与参数解析见 [artemis/interfaces/cli/main.py](../artemis/interfaces/cli/main.py) 和 [artemis/interfaces/cli/commands/run.py](../artemis/interfaces/cli/commands/run.py)；Daemon 调度与 worker 见 [artemis/runtime/daemon_client.py](../artemis/runtime/daemon_client.py) 和 [apps/admin_console/services/task_queue_service.py](../apps/admin_console/services/task_queue_service.py)。任务创建、Agent 生命周期与输出提取见 [third_party/mobile_use/main.py](../third_party/mobile_use/main.py) 和 [third_party/mobile_use/sdk/agent.py](../third_party/mobile_use/sdk/agent.py)，ARTEMIS 的 Agent 实现在 [artemis/sdk/agent.py](../artemis/sdk/agent.py)。Pro 图节点与动作执行分别见 [artemis/graph/graph.py](../artemis/graph/graph.py)、[artemis/mcp/action_executor.py](../artemis/mcp/action_executor.py)；Flash 执行见 [artemis/agents/flash/runner.py](../artemis/agents/flash/runner.py)。任务状态/结果和输出合成分别见 [third_party/mobile_use/sdk/types/task.py](../third_party/mobile_use/sdk/types/task.py) 与 [artemis/agents/outputter/outputter.py](../artemis/agents/outputter/outputter.py)。输出合成是可选步骤；CLI 本地路径主要通过日志、任务状态和轨迹目录呈现执行结果，Daemon 路径还会等待并显示 worker 的最终状态。
+
 ## 源码结构
 
 ### 核心运行时：`artemis/`
@@ -450,4 +504,3 @@ uv run artemis ui
 3. 对 Pro 路径阅读 `artemis/graph/state.py` 与 `artemis/graph/graph.py`；对 Flash 路径阅读 `artemis/agents/flash/runner.py`。
 4. 沿某个工具调用继续阅读 `artemis/tools/`、`artemis/mcp/`、Controller 和 Driver，最后观察数据如何进入 DataEngine/Trace。
 5. 需要理解外部集成时分别阅读 `mcp_server/README.md`、`apps/admin_console/` 和 `packages/artemis-client/`。
-
