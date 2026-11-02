@@ -126,8 +126,8 @@ flowchart TD
 | `artemis/interfaces/cli/` | Typer CLI 和命令实现：运行任务、批量任务、诊断、MCP、服务、轨迹及辅助工具 | `main.py`、`commands/run.py` |
 | `artemis/interfaces/sdk/` | Python SDK 接口与任务封装 | `client.py`、`task.py` |
 | `artemis/context.py` | 单次运行的共享上下文、执行设置和资源清理 | `ArtemisContext`、`ExecutionSetup` |
-| `artemis/graph/` | Pro profile 的 LangGraph State、节点编排、条件路由、检查点与退出结算 | `graph.py`、`state.py`、`checkpoints.py` |
-| `artemis/agents/` | Agent 能力实现，按规划、执行、感知、检查和报告职责组织 | 见下方 Agent 模块表 |
+| `artemis/graph/` | Pro profile 的 LangGraph State、节点编排、条件路由、检查点与退出结算 | `graph.py`、`state.py`、`checkpoints.py`；[Graph 工作流专题](./ARTEMIS_GRAPH_GUIDE_CN.md) |
+| `artemis/agents/` | Agent 能力实现，按规划、执行、感知、检查和报告职责组织 | 见下方 Agent 模块表；[Agents 源码专题](./ARTEMIS_AGENTS_GUIDE_CN.md) |
 | `artemis/tools/` | 提供给 Agent 的工具定义、参数封装和调用包装 | `index.py`、`tool_wrapper.py`、`mobile/` |
 | `artemis/mcp/` | 进程内动作协议、动作会话、执行器、动作清单及 Actuator 后端 | `action_executor.py`、`action_session.py`、`actuators/` |
 | `artemis/controllers/`、`artemis/drivers/` | 将统一控制接口适配到 Android、模拟器、云端或 Mock 设备驱动 | `unified_controller.py`、`drivers/factory.py` |
@@ -147,18 +147,20 @@ flowchart TD
 
 | 子模块 | 主要职责 |
 | --- | --- |
-| `planner/` | Pro 任务计划生成与计划变更校验 |
-| `operator/` | 根据目标、界面观察和计划选择工具与设备动作 |
+| `planner/` | Pro 任务计划生成与计划变更校验；通过共享 task plan grammar 与写后护栏约束格式 |
+| `operator/` | 根据目标、界面观察和计划选择工具与设备动作；PromptBuilder 按实际可用工具组装 Prompt |
 | `explorer/` | 探索界面、定位交互目标并提供不同深度的探索能力 |
-| `validator/` | 动作声明、执行反馈与安全/前置条件相关校验；Flash 也复用其中部分工具声明和逻辑 |
-| `checker/` | 检查计划检查点和任务最终结果 |
-| `summarizer/`、`flash/summarizer.py` | 归纳任务进度、步骤和视觉状态 |
-| `flash/` | Flash profile 的快速反应式执行器与上下文压缩 |
-| `diagnoser/`、`log_analyzer/`、`video_analyzer/` | 诊断任务、分析日志和视频片段 |
-| `image_processor/`、`object_detector/` | 图像处理和视觉目标检测 |
-| `history_analyzer/` | 对历史任务/执行信息进行分析 |
-| `outputter/` | 生成最终报告或结构化输出 |
-| `prompt_assembly.py` | 组装 Agent 提示内容 |
+| `validator/` | 动作声明、执行前置条件校验与设备动作执行；区别于事后目标验收 Checker |
+| `checker/` | 对计划检查点和任务最终结果执行只读证据审计 |
+| `summarizer/`、`flash/summarizer.py` | 归纳任务步骤和视觉转场，生成可供历史压缩/后续决策使用的记忆 |
+| `flash/` | Flash profile 的快速反应式执行器、Transcript 和上下文压缩 |
+| `diagnoser/`、`log_analyzer/`、`video_analyzer/` | 按需诊断任务、调查日志/命令输出和分析屏幕视频 |
+| `image_processor/`、`object_detector/` | 图像处理及视觉目标检测 |
+| `history_analyzer/` | 对任务历史、步骤和笔记做工具辅助问答 |
+| `outputter/` | 汇总执行证据，生成最终报告或用户指定的结构化输出 |
+| `prompt_assembly.py` | 按当前工具能力组装 Prompt 的工具清单与教学片段 |
+
+Agent 的职责、Prompt、task plan 与输出处理细节见 [Agents 源码专题](./ARTEMIS_AGENTS_GUIDE_CN.md)。
 
 ### 接入、应用和配套包
 
@@ -174,6 +176,199 @@ flowchart TD
 | `config/` | 仓库默认运行配置，如 `artemis.jsonc` |
 | `scripts/` | 设备验收、并发验证、质量检查和开发运行辅助脚本 |
 | `docs/` | 项目设计、架构、操作与其他文档资源 |
+
+## 子系统如何组织与通信
+
+先区分三种“SDK / MCP / Agent”，避免名称相近导致调用路径混淆：
+
+- **本地 Agent SDK**：`artemis.sdk.agent.Agent` 是运行时入口，继承 `AgentBase`；调用它会在当前 Python 进程中初始化设备并执行任务。
+- **远程 Python client**：`artemis_client.ArtemisClient` 是不带 ADB/Agent/模型依赖的 HTTP 客户端；把请求发给另一台运行 Artemis Daemon 的主机。`artemis.interfaces.sdk.ArtemisClient` 只是兼容导出。
+- **外部任务 MCP 与内部动作 MCP**：外部 MCP 把“运行/管理任务”暴露给 IDE；内部 Action MCP 则是 Agent 执行设备动作的进程内协议。前者的 `mobile_run_task` 不会直接成为 Operator 的 `click` 工具。
+
+### 总体通信关系
+
+```mermaid
+flowchart LR
+    CLI["artemis CLI"] -->|"HTTP JSON /api/run"| API["Admin Console FastAPI<br/>同一 Daemon 服务"]
+    UI["Angular Showcase Web UI"] -->|"同源 HTTP /api/*"| API
+    Client["artemis-client<br/>远程 Python client"] -->|"HTTP JSON"| API
+    IDE["AI IDE / MCP client"] -->|"MCP stdio 或 SSE"| ExtMCP["mcp_server<br/>FastMCP 外部任务 API"]
+    ExtMCP -->|"HTTP /api/run"| API
+    ExtMCP -.->|"Daemon 不可用时启动 runner 子进程"| Worker
+
+    API --> Queue["TaskQueueService<br/>队列 / 设备调度"]
+    Queue -->|"spawn -m artemis.main<br/>session_id + 环境变量"| Worker["任务 Worker 进程"]
+    Direct["artemis.sdk.Agent<br/>本地 Python 调用"] -->|"进程内 run_task()"| Agent["AgentBase 生命周期"]
+    Worker --> Agent
+    Agent --> Exec["FlashRunner 或 Pro Graph"]
+    Exec --> Action["内部 Action MCP<br/>ActionSession ↔ MCP server"]
+    Action --> Device["Actuator / Controller / Driver / Android"]
+
+    Worker -->|"localhost TCP IPC<br/>换行分帧 JSON 事件"| IPC["Admin Console IPCService"]
+    IPC -->|"事件广播"| SSE["HTTP SSE /api/stream"]
+    SSE --> UI
+    API --> DB["SQLite / DataEngine / TraceStore"]
+    UI -->|"HTTP 读取 sessions / steps / traces / media"| API
+```
+
+队列任务的一般请求/观测路径是：
+
+```text
+调用方 ──提交 goal + profile──> /api/run ──> 队列项 + session_id
+  └── CLI / client 轮询状态：GET /api/sessions/{id}、GET /api/status
+  └── Web UI 接受 enqueue 响应后订阅 /api/stream，拉取 steps / traces / media
+  └── MCP 返回 trace_id；后续 mobile_manage_task / mobile_inspect_trace 按 ID 管理或查证
+队列 ──独立 worker 进程执行──> DataEngine 持久化 + IPC 实时事件 ──> IPCService ──> SSE
+```
+
+Daemon/API、worker 和 UI 通常属于同一台 Artemis 主机，但不是同一进程：FastAPI 管理服务负责准入、队列和查询，执行任务由独立 worker 进程运行。IPC 和设备动作 MCP 是两条不同链路：IPC 传输运行观测事件，Action MCP 传输设备动作请求/结果。
+
+### 各入口与调用链
+
+#### 1. CLI：面向开发者的命令行入口
+
+CLI 负责解析参数、配置本次任务，并优先将任务交给本机 Daemon 队列；worker 或 standalone 模式则直接执行，避免 worker 再提交自己形成递归调度。
+
+```python
+# artemis/interfaces/cli/commands/run.py（节选）
+is_worker = os.environ.get("ARTEMIS_TASK_WORKER") == "1"
+is_standalone = standalone or os.environ.get("ARTEMIS_STANDALONE") == "1"
+if not is_worker and not is_standalone:
+    is_running, base_url = ensure_daemon_running(...)
+    resp = submit_task_to_daemon(..., session_id=target_sid, ingress="cli")
+    final_res = wait_for_daemon_task(target_sid, base_url=base_url)
+```
+
+- Typer 命令注册在 [main.py](../artemis/interfaces/cli/main.py)；`run_command()` 与 `execute_task()` 在 [commands/run.py](../artemis/interfaces/cli/commands/run.py)。
+- [daemon_client.py](../artemis/runtime/daemon_client.py) 通过 HTTP `POST /api/run` 提交，并轮询 `GET /api/sessions/{session_id}` / `/api/status` 取终态。CLI 在等待中断时调用 `POST /api/stop`。
+- Daemon 不可用或显式 standalone 时，`execute_task()` 进程内调用 `run_automation()`；worker 则通过相同 CLI 入口和 `ARTEMIS_TASK_WORKER=1` 直接运行。
+
+#### 2. Admin Console / Daemon service：调度、HTTP API、数据查询
+
+Admin Console 是任务入口的共享服务端：FastAPI 提供 REST 与 SSE；`TaskQueueService` 维护任务队列、设备锁与 worker subprocess 生命周期；Repository/DataEngine/TraceStore 提供会话及轨迹读取。
+
+```python
+# apps/admin_console/routers/tasks.py（节选）
+@router.post("/api/run")
+async def run_task(request: RunRequest):
+    ...
+    return await task_queue_service.enqueue_tasks(
+        incoming_goals,
+        profile=request.profile or "flash",
+        session_id=request.session_id,
+        ingress=request.ingress or "frontend",
+        ...
+    )
+```
+
+```python
+# apps/admin_console/services/task_queue_service.py（节选）
+cmd, env = cls._build_worker_invocation(...)
+proc = await asyncio.create_subprocess_exec(*cmd, cwd=str(WORKSPACE_ROOT), env=env, ...)
+cls._register_worker_run(task_item, run_key, sess_id, goal, profile, target, proc)
+```
+
+- API 的准入、幂等 session、设备状态检查和入队在 [tasks.py](../apps/admin_console/routers/tasks.py)；`enqueue_tasks()`、FIFO 调度和 `_execute_task_item()` 在 [task_queue_service.py](../apps/admin_console/services/task_queue_service.py)。
+- Worker 使用 `python -m artemis.main <goal> --profile ...` 启动，环境变量携带 `ARTEMIS_SESSION_ID`、`ARTEMIS_TASK_WORKER`、设备锁 ticket 和 IPC 端口。worker 再通过 CLI → `run_automation()` → `AgentBase._run_task()` 执行实际 Agent。
+- 状态读取使用 `/api/status`、`/api/sessions`、`/api/sessions/{id}` 等；步骤/Trace/媒体使用 `/api/sessions/{id}/steps`、`/api/steps/{step_id}/traces`、`/api/traces/{trace_id}` 和 `/api/sessions/{id}/video` 等端点。停止/恢复通过 `/api/stop`、`/api/resume`。
+- Web 与远程 client 对 API 的请求和响应共享 `session_id`，它把队列项、DataEngine 会话、轨迹、SSE 事件及 stop 操作关联起来。
+
+#### 3. Web UI：同源 Angular 展示与交互层
+
+Showcase UI 不直接连接设备，也不把 Agent 嵌入浏览器。它通过浏览器同源 HTTP API 提交任务和读取持久数据，通过 EventSource 接收实时事件；业务路由和数据聚合由 Admin Console 完成。
+
+```typescript
+// apps/showcase_ui/src/app/services/agent.service.ts（节选）
+this.http.post<any>('/api/run', payload).subscribe(...);
+this.eventSource = new EventSource('/api/stream');
+this.http.get<Session[]>('/api/sessions').subscribe(...);
+```
+
+- [AgentService](../apps/showcase_ui/src/app/services/agent.service.ts) 管理任务提交、会话状态、step/trace 读取和单条统一事件流；页面组件从 service 的 signal/Observable 订阅状态。
+- [SystemService](../apps/showcase_ui/src/app/services/system.service.ts) 查询 readiness、设备、ADB 与 Emulator 状态；后端系统 API 位于 [system.py](../apps/admin_console/routers/system.py)。
+- [stream_events()](../apps/admin_console/routers/tasks.py) 将 IPCService 广播事件包装为 `text/event-stream`；页面收到 `step_recorded`、`trace_recorded`、`llm_stream` 等事件后更新 UI。截图/视频等大媒体不塞入 SSE，而通过 media URL 单独请求。
+- [server.py](../apps/admin_console/server.py) 启动 FastAPI lifespan、IPC listener、task queue worker，并从 bundled Showcase dist 提供前端资源。通常 UI 与 API 同源，因此前端调用的是相对路径 `/api/...`。
+
+#### 4. 实时 Service → Web UI：IPC 再转 SSE
+
+Worker 里的 DataEngine 将 trace/step/status 事件先发给本机 Admin Console；它不是直接向浏览器推送：
+
+```python
+# artemis/data_engine/engine.py（节选）
+sock = socket.create_connection(("127.0.0.1", ipc_port), timeout=0.2)
+sock.sendall((json.dumps({"event_type": event_type, "data": data}) + "\n").encode())
+```
+
+```text
+Worker / DataEngine
+  ── TCP localhost + NDJSON ──> IPCService.start_server()
+  ── state.ipc_subscribers ──> GET /api/stream 的 SSE generator
+  ── HTTP text/event-stream ──> Angular EventSource
+```
+
+实现分别见 [engine.py](../artemis/data_engine/engine.py) 的 `_send_ipc_event()`、[ipc_service.py](../apps/admin_console/services/ipc_service.py) 和 [tasks.py](../apps/admin_console/routers/tasks.py) 的 SSE 路由。IPC payload 会先做 sanitize：大截图字节不会在 SSE 重复广播，调用参数也被裁剪；UI 需要图像时走媒体 API。IPC 不可用不会阻断自动化任务，它属于观测通道。
+
+#### 5. MCP：把任务 API 暴露给外部 AI IDE
+
+外部 MCP Server 由 [mcp_server/server.py](../mcp_server/server.py) 建立，使用 [base.py](../mcp_server/base.py) 的 FastMCP 实例；[mcp_server/__init__.py](../mcp_server/__init__.py) 导入 `mcp_server.tools` 完成 `@mcp.tool()` 注册。`python -m mcp_server` 默认跑 stdio，亦支持 SSE transport。MCP 的作用是让 IDE 通过 MCP 协议发现/调用任务工具，而不是复制一份 Agent 执行引擎。
+
+`mobile_run_task` 的分发优先级：
+
+```python
+# mcp_server/tools/task_runner.py（节选）
+is_running, base_url = ensure_daemon_running(...)
+if is_running:
+    resp = submit_task_to_daemon(
+        goal=task_desc, profile=canonical_model.lower(),
+        session_id=trace_id, ingress="mcp", base_url=base_url,
+    )
+    return {"trace_id": assigned_sid, "status": "running", ...}
+# Daemon 不可用时：reserve device ticket，再启动
+# python -m mcp_server.background.task_runner
+```
+
+- 工具实现见 [task_runner.py](../mcp_server/tools/task_runner.py)；它通常立即返回 `trace_id`，不让 IDE 的单次 MCP 请求等待整个移动任务。
+- 后续用 [task_manager.py](../mcp_server/tools/task_manager.py) 查询/停止任务，用 [inspect_trace.py](../mcp_server/tools/inspect_trace.py) 查执行轨迹。可选 notifier 将任务终态通知回 IDE 对话或配置的通知通道。
+- 任务优先提交给共用 Daemon 队列；若独立 MCP Server 环境没有 Daemon，则保留 runner subprocess fallback。无论哪种分发，实际工作仍通过同一 `artemis.main`/Agent 生命周期执行。
+
+#### 6. Python SDK：本地执行与远程调度是两类 API
+
+**本地 Agent SDK** 适合把 ARTEMIS 作为同进程库嵌入 Python 服务/脚本。它跳过 `/api/run` 队列入口，直接创建 Agent 并运行任务：
+
+```python
+# artemis/sdk/agent.py 的 Agent 继承 AgentBase
+agent = Agent(config=config, session_id=session_id)
+await agent.init()
+request = agent.new_task(goal).using_profile("pro").build()
+result = await agent.run_task(request=request)
+await agent.clean()
+```
+
+底层调用见 [artemis/sdk/agent.py](../artemis/sdk/agent.py)、[third_party/mobile_use/sdk/agent.py](../third_party/mobile_use/sdk/agent.py) 与 [third_party/mobile_use/main.py](../third_party/mobile_use/main.py)。本地调用者负责管理 Python 进程生命周期、并发以及共享设备访问；设备锁仍由 Agent/runtime 获取。
+
+**远程 `artemis-client`** 适合调用另一台主机上的 Daemon。它不导入 ADB、设备驱动或 Agent，在远端 REST API 上提交、轮询和取消任务：
+
+```python
+# packages/artemis-client/src/artemis_client/client.py（节选）
+response = await self._request("POST", "/api/run", json_body=payload)
+...
+result = await self.get_task(task_id)
+```
+
+公开 API 有 `submit()`（只等调度准入并返回 `TaskHandle`）、`wait_for_task()` / `run()`（轮询到终态）、`get_task()`、`stop()`、`list_devices()`。传输实现 [transport.py](../packages/artemis-client/src/artemis_client/transport.py) 使用 Python 标准库 `urllib` 发 JSON-over-HTTP，并把 HTTP/网络/协议错误映射成显式异常；`artemis.interfaces.sdk.client` 兼容导入同一个 client 实现。
+
+### 子系统边界速查
+
+| 子系统 | 运行位置与职责 | 与谁通信 / 如何调用 | 不负责什么 |
+| --- | --- | --- | --- |
+| CLI | 用户终端；解析命令、参数、输出状态 | Daemon REST；standalone 时直接调用 `run_automation()` | 不实现 Agent 的规划或设备执行逻辑 |
+| Admin Console / Daemon | Artemis 主机 FastAPI；API、队列、worker 管理、查询与回放 | REST、SSE；启动 worker subprocess；接收本机 TCP IPC | 不在 API handler 内同步跑长时 Agent |
+| Worker / Agent | 独立任务进程；Agent 生命周期、Flash/Pro loop 和设备动作 | 与 service 用 session/队列锁/IPC 事件；动作经进程内 Action MCP | 不要求浏览器或 MCP client 常驻连接 |
+| External MCP Server | IDE MCP 进程；工具发现、任务提交/管理/诊断 | MCP stdio/SSE → Daemon HTTP；必要时启动 runner | 不等同于内部 Action MCP |
+| Showcase Web UI | 浏览器 Angular 应用；提交任务、状态/轨迹/媒体呈现 | 同源 REST + EventSource SSE | 不直连 ADB，也不执行 Agent |
+| Local Agent SDK | 调用方 Python 进程；把 ARTEMIS 当库直接运行 | Python 方法调用 `Agent.run_task()` | 不经 Daemon 队列准入 |
+| Remote Python client | 用户脚本/服务进程；远程控制另一台 Artemis 主机 | JSON-over-HTTP REST | 不在客户端进程连接 Android 或调用 LLM |
+| Internal Action MCP | 每个 Agent 任务进程内部；统一设备动作协议 | MCP in-memory client/server session | 不对 IDE 提供 `mobile_run_task` 这类任务工具 |
 
 ## 外部框架与依赖
 
