@@ -8,6 +8,27 @@ ARTEMIS Graph 是 Pro profile 的任务编排层。它使用 LangGraph `StateGra
 
 这个 Graph **不是**所有 profile 共用的执行器：Flash profile 使用 `FlashRunner` 的反应式循环，不经过这里定义的 Planner、Validator 等节点链。Graph 负责控制“下一步运行什么”；设备动作仍由 Validator 经 `ActionSession` 调用动作服务执行。
 
+## Graph 在哪里被使用
+
+生产运行时对编译图的直接调用集中在 `third_party/mobile_use/sdk/agent.py` 的 `AgentBase._run_task()`：
+
+1. Agent 初始化设备和任务运行上下文 `ArtemisContext`，并构造初始图状态 `State.initial(goal)`。
+2. 如果任务 profile 是 `flash`，就创建 `FlashRunner` 并调用 `runner.run(state)`，不会调用 `get_graph()`。
+3. 其他 profile（如 `pro`/`default`）调用 `get_graph(context)` 创建当前任务的图，再调用 `CompiledStateGraph.astream(...)` 执行。流式模式包含 `messages`、`custom`、`updates`、`values`；Agent 收集最终的 `values` 状态，随后从中提取输出、读取 `run_outcome` 并完成任务收尾。
+
+因此，Graph 并不是 CLI 命令注册时就启动的常驻服务，也不是 Daemon 或 Web 控制台直接调用的编排器。它是在 Agent 的任务执行阶段按需构建的：
+
+```text
+CLI: artemis run
+  -> artemis/interfaces/cli/commands/run.py::execute_task
+  -> third_party/mobile_use/main.py::run_automation
+  -> artemis.sdk.agent.Agent (继承 AgentBase)
+  -> AgentBase.run_task / _run_task
+  -> 非 Flash profile: get_graph(context).astream(...)
+```
+
+使用同一个 `Agent` 的其他接入方式也会复用这条执行路径；Daemon/队列只是将任务交给 worker，worker 再进入 CLI/Agent 生命周期，并不会创建另一套 Graph。直接创建图的单元测试则用于验证配置装配、节点工具以及图内行为，例如 `tests/unit/test_config_package.py` 和 `tests/unit/agents/test_plan_mutation_guardrails.py`。Planner、Operator、Validator 等节点也可在其他功能中作为 Agent 能力被调用，但这不代表这些调用都运行完整的 LangGraph。
+
 ## 整体拓扑
 
 ```mermaid
