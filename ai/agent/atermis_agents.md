@@ -85,23 +85,41 @@ Validator 中的前置安全网是“执行前验证”，Checker 则是“基�
 
 Flash 的 Prompt 明确要求模型在每轮按观察、计划、动作组织，并限制目标工具集；Transcript 会将截图、UI 树、时间戳和用户追加指令按块追加，对只在当前轮有效的提醒标记为 ephemeral，以便历史压缩时移除。相关实现见 [context_compressor.py](../artemis/agents/flash/context_compressor.py)。
 
-## 4. Prompt 如何组织
+## 4. Prompt 如何组织：不只是“一段字符串”
 
-Prompt 的目标不是把所有运行时信息拼成一个不可控的大字符串，而是区分**稳定规则**与**动态上下文**，并让工具能力与 Prompt 描述一致。
+Prompt 的关键区别不在于“用了更长的文字”，而在于把模型请求拆成几个有明确职责的通道：**system message 教规则、human message 放本轮事实、tool schema 给可调用能力和参数类型、tool result 回传执行结果**。模型可以同时返回自然语言内容和结构化 `tool_calls`；控制动作时，Operator 主要消费工具调用，而不是让模型在正文里手写 JSON。
+
+```text
+messages
+├── SystemMessage
+│   ├── 稳定角色与操作规则（operator.json / planner.json）
+│   ├── 本次真正可用的工具清单和工具使用说明
+│   └── 动态注入的 Task Plan Grammar（状态、缩进和检查项合同）
+├── HumanMessage
+│   ├── 用户目标 / 当前 task_plan 与历史
+│   ├── 当前截图（image block）与 UI 元素索引（文本）
+│   └── 本轮反馈、用户追加指令、后台任务状态
+└── 后续消息
+    ├── AIMessage.tool_calls（模型提出的工具名 + 参数对象）
+    ├── ToolMessage（动作已记录、工具结果或错误反馈）
+    └── 下一次模型调用据工具结果继续决策
+```
 
 ### Planner
 
-- 稳定规则集中在 [planner.json](../artemis/agents/planner/planner.json) 的 `blocks` 与 `modes`：初始计划、校验/修订等模式复用角色、思考原则和任务计划语法。
+- 稳定规则集中在 [planner.json](../artemis/agents/planner/planner.json) 的 `blocks` 与 `modes`：初始计划、校验/修订等模式复用角色、思考原则和任务计划语法。`blocks` 是可重用提示段，`modes.<mode>.system` 决定该模式拼哪些段，`modes.<mode>.human` 提供该模式动态输入的模板。
 - [planner.py](../artemis/agents/planner/planner.py) 根据模式选择 blocks；只有检查开关启用时才挂载检查项生成/审查指令。
 - Prompt 通过 `render_plan_grammar_spec()` 注入与 harness 同源的语法说明，因此状态符号、层级和检查项语义并非只依赖自然语言提醒。
-- 当前目标、计划前后版本、历史、设备截图等动态内容作为人类消息/多模态内容加入。
+- 初始规划的 human message 包含用户目标和截图；变更审阅模式则把原目标、变更前后计划、Operator 推理与执行历史作为对照材料。图片是单独的 image content block，并非转成文字描述后再塞入 Prompt。
+- Planner 的返回合同是**工具写文件**：`save_note` / `update_note` 工具的参数由工具 schema 描述，成功之后 harness 再读 note 文件运行 `validate_plan_format()`。模型最终回复一句“计划已写好”不能代替写入成功。
 
 ### Operator
 
 - [operator.json](../artemis/agents/operator/operator.json) 保存长期角色规则和模板；[prompts.py](../artemis/agents/operator/prompts.py) 中的 `PromptBuilder` 按组件构造系统提示及本轮观察。
-- 组件可分别加入目标/计划/历史、屏幕观察、截图、事件反馈、用户追加指令、后台任务和推理提醒；转录模式将本轮 tail 与历史账本分离。
-- `prompt_assembly.py` 和 Prompt contract 会按实际可用工具重绘工具清单并整段裁剪缺失工具的教学内容，避免 Prompt 声称可用但运行时没有的工具。
-- 工具循环预算在代码中执行（Operator 每轮最多 20 次工具迭代），Prompt 中的说明不能取代此运行时边界。
+- 系统 Prompt 中较稳定的角色/动作规则与 human observation 中易变的屏幕/历史信息分开；组件按顺序组装目标/计划/历史、UI 元素、截图、事件反馈、用户追加指令、后台任务和推理提醒。启用 Transcript 时，系统 Prompt 可把计划/历史改为“后续消息提供”的稳定指针，逐轮变化的 observation tail 留在转录账本中；有些提醒会标记为 ephemeral，历史压缩时不长期保留。
+- 工具参数 schema 不是从 Prompt 文本中临时猜出来的：物理动作声明由 [action_specs.py](../artemis/mcp/action_specs.py) 的 `ActionSpec` / `OperatorDialect` 生成 LangChain tool shell。schema 明确参数名、类型、必需性、默认值和说明；比如 `click.target` 是整数元素索引或 `[x,y]` 归一化坐标，若传坐标还必须提供 `target_description`。
+- `prompt_assembly.py` 和 Prompt contract 会按实际可用工具重绘工具清单，并整段裁剪缺失工具的教学内容，避免 Prompt 声称可用但运行时没有的工具。全量能力下保留历史 wording；部分 Actuator 不支持某动作时，工具声明和相应提示一起消失。
+- Operator 工具调用出错时，把工具返回的错误 `ToolMessage` 加回同一轮对话让模型修正；每轮最多 20 次工具迭代，动作调用数还受 fast-action burst 上限约束。最终工具调用会先经过本地参数/目标转换校验，再生成 Validator 可执行的内部动作记录。
 
 ### Checker、Flash 和按需分析 Agent
 
@@ -119,6 +137,63 @@ task plan 存在 scratchpad 的 `task_plan` note 中（DataEngine 工作目录�
 - **自然语言通道**：目标、策略、备注、解释和其他非 checkbox 内容；由 Planner/Operator 理解，不被当作机器状态解析。
 
 语法的单一事实来源是 [plan_grammar.py](../artemis/utils/plan_grammar.py)，既实现 `parse_plan()`，也生成 Planner/Operator Prompt 注入的 grammar spec。避免模型提示与运行时解析各自维护一套不一致规则。
+
+### 5.1.1 文本格式与内存结构的对应关系
+
+`task_plan.md` **不是**一个 JSON 对象，也没有一个模型直接填充的 `TaskPlan(BaseModel)`。模型写入的是 Markdown-ish 纯文本；harness 调用 `parse_plan(text)`，产生只读派生视图 `PlanSnapshot`。当前核心定义可简化表示为：
+
+```python
+@dataclass(frozen=True)
+class PlanItem:
+    indent: int
+    status: str                 # " ", "/", "x", "!"
+    text: str
+    line_no: int
+
+@dataclass(frozen=True)
+class CheckItem:
+    kind: Literal["verify", "assert"]
+    when: Literal["on_complete", "at_end"]
+    text: str
+    parent_key: str | None      # 父级顶层里程碑的稳定 hash；任务级检查为 None
+
+@dataclass(frozen=True)
+class PlanSnapshot:
+    items: tuple[PlanItem, ...]
+    check_items: tuple[CheckItem, ...]
+```
+
+`PlanSnapshot` 还提供 `top_level`、`all_top_level_done`、`continuous_top_level`、`active_milestone()`、`active_leaf()`、`parent_of()`、`check_items_of()` 等派生操作。它不持久化：磁盘中的 Markdown 是事实来源，Snapshot 每次从文本重新计算。
+
+以文档中的前三行计划为例，关键解析结果大致如下（`line_no` 从 0 开始；省略其余项）：
+
+```python
+PlanSnapshot(
+    items=(
+        PlanItem(indent=0, status=" ", text="搜索并筛选符合条件的记录", line_no=0),
+        PlanItem(indent=2, status=" ", text="搜索候选项并记录到 candidates_list", line_no=1),
+        PlanItem(indent=2, status=" ", text="逐个检查候选项的详情", line_no=2),
+        PlanItem(indent=0, status="/", text="汇总已确认的信息", line_no=4),
+        PlanItem(indent=2, status=" ", text="将已核实内容写入 summary", line_no=5),
+    ),
+    check_items=(
+        CheckItem(
+            kind="verify",
+            when="on_complete",
+            text="最终记录包含请求的关键信息",
+            parent_key="<搜索并筛选符合条件的记录的 md5>",
+        ),
+        CheckItem(
+            kind="assert",
+            when="at_end",
+            text="记录中显示的状态与用户预期一致",
+            parent_key=None,
+        ),
+    ),
+)
+```
+
+解析有意采用小语法而非完整 Markdown AST：`CHECKBOX_LINE_RE` 匹配 checkbox 行；`CHECK_LINE_RE` 匹配 `verify`/`assert`；`finding:` 不匹配两者，所以它是系统显示用，不会影响里程碑完成或身份 hash。普通段落、标题、解释均忽略。缩进对 Parser 来说记录为实际空白字符数；Prompt 规范建议子目标用两个空格，但 harness 的核心判断是 `indent == 0` 表示顶层、非零表示嵌套。
 
 ```text
 - [ ] 搜索并筛选符合条件的记录
@@ -159,13 +234,13 @@ task plan 存在 scratchpad 的 `task_plan` note 中（DataEngine 工作目录�
 
 注意：异步 Planner validation 是**建议而非事务拒绝**。它评估 Operator 对顶层里程碑的修改是否仍服务原始目标；审查意见进入 Operator feedback，已应用修改不会自动回滚。确定性机器规则和 Planner 的语义审阅是不同的防线。
 
-## 6. 输出是如何结构化的
+## 6. 输出是如何结构化的：按边界分三种策略
 
-ARTEMIS 不是统一让每个 Agent 都返回同一种 JSON。结构化程度取决于调用者和任务边界：
+“模型返回总遇到格式错误”在 ARTEMIS 里不是靠一种通用 JSON parser 解决。它按输出边界分为三种策略：**工具调用协议（动作/提交）、代码解析的机器记录（task plan/内部动作列表）、结构化模型输出（Pydantic/schema）**。关键是先看该调用路径到底用了哪一种，不能把“Prompt 里说返回 JSON”误当 schema 约束。
 
 | 阶段 | 结构 | 作用 |
 | --- | --- | --- |
-| Operator → Validator | `structured_decisions` 中的 JSON 动作列表 | 把模型决策和可执行动作协议分开；Validator 解析后才调用动作执行层。 |
+| Operator → Validator | `structured_decisions` 中的 JSON 动作列表 | 并非模型直接吐出的 JSON 文本；它由已校验的 tool call 翻译后 `json.dumps()` 得到。 |
 | Planner → harness | `task_plan` 文本中的机器语法 | 保留可供 Agent 阅读的自然语言，同时让程序解析层级、状态、检查项。 |
 | Checker → gate | Pydantic `CheckReport` / `CheckVerdict` | 固定 verdict 状态、检查类型、原文、证据和可选建议；Node 侧补齐缺项并将无证据的 failed 降级。 |
 | Explorer → action caller | JSON `candidates` 与 fallback 信息 | 提供归一化坐标、描述/边界；注册器再映射到当前设备像素和可引用 index。 |
@@ -174,6 +249,63 @@ ARTEMIS 不是统一让每个 Agent 都返回同一种 JSON。结构化程度取
 | Outputter → TaskResult | 自然语言或用户配置 schema | 默认回答可为文本；schema 模式先生成报告，再用结构化模型调用格式化。 |
 
 共享的 [structured.py](../artemis/llm/structured.py) 提供统一 JSON 候选提取、thinking 标签剥离、宽容修复及可选 Pydantic schema 校验。解析失败是带原文与错误原因的 `ParseFailure`，而不是把未解析文本伪装成结构化结果。并非所有调用路径都使用该工具；Checker 与 Planner validation 还可通过模型的 `with_structured_output()` 约束输出。
+
+### 6.1 `structured_decisions` 的真实形状
+
+以 Operator 调用 `click(target=3)` 为例，模型先以工具协议返回名称和 JSON 参数：
+
+```json
+{
+  "name": "click",
+  "args": {"target": 3},
+  "type": "tool_call"
+}
+```
+
+`click` 的定义来自动作清单。Operator 将索引 `3` 对应到本轮 `indexed_elements[2]`，从当前 UI 元素记录中取中心坐标和观察到的语义信息；假设该元素文字为 `Continue`、bounds 为 `[120, 800, 900, 920]`，屏幕为 `1080×2400`，翻译结果会类似：
+
+```json
+[
+  {
+    "action": "tap",
+    "coordinates": [510, 860],
+    "coordinate_space": "pixel",
+    "normalized_coordinates": [472, 358],
+    "times": 1,
+    "delay_ms": 100,
+    "target_text": "Continue",
+    "target_bounds": [120, 800, 900, 920],
+    "target_resource_id": null,
+    "target_class": "Button"
+  }
+]
+```
+
+实际值由当轮 UI 层级决定，示例仅展示字段协议。坐标目标（比如 `click(target=[472, 358], target_description="Continue button")`）则记录模型自己的 `target_description`，不伪装成 UI 树观测得到的 `target_text`。两种目标来源在历史记录中有意分开。
+
+完整路径是：
+
+1. `ActionSpec` 生成模型可见的动作 tool schema；模型通过 `AIMessage.tool_calls` 提交动作名和参数对象。
+2. `_translate_and_validate_tool()` 校验工具名、参数类型、target 索引范围、坐标范围/描述、按键名等；错误以 `ToolMessage(status="error")` 反馈给模型，正确时才生成内部 action dict。
+3. Operator 收集一个或多个内部 action dict，`json.dumps(action_result)` 写入 State 的 `structured_decisions: str | None`。因此它是一个**JSON 编码的 action list 字符串**，不是 Pydantic 类型，也不包含模型的自然语言推理。
+4. `Validator.action_execution.parse_decisions()` 用 `json.loads()` 解码；随后 `to_canonical_call()` 将内部动词（如 `tap`、`focus_and_input_text`）映射到 canonical MCP action（如 `click`、`input_text`），并优先使用 `normalized_coordinates`。
+5. Validator 执行前仍会在 live screen 上做 XML / pixel 前置检查；执行结果另行写入 `last_execution_result`。能 parse JSON 不代表动作安全，也不代表目标效果成功。
+
+若没有合法的 terminal action，Operator 不会给 Validator 一份新动作列表；若内部列表无法 JSON 解码，`parse_decisions()` 会得到错误信息，Validator 本轮不执行动作并返回空 State 更新。动作协议 schema 描述参数形状，但 UI 目标是否仍存在由运行时前置检查负责。
+
+### 6.2 `task_plan` 为什么比自由 JSON 更抗格式错误
+
+task plan 不是要求模型生成严格 JSON，因此不会因引号转义、逗号、Markdown code fence 等 JSON 常见格式问题失效。代价是它只将**影响控制流的窄字段**（checkbox 状态、层级、check 行）机器化，其余文本不做强类型验证。
+
+Planner 的确定性验收仅检查：每个看起来像 checkbox 的 `- [` 行必须符合合法状态符号和语法、至少有一个 checkbox 计划项；然后通过同一个 Parser 产生 Snapshot。它不会验证每句自然语言目标“语义上合理”——语义质量由 Prompt 和异步 Planner 审阅补充，而 continuous loop、完成/嵌套事项等硬规则由写后 guard 和 Graph 路由兜底。
+
+### 6.3 有 Pydantic 约束时与没有时
+
+- **Checker**：调用 `with_structured_output(CheckReport)`。`CheckVerdict` 的字段是 `item_text: str`、`kind: Literal["verify","assert"]`、`status: Literal["passed","failed","inconclusive"]`、`evidence: str`、`suggestion: str=""`。模型结果仍经 Node 侧归一化：漏项补成 `inconclusive`，缺证据的 `failed` 降级，避免模型漏字段/漏 verdict 影响下游状态机。
+- **异步 Planner review**：使用 `with_structured_output(ValidationResult)`，形状是 `{is_approved: bool, feedback: str}`；仅审语义变更，返回 advisory feedback，不回滚计划。
+- **Outputter 用户 schema**：`OutputConfig` 可配置 Pydantic model 或 JSON schema dict，先 bind structured output；若模型调用失败，再试本地 JSON 解析（Pydantic schema 可继续做本地校验；dict schema 的回退路径只解析 JSON，不做等价的 JSON Schema 校验）；再失败则回退原始文本。因此它是尽力满足 schema，不是“无效就绝不返回”的严格 API。
+- **统一解析器**：显式调用 `parse_structured()` 的 Agent 会先去除 thinking 标签，再找 fenced/balanced JSON 对象或数组，尝试标准 `json.loads()`，再清理字符串外的注释和尾逗号后重试；若传 Pydantic schema，再 `model_validate()`。失败返回 `ParseFailure(raw, error)`，调用方必须显式处理。
+- **工具调用**：模型返回的是 provider/LangChain 的 tool call 对象；工具参数声明提供 JSON Schema 风格约束，工具执行端仍验证参数和业务前置条件。Tool call 能被解码只说明参数传输可读，不代表业务上有效。
 
 ### Outputter 的最终回答路径
 
