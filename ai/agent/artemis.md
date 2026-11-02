@@ -69,7 +69,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Input["CLI 输入：artemis run &quot;目标&quot; --profile pro/flash"]
+    Input["CLI 输入：artemis run [目标] --profile pro/flash"]
     Entry["pyproject.toml<br/>artemis.interfaces.cli.main:cli"]
     Register["artemis/interfaces/cli/main.py<br/>Typer app / run_command 注册"]
     Run["artemis/interfaces/cli/commands/run.py<br/>run_command(goal, options)"]
