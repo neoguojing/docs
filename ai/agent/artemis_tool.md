@@ -161,6 +161,92 @@ classDiagram
 
 注意：图中 `ToolWrapper` 表示项目集成的通用 wrapper；`ArtemisTool` 是另一层统一抽象。工具生态还包含直接 LangChain 工具和 JSON tool declarations。
 
+### 4.1 几个核心类：是什么、做什么、为什么有它们？
+
+初看这些名字容易混在一起。可以先把一次设备动作分成四个问题：
+
+1. **`ActionSpec`：这个动作叫什么、模型应该如何表达？**
+2. **`Actuator`：底层由什么设备后端执行动作？**
+3. **`ActionSession`：调用方怎样通过内部 MCP 把动作送到服务端？**
+4. **`ActionResult`：动作结果怎样用稳定结构返回？**
+
+它们不是四个同类“工具”，而是分别负责**定义、执行后端、通信会话、结果格式**。
+
+| 名称 | 是什么 | 做什么 | 为什么需要 |
+|---|---|---|---|
+| `ActionSpec` | [`action_specs.py`](../artemis/mcp/action_specs.py) 中的冻结 dataclass；`ACTION_SPECS` 为每个 canonical action 保存一份规格。 | 描述动作名，以及 Pro/Flash 给模型看的参数形式、内部 MCP wire 参数形式和两者的差异。 | 防止 Operator、Flash 和 MCP server 各自手写 schema 后逐渐不一致；一个 `click` 定义可投影成多种接口。 |
+| `Actuator` | [`actuators/base.py`](../artemis/mcp/actuators/base.py) 中的 `Protocol`（接口契约），**不是某台设备的具体实现**。 | 规定后端要提供哪些能力、动作方法和扩展工具。`AdbActuator` 是通过 ADB 控制 Android 的具体实现；也可换 Mock 或其他后端。 | 将“要点击哪里”与“如何驱动 Android/其他设备”隔离，MCP server 不必绑定某一个控制器实现。 |
+| `ActionSession` | [`action_session.py`](../artemis/mcp/action_session.py) 中的进程内 MCP client/session 管理类。 | 建立 MCP 内存连接、排队调用 `call_tool`、提供 `call()` / `observe()` 等类型化便捷接口，并在任务结束时关闭会话。 | 让 Agent 有统一的调用入口；集中串行化设备请求，避免多个协作 Agent 同时操作设备；不需要再启动外部 MCP 子进程。 |
+| `build_action_server()` | [`action_server.py`](../artemis/mcp/action_server.py) 中的 server 工厂函数，不是类。 | 根据 actuator 能力校验并注册 wire tools；收到 MCP 调用后，通过 `ActionSpec.wire.bind` 调用 actuator。 | 将 MCP 协议适配和设备实现解耦，并且只公开当前后端真正支持的动作。 |
+| `ActionResult` | [`action_types.py`](../artemis/mcp/action_types.py) 中的 Pydantic 结果模型。 | 统一表达 `ok`、错误分类 `code`、动作名和人可读消息。 | 让调用方检查结构化状态，而不是猜测返回文本里是否含有“Error”。 |
+
+#### 示例：`click(target=3)` 最后怎样点到设备？
+
+假设当前 UI hierarchy 已生成编号列表，模型选择编号 `3` 点击搜索框。模型侧的 `target=3` 是**UI 元素索引**，不是屏幕坐标；内部 MCP wire 只接受归一化坐标。因此 Flash 的 `McpActionExecutor`（Pro 则由 Operator/Validator 路径）先结合当前已索引元素转换参数，然后通过 session 调用 server：
+
+```text
+模型动作：click(target=3)
+  -> ActionSpec.operator：允许 target 是元素索引或 [x, y]
+  -> executor：从本轮 indexed_elements 取第 3 项，得到元素中心点
+  -> ActionSpec.wire：click(target=[500, 300], times=1, delay_ms=100)
+  -> ActionSession.call("click", wire_args)
+  -> FastMCP action server：验证/转换参数，调用 wire.bind(actuator, args)
+  -> AdbActuator.click(500, 300, times=1, delay_ms=100)
+  -> UnifiedMobileController：将 0–1000 归一化坐标映射成设备像素并执行 tap
+  -> ActionResult(ok=True/False, code=..., message=...)
+```
+
+这里坐标 `[500, 300]` 仅为示意。若模型直接给坐标而非索引，模型侧还需给 `target_description`（如“搜索框”）用于记录动作目标；该描述不会传给 wire。坐标规范化及元素中心点解析位于 agent-side executor，不是 `ActionSpec` 本身在运行时解析。
+
+一个精简的规格定义形状如下（删去了项目中的说明文案）：
+
+```python
+ActionSpec(
+    name="click",
+    operator=OperatorDialect(
+        description="点击元素索引或归一化坐标",
+        params=(
+            ParamSpec("target", int | list[int]),
+            ParamSpec("target_description", str | None, required=False),
+            ParamSpec("times", int, required=False, default=1),
+            ParamSpec("delay_ms", int, required=False, default=100),
+        ),
+    ),
+    wire=WireDialect(
+        description="在 0–1000 坐标系点击",
+        params=(ParamSpec("target", list[int]), ...),
+        bind=_wire_click,
+    ),
+)
+```
+
+`ActionSpec` 是**声明数据**，不是点击器，也不保持 session。`_wire_click` 从已校验的 wire 参数取坐标并调用 `actuator.click(...)`；实际 ADB 触摸由 `AdbActuator` 及 controller 完成。
+
+#### `Actuator` 为什么是 Protocol，而不是 MCP server？
+
+`Actuator` 只描述后端能力，例如 `capabilities()`、`extensions()`、`click()`、`swipe()`；它不知道模型 prompt、LangGraph state 或 MCP transport。`AdbActuator` 实现此契约。server 工厂把接口适配成 MCP 工具，因此职责可以替换：
+
+```python
+actuator = AdbActuator(ctx, controller)
+server = build_action_server(actuator)  # MCP 层依赖 Actuator 契约
+```
+
+若用 Mock actuator 做测试，或未来新增不同设备后端，只需实现契约并声明 capabilities；server 和 Agent 的主调用链不必重新手写一套 MCP schema。`validate_actuator()` 会在首次建立 session 时检查 required/internal 能力，缺失则尽早报错，而不是执行到一半才失败。
+
+#### `ActionSession` 管什么，不管什么？
+
+`ActionSession` 管的是**同一任务进程中的 MCP client/server 会话生命周期与调用顺序**，不决定动作语义、不解析模型 schema，也不直接操纵触摸硬件。它的常用入口：
+
+```python
+session = await get_action_session(ctx, actuator=actuator)
+result = await session.call("click", {"target": [500, 300]})
+observation = await session.observe(settle_ms=400)
+```
+
+调用链中，`call()` 将 MCP `structuredContent` 校验成 `ActionResult`；server 再把调用委派给 actuator。`observe()` 调用的是 adapter 内部注册的观察工具，以获得截图/UI elements，而非让 `ActionSession` 自己实现截图。session 由 `ArtemisContext` 持有，任务退出时关闭。
+
+一句话记忆：**ActionSpec 写“怎么描述动作”，Actuator 规定“谁来做动作”，ActionSession 负责“请求怎么送达”，ActionResult 说明“执行结果如何”。**
+
 ## 5. Agent 如何调用普通工具？
 
 ### 5.1 构造、绑定和执行三步
@@ -358,7 +444,44 @@ MCP client/host 负责网络/stdio 传输和协议请求；MCP server 的 tool h
 
 **回答“所有工具是否都放在 MCP 中使用？”：不是。** MCP server 是面向特定消费者的一种边界。工具可以只由 Agent 本地调用；同一动作也可以有模型 schema、本地参数转换和 MCP wire schema 多个层次。
 
-## 10. 设计中的关键约束
+## 10. 工具调用失败时如何处理与补救？
+
+项目没有对所有工具套用同一种“失败就重试”策略。失败可能来自参数/能力、设备执行、MCP transport 或后台任务派发；每类错误采取不同处理，尤其不会盲目重放可能已执行的设备动作。
+
+| 失败场景 | 已有保护/补救 | 目的与边界 |
+|---|---|---|
+| 后端缺少必需动作或内部观察能力 | 创建 `ActionSession` 时先运行 `validate_actuator()`；required/internal capability 不满足会在首次设备交互前失败。Optional action 按能力隐藏，不注册为 MCP 工具。 | 尽早暴露配置错误，不让任务执行到中途才发现工具不存在。 |
+| 参数错误、无效 UI index、未知工具 | executor 的转换层返回明确参数错误；`ActionSession.call_raw()` 将 MCP `isError=True`（如未知工具/schema violation）转成异常；Flash 不支持的工具返回结构化 `ToolFailure`。 | 区分“请求不合法/协议错误”和“设备收到动作但执行失败”，不把它们伪装成成功。 |
+| 设备动作失败 | server 将 actuator 异常转换成 `ActionResult(ok=False, code=..., message=...)`；正常设备拒绝使用 `isError=False` 携带结构化失败，让 Agent 可观察并决定下一步。 | 避免只靠错误文案判断状态；设备级失败不一定代表 MCP 通道坏了。 |
+| Pro 执行前目标校验失败 | Validator 对有 UI 元素信息的目标先做 XML 检查，必要时回退到像素检查；校验不通过会拦截动作，不执行点击。 | 防止模型索引过期或目标不匹配时误操作。属于安全拦截，不会靠重试点击来“修好”。 |
+| Pro 的单个设备动作暂时执行失败 | Vetted 的普通动作做有限本地重试（通常最多 2 次；`launch_app` 一次）；每次之间短暂停顿。失败时尝试截取失败截图、记录 attempts 和 action trace，并打开 execution incident 给 Operator 下一轮处理。 | 为短暂设备/时序错误提供一次恢复机会；若仍失败，把现场交给 Agent 基于新观察修复，而非无限重试。 |
+| Pro fast-action burst 中一步失败 | burst 中每个动作只尝试一次；首个失败会中止余下动作，后续动作标为 skipped，并记录 incident 和执行报告。 | burst 依赖连续时序，插入重试或继续执行可能让后续动作对准错误页面。 |
+| 内部 MCP 观察/截图卡住 | `take_screenshot` / `get_ui_hierarchy` 在 server 内部对 actuator 操作应用 `timeout_ms`，并返回正常的错误 payload。避免在 MCP transport 层超时或取消底层 `call_tool`。 | 防止晚到的 MCP 响应破坏共享内存 transport；超时仅结束该设备操作并报告错误。 |
+| ActionSession transport 断开 | owner loop 发现 `BrokenResourceError` / `ClosedResourceError` 后退休当前 session；待处理请求收到显式错误；后续 `get_action_session()` 检查 `started`，关闭失效实例并新建 session。调用队列串行处理。 | 不把已损坏 session 当作可继续使用；串行化也避免同设备并发动作互相穿插。 |
+| 本地 LangChain 工具运行报错 | `invoke_tool_with_injection()` 在 `finally` 路径记录成功/失败 trace 后，仍将原始异常抛给调用方；结构化 `ToolFailure` 也标记为 failed。Flash 的 history、Explorer、video 等 handler 记录错误并返回失败状态。 | 让 Agent/上层看到失败原因，同时保留可诊断的工具调用记录。不是所有本地工具都会自动重试。 |
+| 外部 `mobile_run_task` 参数/设备/派发异常 | 先校验 model 与 Pro 调参；显式 device serial 不可用时拒绝并带 trace id；daemon 拒绝会更新 trace。daemon 响应不明确时检查队列；队列也不可读则返回 `unknown`，要求先查状态再重提，避免重复执行。daemon 已运行但提交确认失败时不再启动 standalone runner，避免同设备双跑。 | 把“肯定失败”和“可能已经排队”分开处理，防止一次网络/IPC 异常造成重复副作用。 |
+| standalone 后台 runner 未启动或任务结束 | spawn watchdog 观察 runner 是否产生日志，超时则终止进程、释放设备队列 reservation、更新 failed 状态并尽力通知；运行任务可通过 `mobile_manage_task` 查询，trace/stdout/stderr 可由 `mobile_inspect_trace` 等路径检查。 | 避免任务永远显示 running，并给外部调用者状态核查与诊断依据。通知是辅助机制，不应代替轮询状态。 |
+
+### 一个动作失败后的实际补救路径
+
+以 Pro 点击目标失败为例：
+
+```text
+Operator 给出动作
+  -> Validator 先用 XML / 像素检查目标
+     -> 检查不通过：拦截，记录 incident，不发送点击
+     -> 检查通过：通过 ActionSession 调 MCP wire action
+        -> ActionResult.ok=False 或调用异常
+           -> 普通 vetted action 有限重试
+           -> 仍失败时采集失败截图（若可用）
+           -> DataEngine 记录 action attempts / execution report / trace
+           -> 把 incident 放回 graph state
+           -> Operator 下一轮查看当前屏幕和 incident，决定修复、换目标或停止
+```
+
+注意两条边界：**有限重试只适用于代码明确设计了重试的阶段**；不能据此推断每个工具调用都会重试。对于 `click` 等有副作用动作，transport 返回不明确时也不应由调用者无条件重放，否则可能变成双击或重复提交。外部 task 返回 `unknown` 时应先用该 `trace_id` 查询状态。
+
+## 11. 设计中的关键约束
 
 1. **单一动作规格，避免 schema 漂移。** `action_specs.py` 同时导出 Pro shell、Flash declaration 和 wire handler 所需 schema；测试锁定不同模型 surface 的一致性。
 2. **能力驱动暴露。** Actuator 声明 `capabilities()`；server 只注册实现的动作，manifest 在首次调用前验证 required/internal 契约。
@@ -367,7 +490,7 @@ MCP client/host 负责网络/stdio 传输和协议请求；MCP server 的 tool h
 5. **调用可追踪。** 本地工具和设备动作都可进入 DataEngine trace；外部 task 工具返回 trace id，后续可检查生命周期和步骤证据。
 6. **内部/外部服务隔离。** 内部设备动作 session 受任务上下文管理并串行化；外部 MCP API 面向 IDE，支持后台任务与独立的状态查询。
 
-## 11. 代码导航
+## 12. 代码导航
 
 | 主题 | 主要代码 |
 |---|---|
@@ -384,4 +507,6 @@ MCP client/host 负责网络/stdio 传输和协议请求；MCP server 的 tool h
 | 外部 MCP tool 注册 | [`mcp_server/tools/__init__.py`](../mcp_server/tools/__init__.py)、[`task_runner.py`](../mcp_server/tools/task_runner.py) |
 | CLI 安装配置与 server 选择 | [`mcp.py`](../artemis/interfaces/cli/commands/mcp.py) |
 | 独立 ADB/XML MCP | [`adb_server.py`](../artemis/mcp/adb_server.py)、[`xml_search_server.py`](../artemis/mcp/xml_search_server.py) |
-
+| Validator 重试、安全拦截与 incident | [`execution_loop.py`](../artemis/agents/validator/execution_loop.py)、[`incidents.py`](../artemis/agents/validator/incidents.py) |
+| MCP timeout / session 恢复 | [`action_server.py`](../artemis/mcp/action_server.py)、[`action_session.py`](../artemis/mcp/action_session.py) |
+| 外部 task 派发与 spawn watchdog | [`task_runner.py`](../mcp_server/tools/task_runner.py) |
