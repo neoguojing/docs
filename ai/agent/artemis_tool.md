@@ -163,7 +163,7 @@ classDiagram
 
 ### 4.1 用一次点击理解核心对象与完整流程
 
-与其把这些英文类名当作一组抽象名词，不如跟踪一次具体点击。假设屏幕是 `1080 × 2400`，当前 UI 列表第 3 项是搜索框，中心点为像素 `(540, 720)`；模型决定点击它。
+与其把这些英文类名当作一组抽象名词，不如跟踪一次具体点击。下面以 Flash 为例：屏幕是 `1080 × 2400`，当前 UI 列表第 3 项是搜索框，中心点为像素 `(540, 720)`；模型决定点击它。Pro 的动作输入经过 Operator/Validator 转换，但进入 `ActionSession` 后的 MCP server、Actuator 和结果回传职责相同。
 
 先记住各对象的分工：
 
@@ -180,7 +180,7 @@ classDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Agent as Flash / Pro 执行路径
+    participant Agent as Flash 执行路径
     participant Spec as ACTION_SPECS / ActionSpec
     participant Session as ActionSession
     participant Server as FastMCP action server
@@ -190,7 +190,7 @@ sequenceDiagram
 
     Agent->>Spec: 获取 click 的 agent-facing schema 并绑定给模型
 
-    Note over Agent: 运行时：假设模型返回 click(target=3)
+    Note over Agent: 运行时：Flash 模型返回 click(target=3)
     Agent->>Agent: 用当前 UI 列表把索引 3 转成归一化坐标 [500,300]
     Note over Agent,Session: 若当前任务还没有可用 session，首次调用时惰性创建
     Agent->>Backend: 取得/创建 AdbActuator(ctx)
@@ -276,6 +276,34 @@ wire.bind:
 
 因此 `ActionSpec` 不是点击器、执行线程或 session；它告诉系统各层的接口长什么样。Pro/Flash 的模型 schema 都从动作规格生成或投影，server 的 wire handler 也使用同一份规格。
 
+下面是 `click` 规格的**实例形状**（删减了项目中的长描述；真实实例保存在 `ACTION_SPECS`）：
+
+```python
+click_spec = ActionSpec(
+    name="click",
+    operator=OperatorDialect(
+        description="点击元素索引或归一化坐标",
+        params=(
+            ParamSpec("target", int | list[int]),
+            ParamSpec("target_description", str | None, required=False, default=None),
+            ParamSpec("times", int, required=False, default=1),
+            ParamSpec("delay_ms", int, required=False, default=100),
+        ),
+    ),
+    wire=WireDialect(
+        description="点击 0–1000 归一化坐标",
+        params=(
+            ParamSpec("target", list[int]),
+            ParamSpec("times", int, required=False, default=1),
+            ParamSpec("delay_ms", int, required=False, default=100),
+        ),
+        bind=_wire_click,
+    ),
+)
+```
+
+这个实例本身不会被 Agent 当作点击器调用。启动时，代码把 `operator` 一侧投影成 Agent 可用的 schema，把 `wire` 一侧转成 MCP server 的函数参数；运行时 `wire.bind` 才会把已校验的参数交给 actuator。
+
 #### 第二步：`Actuator` 是后端契约，`AdbActuator` 才会操作设备
 
 [`Actuator`](../artemis/mcp/actuators/base.py) 是 Python `Protocol`，表达“设备后端至少要能做什么”；它不可直接实例化，也不负责建立 MCP 连接。精简原型：
@@ -316,6 +344,31 @@ await session.aclose()  # 实际任务中通常由 ArtemisContext 退出时清�
 ```
 
 `call()` 在内部通过 MCP `call_tool` 发请求，再把 `structuredContent` 校验成 `ActionResult`。owner task 串行处理请求，避免共享内存 transport 被多个 coroutine 同时操作，也避免两个协作 Agent 的设备动作交错。截图和 UI hierarchy 则通过 `session.observe()`、`session.screenshot_b64()` 等 adapter 方法调用对应的内部观察工具。
+
+把 `ActionSession` 的职责简化成接口，大致是：
+
+```python
+class ActionSession:
+    def __init__(self, server): ...
+
+    async def start(self) -> "ActionSession":
+        # 在 owner task 中建立并持有 MCP client/server 内存连接
+        ...
+
+    async def call_raw(self, name: str, args: dict[str, Any]):
+        # 排队并通过 MCP session.call_tool(name, args) 发送
+        ...
+
+    async def call(self, name: str, args: dict[str, Any]) -> ActionResult:
+        raw = await self.call_raw(name, args)
+        return ActionResult.model_validate(raw.structuredContent)
+
+    async def aclose(self) -> None:
+        # 发送关闭信号并等待 owner task 退出
+        ...
+```
+
+这是职责示意，不是原样源码。真实构造入口是 `get_action_session(ctx)`：它优先复用 `ctx.action_session`；没有可用会话时才创建 actuator、构造 server 并启动 session。通常由 Agent/Validator 在首次设备动作时触发，任务结束由 `ArtemisContext` 清理。模型看到的 schema 可在更早的 prompt/LLM 初始化阶段准备，不要求先创建 MCP session。
 
 #### 把原型映射回真实代码
 
