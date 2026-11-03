@@ -260,3 +260,140 @@ trace 通常先以 `running` 状态写入，再更新为 `success` 或 `failed`�
 ### 两种“步骤格式”要区分
 
 SQLite 中的 `StepRecord` 是原始存储结构。代理读取时，`get_agent_friendly_steps()` 会把 Step 和它的 traces 整理成更方便消费的格式：加入 `relative_time`、`interleaved_events`、`tool_calls`，并对坐标做归一化。这个读取视图不是简单地把数据库行原样返回。
+
+
+## 1. 物理目录结构
+
+实际根目录取决于运行配置：
+
+- 若 `execution_setup.traces_path` 已设置，`DataEngine` 使用该路径，并在其中创建 `data_engine.db`。
+- 否则使用全局配置的 traces 目录；默认 DB 路径由 `get_data_engine_db_path()` 生成。
+- 每个 session 创建一个自己的目录，供该 session 的 notes 等数据使用。
+
+常见布局大致如下：
+
+```text
+<traces_root>/
+├── data_engine.db             # 所有 session 共用的 SQLite 数据库
+├── images/                    # 按 SHA-256 命名的截图文件
+│   ├── <image_hash>.jpg
+│   └── ...
+├── <session_id>/              # session 独立目录
+│   ├── ...                    # notes、任务相关文件
+│   └── steps/
+│       └── <step_id>/
+│           └── post.jpg       # 某些更新路径写出的步骤截图副本
+└── replay/                    # 回放功能的工作目录/产物
+```
+
+`images/` 里的截图是主要的去重存储：数据库记录图片哈希，Step 通过哈希引用截图。`steps/<step_id>/post.jpg` 是 `update_step_action()` 路径可能写出的步骤级副本，不应与按哈希保存的图片主存储混为一谈。路径与目录创建逻辑见 `DataEngine.__init__()`、`base_dir`、`StorageManager.create_session()` 和 `update_step_action()`。
+
+录像文件本体也不存进 SQLite；录像控制器写入视频文件，再由 `video_recordings.local_video_path` 和 session 的 `video_filepath` 保存路径。某些录像还会有 `recording.json` 清单描述分段文件，见 `unified_controller.py` 和 `utils/video.py`。
+
+## 2. SQLite 中的数据组织
+
+表结构由 `StorageManager._init_db()` 初始化。核心关联可以概括为：
+
+```text
+sessions
+  ├── steps ── pre_image_name / post_image_name ──> images
+  │     └── traces (step_id)
+  │           └── traces (parent_trace_id，调用树)
+  ├── history_chunks
+  ├── video_recordings
+  ├── background_tasks
+  └── failed_outputs
+```
+
+各表用途：
+
+| 表 | 存放内容 | 主要字段举例 |
+|---|---|---|
+| `sessions` | 一次任务的生命周期信息 | `session_id`、目标、状态、起止时间、设备信息 |
+| `images` | 截图的 OCR/UI 元数据和哈希 | `image_name`、`ocr_result`、`ui_tree` |
+| `steps` | 每轮观察和动作 | `step_number`、图片哈希、动作、摘要、执行结果 |
+| `traces` | LLM、agent、工具、日志调用轨迹 | `type`、`name`、`status`、`payload`、父 trace ID |
+| `history_chunks` | 一段步骤历史的压缩版本 | 步骤范围、版本、状态、压缩文本 |
+| `video_recordings` | 录像的状态和文件路径 | 开始/结束时间、状态、错误 |
+| `background_tasks` | 后台任务状态及日志 | 任务 ID、摘要、状态、日志 |
+| `failed_outputs` | 模型失败原始输出 | prompt、raw output、错误信息 |
+
+其中 `steps`、`traces` 等表使用外键字段表达关联；`trace_id`、`parent_trace_id` 进一步将一次调用的子调用串成树。模型定义可见 `models.py`，例如 `StepRecord` 和 `TraceRecord`。
+
+## 3. 数据在数据库中的编码方式
+
+SQLite 列主要用 `TEXT`、`REAL` 和整数类型。结构化字段通常先序列化为 JSON 字符串，再存进 `TEXT` 列，例如：
+
+- `sessions.device_info`
+- `steps.action_taken`、`steps.last_execution_result`、`steps.extra_metadata`
+- `traces.payload`
+- `images.ocr_result`、`images.ui_tree`
+- `history_chunks.band1`、`history_chunks.source_step_ids`
+
+例如一条 Step 的结构化内容逻辑上可能是：
+
+```json
+{
+  "step_number": 3,
+  "pre_image_name": "64位SHA-256",
+  "action_taken": [
+    {"action": "click", "x": 120, "y": 240}
+  ],
+  "last_execution_result": {
+    "status": "dispatched",
+    "result": "动作已执行"
+  },
+  "extra_metadata": {
+    "width": 1080,
+    "height": 2400
+  }
+}
+```
+
+写入数据库时，`action_taken`、`last_execution_result` 和 `extra_metadata` 会各自成为 JSON 字符串列值。截图字节本身不进这条记录，而是放在 `images/<SHA-256>.jpg`。
+
+Trace 的 `payload` 则随调用类型变化，例如工具调用可保存 `args` 与 `result`，LLM 调用可保存 `messages`、`response` 和 `token_usage`。相关的序列化与插入逻辑见 `StorageManager.create_step()`、`StorageManager.create_trace()`。
+
+## 4. 写入架构：运行时对象 → 后台写入 → 文件/数据库
+
+主写入链如下：
+
+```text
+Pro / Flash / LLM callbacks / tools
+                │
+                ▼
+          DataEngine API
+         ┌──────┴──────┐
+         ▼             ▼
+  图片写入文件       StorageManager
+  images/*.jpg       SQLite 表
+         └──────┬──────┘
+                ▼
+       SSE / IPC / 云端事件通知
+```
+
+- `DataEngine` 是运行期门面：负责分配 step、组装记录、关联 session/step/trace，并触发事件。
+- `StorageManager` 负责 SQLite schema、数据库读写和模型转换。
+- 大部分存储工作由 `_run_in_background()` 调度：有事件循环时用 `asyncio.to_thread`，否则使用受跟踪的后台线程。结束阶段 `shutdown()` 会等待这些操作结束，见 `_run_in_background()` 和 `shutdown()`。
+- SQLite 以 WAL 模式初始化；每次数据库操作打开独立连接，并通过 `StorageManager` 的锁保护该实例的访问。相关代码见 `StorageManager._get_connection()`。
+
+## 5. 读取架构：在线历史与离线检查
+
+有两类读取模式：
+
+1. **在线读取**：运行中的 `DataEngine` 调用 `StorageManager`，返回 step、trace、图片路径或 history chunks。`get_agent_friendly_steps()` 会把原始 Step 和关联 traces 组合、渲染为代理更容易消费的结构。
+2. **离线只读**：`OfflineHistoryReader` 用同一个存储层，但以 `read_only=True` 打开既有 DB，供 MCP trace inspection 等功能读取；只读模式不会初始化目录、建表或创建 WAL 文件，见 `StorageManager.__init__()`。
+
+离线读取的典型用途包括查历史步骤、查看截图和检索 trace；入口示例是 `inspect_trace.py`。
+
+## 6. 持久化与实时推送是两条不同路径
+
+`DataEngine` 还有订阅者、IPC socket、云端 SSE 等事件发布机制。比如记录 Step 时，一方面安排数据库/文件写入，另一方面发布 `step_recorded`；trace 则发布 `trace_recorded`。
+
+所以可以这样区分：
+
+- **SQLite 和文件目录**：用于之后查询、分析、离线检查和回放的持久化事实。
+- **SSE / IPC / subscribers**：用于运行过程中的 UI 实时更新。
+- **代理友好的 history**：由持久化的 Step + Trace 加工出来的读取视图，不是另一份独立主存储。
+
+主入口分别是 `DataEngine._publish()`、`record_step()` 和 `record_trace()`。
