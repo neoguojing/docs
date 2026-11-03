@@ -434,6 +434,200 @@ sequenceDiagram
 
 > Prompt 原文很长且会按配置拼装；本节按功能概括，不把所有模板逐字复制。真正的程序约束由解析器、工具 schema、State 字段、边条件和权限表共同实施，不能只靠 Prompt。
 
+## 7.1 Prompt 总体架构：谁负责内容，谁负责拼装
+
+ARTEMIS 的 Prompt 不是“把一条超长字符串直接塞给模型”。它由**角色模板、运行时上下文组件、历史/记忆渲染、工具定义**组成；不同 Agent 有各自的 Prompt，而共享的原则是：把稳定规则与每轮变化的事实分开，并让会影响行为的约束尽量同时落在代码机制上。
+
+```mermaid
+flowchart LR
+    subgraph Source["Prompt 来源"]
+        JSON["Agent 模板<br/>planner.json / operator.json / checker.json"]
+        CODE["Prompt Component<br/>观察 / 反馈 / incident / reminders"]
+        RULES["机器规则与 schema<br/>Plan grammar / tool args / policy"]
+        HISTORY["计划、Step、Notes、记忆"]
+    end
+
+    subgraph Build["运行时组装"]
+        GATE["读取配置与能力<br/>启用哪些检查/工具"]
+        TEMPLATE["渲染模板变量<br/>goal / grammar / tool enum"]
+        COMPOSE["PromptBuilder<br/>System + Human 内容"]
+        LEDGER["TranscriptLedger<br/>S + F + A + 当前 tail"]
+    end
+
+    subgraph Call["模型调用"]
+        BIND["按能力绑定真实 tools"]
+        LLM["Agent LLM / VLM"]
+        LOOP["解析 tool calls<br/>程序执行工具并回传结果"]
+    end
+
+    JSON --> GATE
+    RULES --> GATE
+    GATE --> TEMPLATE
+    CODE --> COMPOSE
+    TEMPLATE --> COMPOSE
+    HISTORY --> COMPOSE
+    COMPOSE --> LEDGER
+    LEDGER --> BIND
+    BIND --> LLM
+    LLM --> LOOP
+    LOOP -->|tool result 追加到下一轮上下文| LLM
+```
+
+图中的 `RULES` 不是所有内容都原样插入 Prompt：例如 plan grammar 会渲染成模型可读规则；动作参数的类型和合法范围还由真实 Tool schema 校验。Checker 的只读能力同样是工具表限制，不是让 Prompt 文字单独承担权限控制。
+
+### Prompt 构造的层次
+
+1. **静态模板层**：角色、目标职责、操作原则、安全/恢复规程、计划语法、可用能力说明和输出协议，主要来自 `planner.json`、`operator.json`、`checker.json` 等文件。
+2. **能力/配置层**：根据实际已绑定的工具、执行 profile、检查开关、执行器能力，增删对应的工具名、说明块和检查语义。
+3. **运行时事实层**：每轮注入最新 screenshot/UI、当前 plan、必要历史、Validator 结果、当前 incident、用户指导、后台任务状态和 Checker feedback。
+4. **对话工具循环层**：模型返回 tool call 后由代码匹配并执行真实工具，再把 ToolMessage 结果加回消息列表；工具调用和工具结果本身也是后续上下文的一部分。
+5. **历史治理层**：TranscriptLedger 保存/裁剪/压缩多轮上下文；数据超出窗口后，通过摘要 capsule、Step 记录和历史查询保留可恢复的信息。
+
+### Operator 具体如何组装
+
+`OperatorNode.__call__()` 是运行时入口，大致顺序如下：
+
+1. 从 State 取最新截图、XML hierarchy、尺寸和当前注入信息。
+2. 从 DataEngine 读取历史 Step，从 notes 读取 `task_plan.md`，构建面向 Operator 的 plan/history 视图。
+3. 把当前 UI hierarchy 格式化为人可读、可索引的元素列表，并把每个索引映射到实际元素/坐标。
+4. 查询真实运行可用工具集：执行器不支持的动作、未配置的 video analyzer、无 DataEngine 时不可用的 history 工具不会被挂到模型工具列表，也不会被 Prompt 宣传。
+5. 依配置选择 legacy 或 transcript 路径，再由模板和组件组成消息。
+6. 调用 LLM，并绑定同一轮可用工具；每次 tool call 都由代码校验、执行并返回结果，最多进行 `OPERATOR_MAX_TOOL_ITERATIONS` 次循环。
+
+**Prompt 声称可用的工具和实际绑定的工具必须一致。** `resolve_operator_prompt_tools()` 与 `get_graph()` 中的工具配置共同实现这一点；模板 helper `prompt_assembly.py` 会把工具列表按既定顺序渲染，并整体移除没有对应工具的教学段，避免模型被告知可用一个实际不存在的能力。
+
+### Legacy 与 Transcript 两种消息布局
+
+- **Legacy 两消息路径**：一条 SystemMessage 放入渲染后的主模板（其中包含变化较大的 plan/history）；一条 HumanMessage 放入当前截图、UI 元素及动态提醒。Prompt component 负责把大模板的静态部分放进 system，把 observation 部分作为 human 内容。
+- **Transcript 路径（当前配置默认启用）**：把 operator 模板中的 plan/history 段替换成静态指针，形成每个 session 只建立一次的 system prefix；真正的对话历史放在后续 transcript 中，当前 plan 则每轮重新 recite。
+
+Transcript 路径消息顺序是：
+
+```text
+S  静态 SystemMessage（session 内稳定的角色/规则/能力合同）
+F  冷启动恢复历史 + 已压缩冻结块（旧 turns 的 capsule / era）
+A  最近的原始活动对话（未压缩的 turns）
+T  当前 observation tail（新计划、截图、UI 元素和本轮动态提示）
+```
+
+这是消息排列策略，不表示这四部分全是同一种内容：只有 S 是固定系统前缀；F/A/T 是 Human/AI/Tool 等消息组成的历史或当前尾部。
+
+### 动态组件的典型职责
+
+| 组件 | 注入内容 | 为什么需要 |
+|---|---|---|
+| `TemplatePromptComponent` | Operator 主规则、计划语法、工具列表、burst/工具轮数限制 | 为模型提供长期稳定的“怎么做”合同。 |
+| `PlanRecitationPromptComponent` | Transcript 路径每轮加入当前 task plan | 历史经过压缩后，仍把当前进度清楚放在最新上下文。 |
+| `ObservationPromptComponent` | 当前 screenshot + 可见 UI 元素索引 | 模型以当前真实屏幕为决策依据。 |
+| `ExecutionIncidentPromptComponent` | 当前未解决 Incident 或一次性关闭通知 | 明确失败动作是否实际执行、失败原因和后续需要处理的意图。 |
+| `ScreenshotSimilarityPromptComponent` | 最近数步屏幕几乎未变化的提示 | 提醒 Agent 注意卡住/重复，但不代替它判断原因。 |
+| `HistoricalStateHintPromptComponent` | 当前画面与较早历史画面相似时，提示可查历史 | 帮助识别返回旧界面；只用 dHash 比较，不调用模型。 |
+| `InjectedInstructionPromptComponent` | 用户中途指导；解释它优先于计划并保留原文 | 及时接收任务转向，同时保留可追溯指令。 |
+| `BackgroundTasksPromptComponent` | 正运行/刚完成的 ADB 后台任务和输出 | Agent 不会把尚未结束的后台工作误当作无状态。 |
+| `FeedbackPromptComponent` | 来源标注的 Checker 发现或 Planner advisory | 将程序/审核反馈送到下一轮，而不是让它隐含在日志中。 |
+| `ReasoningReminderPromptComponent` | 上一轮没有可见解释时，要求本轮简短说明 | 让操作理由可观察；不额外发一次 LLM 请求。 |
+| `ToolLimitWarningPromptComponent` | 上轮耗尽工具轮数时提示收束/换策略 | 防止只探索、不执行或不保存进度。 |
+
+组件通常按固定顺序追加；没有动态事实时可不生成对应块。`ephemeral=True` 标记只对近期轮次有用的提醒/feedback，历史老化后会被 scrub，而不是永久重复出现在所有轮次。
+
+## 7.2 Prompt 如何降低“模型没有照做”的概率
+
+Prompt Engineering 能**引导**模型，不能数学上保证模型每次都正确。ARTEMIS 把关键行为要求落成“说明 + 可执行接口 + 程序校验 + 运行时验收”多层防线：
+
+| 层次 | ARTEMIS 做法 | 具体例子 |
+|---|---|---|
+| 规则明确 | Prompt 使用角色、编号原则、正反例、边界条件和明确响应动作，而非只写“谨慎操作”。 | Operator 说明截图优先；长列表单向扫描并记录锚点；动作失败后重看页面、不要盲重试。 |
+| 当前上下文明确 | 把 goal、最新截图、可见元素、活动计划、历史摘要、feedback 放在对应且有标题的区块。 | 每轮 Observation 有 `Current Screenshot` 与 `Visible UI Elements`；Transcript 路径重述当前 task plan。 |
+| 能力可执行 | Tool call 用结构化参数 schema；模型只能调用本轮绑定的工具。 | 缺少 target description 的纯坐标动作会被参数转换校验拒绝；未实现的 actuator 动作不向模型公开。 |
+| 计划格式程序校验 | 对 `task_plan` 的 checkbox grammar、层级和状态用解析器检查；非法计划给明确错误反馈。 | Planner 必须调用 note 工具提交计划，程序读回后校验；Operator 计划写入会防止意外改写 milestone 或删除受保护检查项。 |
+| 动作执行安全网 | 执行前针对单动作校验目标仍在、位置可接受；失败可拦截并反馈，而非默默执行。 | XML/UI 校验优先，适用时像素 VLM 复核；失败形成 incident。 |
+| 独立验收与闭环 | Operator 的“我完成了”不是唯一证据；Checker 读证据产出逐项 verdict，程序按预算决定修复、阻塞或放行。 | 完成 milestone 后 checkpoint；任务退出时可执行 final check；verify 与 assert 按不同语义处理。 |
+| 失败和循环边界 | 限制工具轮数、动作 burst 数、Checker 迭代/修复预算和检查超时；失败信息可进入下一轮。 | ToolLimitWarning 提醒 Agent 收束；`[Loop:continuous]` 必须等用户显式停止。 |
+
+### Prompt 规则的写法有什么特点
+
+1. **把抽象目标转成可观察行为**：如“确认语言生效”比“完成设置操作”更容易和屏幕证据、验收条件对应。
+2. **写清前提、动作和结果**：遇到页面转场先等待；长列表先标锚点再滚动；若锚点丢失只允许一次有界恢复。
+3. **把异常作为正常流程设计**：权限弹窗、目标移动、列表边界、动作被拦截都有明确备选处置，不让模型在失败后只重复原动作。
+4. **用固定结构和标题分块**：角色/原则在 system，当前屏幕/计划/反馈在 human observation；事件都使用有语义的 marker，让模型易于区分事实来源和当前任务。
+5. **机器可检查项尽量结构化**：Plan checkbox、tool arguments、`CheckVerdict` JSON 等适合解析的内容，不依赖模型写一段自然语言后再猜结果。
+6. **把解释和硬约束分开**：Prompt 告诉模型为何和何时做；安全、权限、合法参数和停止条件由代码实现。模型仍可能选错，但错误可以被拒绝、记录、反馈和修复。
+
+因此，“确保正确”的准确表述是：**系统通过多层防线降低错误概率，并让关键错误可检测、可阻断、可恢复；并没有任何 Prompt 能单独保证 LLM 正确。**
+
+## 7.3 长任务如何减少中间遗忘
+
+ARTEMIS 不尝试把无限长对话全塞进每一次调用，而是把“当前进度”“近期事实”“更早历史”“可查证据”分层：
+
+| 信息层 | 处理方式 | 防止遗忘的作用 |
+|---|---|---|
+| 用户目标 | 保存在 `State.initial_goal`；进入 Planner/Operator/Checker 对应上下文。 | 避免长历史压缩后目标本身消失。 |
+| 当前计划 | 作为 `task_plan.md` note 持久保存；Operator 从文件读，Transcript 路径每轮复述当前计划。 | milestone/subgoal 状态成为短小且新鲜的进度账本，不靠回忆历史中“之前做到了哪”。 |
+| 最近几轮对话 | TranscriptLedger 的 active region 保留原始截图、决策、工具交互和结果；滑动窗口确保最近原始细节仍可见。 | 当前动作依赖最近证据，不依赖远期压缩摘要。 |
+| 较早但仍重要的轮次 | `ScrubEdgeCompressor` 先替换过旧的 UI 列表/临时提醒，再在视觉摘要 ready 后替换旧截图；历史 chunk manager 进一步生成分段 capsule。 | 保留“做了什么、界面如何变化、结果如何”的紧凑版本，减少上下文无限增长。 |
+| 很久以前的历史 | 上下文压力极高时把已冻结历史折叠为 recall-only era / 每步索引；需要细节时可用 `search_history`、`replay_steps`、`get_step_screenshot` 等工具查询。 | 不把所有旧原文永远留在每次 prompt，同时保留可回查路径。 |
+| 任务外事实/长数据 | 用有描述性的 notes 记录清单、候选项、监控结果等，而不是只留在对话里。 | 结构化持久记忆可跨轮、跨 prompt 压缩继续使用。 |
+| 关键外部指令 | 指令原文保留到 Step 元数据；Prompt 中的解释 wrapper 可 ephemeral；历史 capsule 会把用户指令行保留。 | 压缩后仍能追溯用户中途改变了什么要求。 |
+| 失败和验收结果 | Incident 进入当前轮反馈；Checker verdict 落 ledger；错误、未检查和未确定有各自状态。 | 不把“模型刚才说过成功”当作唯一记忆或事实。 |
+
+### 压缩不是简单截断
+
+TranscriptLedger 的核心顺序是 `S + F + A + tail`。生成下一轮输入时：
+
+1. **Scrub edge（滑动清理边界）**：旧 UI 元素索引和仅对上一轮有效的 blocks 很快离开 prompt。因为元素编号只对最新画面有效，清掉旧编号可以防止模型误点过期的 `[3]`。
+2. **截图替换**：旧截图先等待 StepMemory 的视觉转移摘要；摘要 ready 后以文本摘要代替图像。摘要未 ready 时有 grace window；摘要失败不会把原始 Step 记录删除，StepMemory 会有限重试。
+3. **Chunk（分段压缩）**：按完整 turn/step 区间归并历史，保留区间覆盖和可追溯来源；较早历史转换成 capsule，而不逐消息随意截断。
+4. **Hard pressure 下 fold**：上下文接近硬阈值时优先替换已就绪的 L2 chunk；若仍超预算，才折叠为更紧凑的 recall-only era 和最小索引。
+5. **可检索而非全量常驻**：较老的细节移出 prompt 后仍由 DataEngine/notes/历史搜索工具支持回查。
+
+当前 Transcript 配置默认启用，常见缺省值包括 `context_budget_tokens=80000`、start/soft/hard ratios `0.35/0.7/0.9`、`min_active_steps=5`、XML scrub depth `1`、截图 scrub depth `3`、低占用放宽深度 `6`；实际值可在运行配置覆盖。这里的 token budget 是压缩触发的估算/策略阈值，不是服务商上下文窗口的硬性设置。
+
+还要注意：**压缩不能保证每个自然语言细节永远在 prompt 内。** 设计目标是把当前必须执行的内容留在 goal/plan/近期 tail，把长程过程变为 capsule，把需要时才查的证据留在 recall source。对于用户明确要求必须保留的细节，应写入 plan/note/check 条目，而不应假设模型会从已压缩历史中自动记住。
+
+## 7.4 KV cache / Prompt cache：做了什么，哪些不能保证
+
+在推理服务中，KV cache 通常复用前缀 token 已计算的 Key/Value；许多托管模型也把相近能力称作 prompt caching。对 ARTEMIS 来说，最有效的应用方式是**让每轮请求的前缀稳定、动态内容靠后**。
+
+### 代码中有利于前缀复用的设计
+
+1. **Transcript 路径把 Operator system prompt 做成 session 内 byte-stable 前缀**：`render_transcript_static_system()` 把变化的 plan/history 段替换成固定指针；`TranscriptLedger.set_static_prefix()` 每个 session 只设置一次。
+2. **消息顺序是 prefix-first**：先发稳定的 S（SystemMessage），再发可变化的 restored/frozen/active history 和当前 observation tail。每轮新截图、当前计划、elapsed time、反馈都在变化内容区域，而不改 system prefix。
+3. **固定规则不随 verdict 切换模板**：Operator system template 不因某轮 checker 结果切换成另一份 Prompt；变化的检查结果通过独立 feedback block 追加。
+4. **工具提示稳定且与能力匹配**：可用工具按确定顺序渲染；同一 session 下执行器和配置不变时，tool enumeration/教学段可保持一致。
+5. **静态前缀的稳定性有回归测试**：`test_operator_transcript.py` 检查同一配置下多次渲染静态 system prompt 一致；legacy 路径另有 golden hash 测试保护旧输出。
+6. **记录服务端反馈的 cache token usage**：统一 usage parser 和 `TokenMeter` 统计 `cached_tokens`、会话及来源维度 cached ratio，Operator 也记录每次 prompt token 数给历史压缩阈值使用。
+
+### 重要限制：不是 Artemis 在本地保证 KV cache 命中
+
+- 代码建立的是**稳定前缀条件**，不是模型服务端 KV cache 的强制开关。
+- 是否缓存、缓存的最小 token 长度、存活时间、跨请求/跨实例是否共享、tool schema 是否纳入缓存，由具体模型/provider/API 的实现决定。
+- 即使 system message 文本稳定，如果 model version、系统指令、工具 schema、消息顺序或其前缀 token 有变化，服务端也可能无法复用相同前缀。
+- Legacy 路径把 plan/history 渲染进 system template 的可变区域，前缀稳定性通常不如 Transcript 路径。
+- 当前代码的 cache metrics 是**观测缓存 token 使用**，不是保证某个固定 cache-hit rate。
+
+### 可迁移的 KV/prompt-cache 实践
+
+1. 长期不变的角色、规则和格式协议放前面；用户目标、计划、时间戳、截图、近期反馈放后面。
+2. 维持 system prompt、tool schema、工具排序和消息前缀稳定；能力变更时才变更对应块。
+3. 不要每轮把全量 history 和实时数据拼进 system prefix；把变化内容隔离到 suffix/observation。
+4. 避免只为了“动态 personalization”重写静态指令的句子/排序；用单独变量或尾部字段表达。
+5. 通过 provider usage 数据验证缓存是否真的发生；不要只根据 Prompt 看起来相同就假设 cache hit。
+6. cache 与上下文压缩是不同优化：稳定前缀提高重用机会；压缩控制总上下文大小和延迟；两者可以协同但不能互相替代。
+
+## 7.5 值得学习和借鉴的 Prompt 工程手法
+
+- **角色分离**：Planner 负责规划、Operator 负责动作决策、Validator 负责安全执行、Checker 负责只读验收；避免一个 Prompt 同时“想计划、做动作、宣布成功”。
+- **一个事实只有一个权威来源**：屏幕是当前事实，plan 是阶段进度，Step/Trace 是发生过的证据，ledger 是 Checker verdict；提示中明说它们分别代表什么。
+- **短期注意力与长期记忆分层**：最新 observation 给模型完整可操作信息，旧历史逐步摘要，重要证据可查；不要用无限增长的聊天记录代替 memory design。
+- **能力与说明同步**：工具不可用就同时从 tool schema 和 prompt instruction 中移除，减少幻觉调用。
+- **把关键动作做成状态机**：例如轮询任务包含 baseline、等待、刷新、diff、处理事件、更新 ledger，而不是一句“持续监控”。
+- **正向规则 + 反例 + 恢复路径**：说明推荐策略，也说明不要盲目重复、不要反向扫描、失败后如何转向。
+- **让结果可验收**：计划和 Checker 约定可观察标准；执行层与验收层独立，避免模型既做运动员又当裁判。
+- **只把有限生命周期内容做成 ephemeral**：动态提醒不会污染永久历史，用户真正要求和证据仍保留。
+- **用数据调 prompt，而不是凭感觉**：保存 Prompt golden tests、真实设备 A/B 和每个来源的 token/cache metrics；改动后验证正确性、延迟、token 和 cache 行为。
+
+推荐复用的是工程原则，不是照搬超长 Prompt。写新 Agent Prompt 时，可按“职责 → 权威输入 → 可用工具 → 正常流程 → 异常/边界 → 输出/验收 → 程序强制点”组织，然后用测试检查模板渲染、tool alignment 和流程边界。
+
 ## 8. 为什么 Graph 采用这种组织方式
 
 1. **把决策与设备执行隔离**：Operator 先提出动作，Validator 再统一做安全检查和派发，降低误点风险。
@@ -453,6 +647,10 @@ sequenceDiagram
 | 节点读写可见性合同 | [visibility.py](../artemis/graph/visibility.py) |
 | 初始计划、计划格式和 validation | [planner.py](../artemis/agents/planner/planner.py)、[planner.json](../artemis/agents/planner/planner.json) |
 | Operator 决策、工具循环、Prompt 组装 | [operator.py](../artemis/agents/operator/operator.py)、[operator.json](../artemis/agents/operator/operator.json)、[prompts.py](../artemis/agents/operator/prompts.py) |
+| 工具能力与 Prompt 声明对齐 | [prompt_assembly.py](../artemis/agents/prompt_assembly.py)、[prompts.py](../artemis/agents/operator/prompts.py) |
+| Transcript S/F/A/tail、scrub 和 token 校准 | [transcript.py](../artemis/memory/transcript.py)、[context_compressor.py](../artemis/agents/flash/context_compressor.py)、[chunking.py](../artemis/memory/chunking.py) |
+| Prompt transcript/context budget 配置 | [agent.py](../artemis/config/agent.py) |
+| 缓存 token usage 统计 | [token_meter.py](../artemis/services/token_meter.py)、[usage.py](../artemis/llm/google/usage.py) |
 | 感知、OCR、用户中途指令 | [perception.py](../artemis/graph/perception.py)、[ocr_api.py](../artemis/utils/ocr_api.py) |
 | 动作验证与执行循环 | [validator.py](../artemis/agents/validator/validator.py)、[execution_loop.py](../artemis/agents/validator/execution_loop.py)、[action_execution.py](../artemis/agents/validator/action_execution.py) |
 | 像素安全网 Prompt | [precondition_pixel.py](../artemis/agents/validator/precondition_pixel.py)、[pixel_safety_net.md](../artemis/agents/validator/pixel_safety_net.md) |
