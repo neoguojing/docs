@@ -161,33 +161,70 @@ classDiagram
 
 注意：图中 `ToolWrapper` 表示项目集成的通用 wrapper；`ArtemisTool` 是另一层统一抽象。工具生态还包含直接 LangChain 工具和 JSON tool declarations。
 
-### 4.1 几个核心类：是什么、做什么、为什么有它们？
+### 4.1 用一次点击理解核心对象与完整流程
 
-初看这些名字容易混在一起。可以先把一次设备动作分成四个问题：
+与其把这些英文类名当作一组抽象名词，不如跟踪一次具体点击。假设屏幕是 `1080 × 2400`，当前 UI 列表第 3 项是搜索框，中心点为像素 `(540, 720)`；模型决定点击它。
 
-1. **`ActionSpec`：这个动作叫什么、模型应该如何表达？**
-2. **`Actuator`：底层由什么设备后端执行动作？**
-3. **`ActionSession`：调用方怎样通过内部 MCP 把动作送到服务端？**
-4. **`ActionResult`：动作结果怎样用稳定结构返回？**
+先记住各对象的分工：
 
-它们不是四个同类“工具”，而是分别负责**定义、执行后端、通信会话、结果格式**。
-
-| 名称 | 是什么 | 做什么 | 为什么需要 |
+| 对象 | 可以把它想成 | 在这次点击中负责什么 | 为什么单独存在 |
 |---|---|---|---|
-| `ActionSpec` | [`action_specs.py`](../artemis/mcp/action_specs.py) 中的冻结 dataclass；`ACTION_SPECS` 为每个 canonical action 保存一份规格。 | 描述动作名，以及 Pro/Flash 给模型看的参数形式、内部 MCP wire 参数形式和两者的差异。 | 防止 Operator、Flash 和 MCP server 各自手写 schema 后逐渐不一致；一个 `click` 定义可投影成多种接口。 |
-| `Actuator` | [`actuators/base.py`](../artemis/mcp/actuators/base.py) 中的 `Protocol`（接口契约），**不是某台设备的具体实现**。 | 规定后端要提供哪些能力、动作方法和扩展工具。`AdbActuator` 是通过 ADB 控制 Android 的具体实现；也可换 Mock 或其他后端。 | 将“要点击哪里”与“如何驱动 Android/其他设备”隔离，MCP server 不必绑定某一个控制器实现。 |
-| `ActionSession` | [`action_session.py`](../artemis/mcp/action_session.py) 中的进程内 MCP client/session 管理类。 | 建立 MCP 内存连接、排队调用 `call_tool`、提供 `call()` / `observe()` 等类型化便捷接口，并在任务结束时关闭会话。 | 让 Agent 有统一的调用入口；集中串行化设备请求，避免多个协作 Agent 同时操作设备；不需要再启动外部 MCP 子进程。 |
-| `build_action_server()` | [`action_server.py`](../artemis/mcp/action_server.py) 中的 server 工厂函数，不是类。 | 根据 actuator 能力校验并注册 wire tools；收到 MCP 调用后，通过 `ActionSpec.wire.bind` 调用 actuator。 | 将 MCP 协议适配和设备实现解耦，并且只公开当前后端真正支持的动作。 |
-| `ActionResult` | [`action_types.py`](../artemis/mcp/action_types.py) 中的 Pydantic 结果模型。 | 统一表达 `ok`、错误分类 `code`、动作名和人可读消息。 | 让调用方检查结构化状态，而不是猜测返回文本里是否含有“Error”。 |
+| `ActionSpec` | 动作的“说明书/接口定义” | 说明 `click` 给模型看的参数可为元素索引或坐标，而 MCP wire 参数是归一化坐标；提供从 wire 参数调用后端的绑定函数。 | 同一个动作要供 Pro、Flash、MCP server 使用，集中定义可避免各处 schema 不一致。 |
+| `Actuator` | “设备驱动接口” | 规定后端必须提供 `click()` 等方法。它本身是 `Protocol`，不是具体设备对象。 | 隔离 MCP 和硬件实现；换 ADB 或 Mock 后端时不必重写上层协议。 |
+| `AdbActuator` | “Android 设备驱动实例” | 实现 Actuator；把归一化坐标换算成像素，调用 controller 执行触摸。 | 把 Android/ADB 的细节限制在后端层。 |
+| `build_action_server(actuator)` | “把方法包装成 MCP 工具的工厂” | 检查后端能力，注册其支持的 wire tools；MCP 收到 `click` 后调用 `ActionSpec.wire.bind`。 | 按能力暴露工具，并隔离协议与设备实现。 |
+| `ActionSession` | “Agent 手里的 MCP 客户端句柄” | 建立/持有进程内 client-server 会话；串行发送调用，解析响应，负责关闭。 | Agent 用统一入口调用，不必自己管理 MCP 生命周期或并发。 |
+| `ActionResult` | “动作回执” | 返回 `ok`、错误码、消息等结构化结果。 | 让调用方检查机器可读的成功/失败，而不猜错误字符串。 |
 
-#### 原型类定义：把“描述”与“执行”对起来
+#### 调用流程（从程序启动到点击返回）
 
-下面是**按当前代码职责缩写的原型**，用于理解关系，不是可以直接替换源码的完整实现；真实定义分别位于 `action_specs.py`、`actuators/base.py`、`action_session.py` 和 `action_types.py`。
+```mermaid
+sequenceDiagram
+    participant Agent as Flash / Pro 执行路径
+    participant Spec as ACTION_SPECS / ActionSpec
+    participant Session as ActionSession
+    participant Server as FastMCP action server
+    participant Wire as click wire handler
+    participant Backend as AdbActuator
+    participant Controller as UnifiedMobileController
+
+    Agent->>Spec: 获取 click 的 agent-facing schema 并绑定给模型
+
+    Note over Agent: 运行时：假设模型返回 click(target=3)
+    Agent->>Agent: 用当前 UI 列表把索引 3 转成归一化坐标 [500,300]
+    Note over Agent,Session: 若当前任务还没有可用 session，首次调用时惰性创建
+    Agent->>Backend: 取得/创建 AdbActuator(ctx)
+    Agent->>Server: build_action_server(actuator)
+    Server->>Backend: validate capabilities
+    Server->>Spec: 按 capabilities 读取并注册 wire dialect
+    Agent->>Session: 创建并启动进程内 MCP client/server session
+    Agent->>Session: call("click", {target:[500,300], times:1, delay_ms:100})
+    Session->>Server: MCP call_tool("click", wire args)
+    Server->>Wire: 校验参数并运行 wire handler
+    Wire->>Backend: actuator.click(500,300,times=1,delay_ms=100)
+    Backend->>Controller: 归一化坐标转像素 (540,720)，执行 tap
+    Controller-->>Backend: 设备执行结果
+    Backend-->>Wire: ActionResult
+    Wire-->>Server: 包装为 MCP CallToolResult
+    Server-->>Session: structuredContent = ActionResult
+    Session-->>Agent: ActionResult(ok, code, message)
+    Agent->>Session: observe()（执行路径需要刷新时）
+    Agent->>Session: aclose()（任务结束时）
+```
+
+图中坐标仅为说明：元素中心像素 `(540,720)` 在 `1080 × 2400` 屏幕上对应约 `[500,300]`（每轴按 0–1000 归一化）。实际运行时需要使用本轮 observation 对应的 UI 列表和设备尺寸。
+
+#### 第一步：`ActionSpec` 只描述动作，不执行动作
+
+[`ActionSpec` 的真实定义](../artemis/mcp/action_specs.py)是冻结 dataclass。`ParamSpec` 描述参数；`OperatorDialect` 是模型/Agent 使用的 schema；`WireDialect` 是 MCP server 使用的 schema，并带一个 `bind` 函数。以下为删去详细文案后的缩写定义：
 
 ```python
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+from artemis.mcp.action_manifest import ExtensionTool
+from artemis.mcp.action_types import ActionResult, ObserveResult
 
 
 @dataclass(frozen=True)
@@ -197,145 +234,100 @@ class ParamSpec:
     required: bool = True
     default: Any = None
 
-
 @dataclass(frozen=True)
 class OperatorDialect:
-    """模型/Agent 看到的动作参数形式。"""
     description: str
     params: tuple[ParamSpec, ...]
-
 
 @dataclass(frozen=True)
 class WireDialect:
-    """MCP server 接收的参数形式，以及转调后端的函数。"""
     description: str
     params: tuple[ParamSpec, ...]
-    bind: Callable[[Any, dict[str, Any]], Awaitable["ActionResult"]]
+    bind: Callable[[Any, dict[str, Any]], Awaitable[ActionResult]]
 
+@dataclass(frozen=True)
+class DeclarationDialect:
+    description: str
+    parameters: dict[str, Any]
 
 @dataclass(frozen=True)
 class ActionSpec:
-    """一个 canonical action 的各类接口描述；只保存规格，不执行动作。"""
     name: str
     operator: OperatorDialect | None = None
-    declaration: Any | None = None
+    declaration: DeclarationDialect | None = None
     wire: WireDialect | None = None
     differences: str = ""
+```
 
+`click` 的规格可以读成下面这张“接口对照表”：
 
+```text
+模型侧 OperatorDialect:
+  click(target: int | [x,y], target_description?, times=1, delay_ms=100)
+  target=3 表示已显示的第 3 个 UI 元素
+
+MCP 侧 WireDialect:
+  click(target: [normalized_x, normalized_y], times=1, delay_ms=100)
+  target 只能是 0–1000 归一化坐标
+
+wire.bind:
+  await actuator.click(x, y, times=..., delay_ms=...)
+```
+
+因此 `ActionSpec` 不是点击器、执行线程或 session；它告诉系统各层的接口长什么样。Pro/Flash 的模型 schema 都从动作规格生成或投影，server 的 wire handler 也使用同一份规格。
+
+#### 第二步：`Actuator` 是后端契约，`AdbActuator` 才会操作设备
+
+[`Actuator`](../artemis/mcp/actuators/base.py) 是 Python `Protocol`，表达“设备后端至少要能做什么”；它不可直接实例化，也不负责建立 MCP 连接。精简原型：
+
+```python
 class Actuator(Protocol):
-    """设备后端契约；具体实现如 AdbActuator。"""
     def capabilities(self) -> frozenset[str]: ...
+    def extensions(self) -> list[ExtensionTool]: ...
 
     async def click(
         self, nx: int, ny: int, times: int = 1, delay_ms: int = 100
-    ) -> "ActionResult": ...
-
-
-class ActionSession:
-    """任务内 MCP client 包装；负责传输，不实现 click 的硬件动作。"""
-    async def call(self, name: str, args: dict[str, Any]) -> "ActionResult": ...
-    async def observe(self, settle_ms: int = 400) -> "ObserveResult": ...
-    async def aclose(self) -> None: ...
+    ) -> ActionResult: ...
 ```
 
-逐个读这段原型时，可以这样理解：
-
-- `ParamSpec` 是“一个参数说明卡”：名字、类型、是否必填和默认值。
-- `OperatorDialect` 是 Agent/模型侧的“使用说明和参数表”；例如它允许 `target=3` 表示 UI 列表中的第 3 个元素。
-- `WireDialect` 是 MCP action server 侧的参数表和适配函数；例如它要求 `target=[500, 300]` 这样的归一化坐标，并通过 `bind` 调后端。
-- `ActionSpec` 将同一个动作的这些描述放在一起。`frozen=True` 表示规格创建后不可修改，避免运行中 schema 被意外改写。
-- `Actuator(Protocol)` 只规定实现必须提供什么能力，不能像普通父类那样被实例化；`AdbActuator` 才是实际连接 controller、发出设备动作的对象。
-- `ActionSession` 是运行期对象，有状态和生命周期；它拥有内存 MCP 会话并提供 `call()`，将返回数据解析为 `ActionResult`。它不负责决定 `target=3` 是哪个元素，也不直接调用 ADB。
-
-#### 示例：`click(target=3)` 最后怎样点到设备？
-
-假设当前 UI hierarchy 已生成编号列表，模型选择编号 `3` 点击搜索框。模型侧的 `target=3` 是**UI 元素索引**，不是屏幕坐标；内部 MCP wire 只接受归一化坐标。因此 Flash 的 `McpActionExecutor`（Pro 则由 Operator/Validator 路径）先结合当前已索引元素转换参数，然后通过 session 调用 server：
-
-```text
-模型动作：click(target=3)
-  -> ActionSpec.operator：允许 target 是元素索引或 [x, y]
-  -> executor：从本轮 indexed_elements 取第 3 项，得到元素中心点
-  -> ActionSpec.wire：click(target=[500, 300], times=1, delay_ms=100)
-  -> ActionSession.call("click", wire_args)
-  -> FastMCP action server：验证/转换参数，调用 wire.bind(actuator, args)
-  -> AdbActuator.click(500, 300, times=1, delay_ms=100)
-  -> UnifiedMobileController：将 0–1000 归一化坐标映射成设备像素并执行 tap
-  -> ActionResult(ok=True/False, code=..., message=...)
-```
-
-这里坐标 `[500, 300]` 仅为示意。若模型直接给坐标而非索引，模型侧还需给 `target_description`（如“搜索框”）用于记录动作目标；该描述不会传给 wire。坐标规范化及元素中心点解析位于 agent-side executor，不是 `ActionSpec` 本身在运行时解析。
-
-一个精简的规格定义形状如下（删去了项目中的说明文案）：
-
-```python
-ActionSpec(
-    name="click",
-    operator=OperatorDialect(
-        description="点击元素索引或归一化坐标",
-        params=(
-            ParamSpec("target", int | list[int]),
-            ParamSpec("target_description", str | None, required=False),
-            ParamSpec("times", int, required=False, default=1),
-            ParamSpec("delay_ms", int, required=False, default=100),
-        ),
-    ),
-    wire=WireDialect(
-        description="在 0–1000 坐标系点击",
-        params=(ParamSpec("target", list[int]), ...),
-        bind=_wire_click,
-    ),
-)
-```
-
-`ActionSpec` 是**声明数据**，不是点击器，也不保持 session。`_wire_click` 从已校验的 wire 参数取坐标并调用 `actuator.click(...)`；实际 ADB 触摸由 `AdbActuator` 及 controller 完成。
-
-将上面的规格绑定到执行端，概念上相当于：
-
-```python
-async def wire_click(actuator: Actuator, args: dict) -> ActionResult:
-    x, y = args["target"]
-    return await actuator.click(
-        int(x),
-        int(y),
-        times=args.get("times", 1),
-        delay_ms=args.get("delay_ms", 100),
-    )
-
-# Agent/executor 提供 MCP wire 形状的参数；ActionSession 负责送达。
-result = await session.call("click", {"target": [500, 300], "times": 1})
-if result.ok:
-    print("点击动作已执行")
-else:
-    print(result.code, result.message)
-```
-
-真实实现中的 `_wire_click` 位于 [`action_specs.py`](../artemis/mcp/action_specs.py)，会从 `WireDialect.bind` 被调用；server 负责参数 schema 校验和包装 MCP 响应。上例刻意省略了这些基础设施代码。
-
-#### `Actuator` 为什么是 Protocol，而不是 MCP server？
-
-`Actuator` 只描述后端能力，例如 `capabilities()`、`extensions()`、`click()`、`swipe()`；它不知道模型 prompt、LangGraph state 或 MCP transport。`AdbActuator` 实现此契约。server 工厂把接口适配成 MCP 工具，因此职责可以替换：
+运行时使用具体实现 [`AdbActuator`](../artemis/mcp/actuators/adb.py)：
 
 ```python
 actuator = AdbActuator(ctx, controller)
-server = build_action_server(actuator)  # MCP 层依赖 Actuator 契约
+assert "click" in actuator.capabilities()
+result = await actuator.click(500, 300, times=1, delay_ms=100)
 ```
 
-若用 Mock actuator 做测试，或未来新增不同设备后端，只需实现契约并声明 capabilities；server 和 Agent 的主调用链不必重新手写一套 MCP schema。`validate_actuator()` 会在首次建立 session 时检查 required/internal 能力，缺失则尽早报错，而不是执行到一半才失败。
+`AdbActuator.click()` 才会经 `UnifiedMobileController` 操作 Android。Mock actuator 则可在测试中实现相同接口，只记录调用或返回预设结果；`ActionSpec` 和 Agent 不需要知道实际后端是哪一种。
 
-#### `ActionSession` 管什么，不管什么？
+#### 第三步：`ActionSession` 是会话句柄，不是动作定义或设备驱动
 
-`ActionSession` 管的是**同一任务进程中的 MCP client/server 会话生命周期与调用顺序**，不决定动作语义、不解析模型 schema，也不直接操纵触摸硬件。它的常用入口：
+[`ActionSession`](../artemis/mcp/action_session.py) 有运行时状态：server/client session、owner task、请求队列和 started 状态。调用方通常不直接 `ActionSession(server)`，而调用工厂 `get_action_session(ctx)`；工厂按需构造 `AdbActuator`、调用 `build_action_server()`、启动进程内 MCP session，并把 session 缓存在 `ArtemisContext`：
 
 ```python
-session = await get_action_session(ctx, actuator=actuator)
+session = await get_action_session(ctx)  # 一次任务通常复用
 result = await session.call("click", {"target": [500, 300]})
-observation = await session.observe(settle_ms=400)
+if result.ok:
+    print("设备接受了点击")
+else:
+    print(result.code, result.message)
+
+await session.aclose()  # 实际任务中通常由 ArtemisContext 退出时清理
 ```
 
-调用链中，`call()` 将 MCP `structuredContent` 校验成 `ActionResult`；server 再把调用委派给 actuator。`observe()` 调用的是 adapter 内部注册的观察工具，以获得截图/UI elements，而非让 `ActionSession` 自己实现截图。session 由 `ArtemisContext` 持有，任务退出时关闭。
+`call()` 在内部通过 MCP `call_tool` 发请求，再把 `structuredContent` 校验成 `ActionResult`。owner task 串行处理请求，避免共享内存 transport 被多个 coroutine 同时操作，也避免两个协作 Agent 的设备动作交错。截图和 UI hierarchy 则通过 `session.observe()`、`session.screenshot_b64()` 等 adapter 方法调用对应的内部观察工具。
 
-一句话记忆：**ActionSpec 写“怎么描述动作”，Actuator 规定“谁来做动作”，ActionSession 负责“请求怎么送达”，ActionResult 说明“执行结果如何”。**
+#### 把原型映射回真实代码
+
+| 本文原型中的概念 | 真实实现位置 | 代码中发生的事 |
+|---|---|---|
+| `ActionSpec` / `ParamSpec` / dialects | [`action_specs.py`](../artemis/mcp/action_specs.py) | `ACTION_SPECS` 描述模型和 wire schema；`_wire_click` 将 wire 参数转调 `actuator.click()`。 |
+| 后端契约与具体后端 | [`actuators/base.py`](../artemis/mcp/actuators/base.py)、[`actuators/adb.py`](../artemis/mcp/actuators/adb.py) | Protocol 约定能力，`AdbActuator` 用 controller 实现动作。 |
+| MCP 工具注册 | [`action_server.py`](../artemis/mcp/action_server.py) | `build_action_server()` 按 actuator capabilities 注册工具并包装结果。 |
+| MCP client/session | [`action_session.py`](../artemis/mcp/action_session.py) | `get_action_session()` 建立/复用连接；`call()` 发请求并解析结果。 |
+| 统一结果类型 | [`action_types.py`](../artemis/mcp/action_types.py) | `ActionResult` 表示成功、设备级失败和错误类别。 |
+
+**一句话串起来：** `ActionSpec` 定义接口；Agent 把自己的动作意图翻译成 wire 参数；`ActionSession` 通过 MCP 发请求；action server 调用实现 `Actuator` 契约的 `AdbActuator`；最后 `ActionResult` 把结果送回 Agent。
 
 ## 5. Agent 如何调用普通工具？
 
