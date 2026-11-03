@@ -397,6 +397,19 @@ sessions
 - `Session` 是 DataEngine 中的证据/历史边界：steps、traces、图像和记忆数据。
 - 实际实现会根据 session id、环境变量或 task id 确定 session id，因此两者在某些路径中可能复用标识；**标识复用不代表模型相同**。
 
+### Task 信息到底有没有持久化？
+
+需要区分“SDK 的 `Task` 对象”和“围绕这次任务保存的状态/执行记录”：
+
+1. **SDK `Task` 对象本身不作为完整对象写入数据库。** `Agent._run_task()` 创建 `Task` 并放入当前 Agent 实例的 `_tasks` 列表；`Task.set_status()` 更新内存字段，`Task.finalize()` 在内存中生成 `TaskResult`。核心 SDK 的 `on_status_changed` 默认为 `None`，因此不能把这些内存操作理解成自动写入一个 `tasks` 表。
+2. **DataEngine 持久化的是 Session 及执行证据。** `sessions` 表会记录 `session_id`、`initial_goal`、设备信息、PID、起止时间和状态；`steps`、`traces`、`images` 等表/文件记录执行过程。它保存了任务的一部分上下文与结果证据，但不是序列化完整的 `TaskRequest`/`Task`。
+3. **MCP 后台入口额外持久化可查询的任务状态。** `mobile_run_task` 在启动执行前创建 trace 目录和 `status.json`。该 JSON 保存 `trace_id`、`task_desc`、模型、conversation id、状态、设备 serial、起止时间、错误和结果；启动后台进程时还会写 PID、queue ticket 等运行管理字段。worker 在结束、失败或取消时更新状态文件，`mobile_manage_task(action="status")` 再读取它返回状态。
+4. **TaskRequest 的全部选项不保证持久化。** MCP 状态文件会保存目标描述和模型等字段，但不等于将 profile 的所有配置、最大步数、app 路径、锁定包名、完整请求对象和 SDK 的 `TaskResult` 原样序列化。需要审计实际执行过程时，应查看 DataEngine 的 session/steps/traces 和相应运行目录，而不能只依赖 `status.json`。
+
+因此，“任务是否持久化”的准确答案是：**有与任务相关的持久化，但不存在一个适用于所有入口、完整保存 SDK `Task` 对象的统一 task 数据表。** MCP 后台任务通过 `status.json` 保存生命周期状态；DataEngine 通过 Session 保存运行历史；纯 SDK/CLI 的 `Task` 对象本身主要是运行期对象。
+
+另外，DataEngine 的 `background_tasks` 表是为执行过程中登记的后台子任务使用（例如异步命令），其中的 `task_id` 不应与顶层 SDK `Task.id` 混为一谈。
+
 ### Session vs State
 
 - `State` 是当前运行时在 graph 节点之间传递的最新状态。
@@ -428,6 +441,8 @@ sessions
 | TaskRequest、Task、TaskResult 类型 | [task.py](../third_party/mobile_use/sdk/types/task.py) |
 | `new_task()`、`run_task()`、Task 生命周期、profile 执行 | [agent.py](../third_party/mobile_use/sdk/agent.py) |
 | Artemis SDK 的 DataEngine 初始化及 session 建立 | [agent.py](../artemis/sdk/agent.py) |
+| MCP trace 状态文件的创建/读写 | [trace_store.py](../artemis/runtime/trace_store.py) |
+| MCP 后台入口及状态更新 | [task_runner.py](../mcp_server/tools/task_runner.py)、[task_runner.py](../mcp_server/background/task_runner.py) |
 | State 字段与初始状态 | [state.py](../artemis/graph/state.py) |
 | Graph 节点和控制边 | [graph.py](../artemis/graph/graph.py) |
 | 初始计划、计划格式检查、计划验证 | [planner.py](../artemis/agents/planner/planner.py) |
