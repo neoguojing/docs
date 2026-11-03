@@ -180,6 +180,74 @@ classDiagram
 | `build_action_server()` | [`action_server.py`](../artemis/mcp/action_server.py) 中的 server 工厂函数，不是类。 | 根据 actuator 能力校验并注册 wire tools；收到 MCP 调用后，通过 `ActionSpec.wire.bind` 调用 actuator。 | 将 MCP 协议适配和设备实现解耦，并且只公开当前后端真正支持的动作。 |
 | `ActionResult` | [`action_types.py`](../artemis/mcp/action_types.py) 中的 Pydantic 结果模型。 | 统一表达 `ok`、错误分类 `code`、动作名和人可读消息。 | 让调用方检查结构化状态，而不是猜测返回文本里是否含有“Error”。 |
 
+#### 原型类定义：把“描述”与“执行”对起来
+
+下面是**按当前代码职责缩写的原型**，用于理解关系，不是可以直接替换源码的完整实现；真实定义分别位于 `action_specs.py`、`actuators/base.py`、`action_session.py` 和 `action_types.py`。
+
+```python
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+
+@dataclass(frozen=True)
+class ParamSpec:
+    name: str
+    annotation: Any
+    required: bool = True
+    default: Any = None
+
+
+@dataclass(frozen=True)
+class OperatorDialect:
+    """模型/Agent 看到的动作参数形式。"""
+    description: str
+    params: tuple[ParamSpec, ...]
+
+
+@dataclass(frozen=True)
+class WireDialect:
+    """MCP server 接收的参数形式，以及转调后端的函数。"""
+    description: str
+    params: tuple[ParamSpec, ...]
+    bind: Callable[[Any, dict[str, Any]], Awaitable["ActionResult"]]
+
+
+@dataclass(frozen=True)
+class ActionSpec:
+    """一个 canonical action 的各类接口描述；只保存规格，不执行动作。"""
+    name: str
+    operator: OperatorDialect | None = None
+    declaration: Any | None = None
+    wire: WireDialect | None = None
+    differences: str = ""
+
+
+class Actuator(Protocol):
+    """设备后端契约；具体实现如 AdbActuator。"""
+    def capabilities(self) -> frozenset[str]: ...
+
+    async def click(
+        self, nx: int, ny: int, times: int = 1, delay_ms: int = 100
+    ) -> "ActionResult": ...
+
+
+class ActionSession:
+    """任务内 MCP client 包装；负责传输，不实现 click 的硬件动作。"""
+    async def call(self, name: str, args: dict[str, Any]) -> "ActionResult": ...
+    async def observe(self, settle_ms: int = 400) -> "ObserveResult": ...
+    async def aclose(self) -> None: ...
+```
+
+逐个读这段原型时，可以这样理解：
+
+- `ParamSpec` 是“一个参数说明卡”：名字、类型、是否必填和默认值。
+- `OperatorDialect` 是 Agent/模型侧的“使用说明和参数表”；例如它允许 `target=3` 表示 UI 列表中的第 3 个元素。
+- `WireDialect` 是 MCP action server 侧的参数表和适配函数；例如它要求 `target=[500, 300]` 这样的归一化坐标，并通过 `bind` 调后端。
+- `ActionSpec` 将同一个动作的这些描述放在一起。`frozen=True` 表示规格创建后不可修改，避免运行中 schema 被意外改写。
+- `Actuator(Protocol)` 只规定实现必须提供什么能力，不能像普通父类那样被实例化；`AdbActuator` 才是实际连接 controller、发出设备动作的对象。
+- `ActionSession` 是运行期对象，有状态和生命周期；它拥有内存 MCP 会话并提供 `call()`，将返回数据解析为 `ActionResult`。它不负责决定 `target=3` 是哪个元素，也不直接调用 ADB。
+
 #### 示例：`click(target=3)` 最后怎样点到设备？
 
 假设当前 UI hierarchy 已生成编号列表，模型选择编号 `3` 点击搜索框。模型侧的 `target=3` 是**UI 元素索引**，不是屏幕坐标；内部 MCP wire 只接受归一化坐标。因此 Flash 的 `McpActionExecutor`（Pro 则由 Operator/Validator 路径）先结合当前已索引元素转换参数，然后通过 session 调用 server：
@@ -221,6 +289,28 @@ ActionSpec(
 ```
 
 `ActionSpec` 是**声明数据**，不是点击器，也不保持 session。`_wire_click` 从已校验的 wire 参数取坐标并调用 `actuator.click(...)`；实际 ADB 触摸由 `AdbActuator` 及 controller 完成。
+
+将上面的规格绑定到执行端，概念上相当于：
+
+```python
+async def wire_click(actuator: Actuator, args: dict) -> ActionResult:
+    x, y = args["target"]
+    return await actuator.click(
+        int(x),
+        int(y),
+        times=args.get("times", 1),
+        delay_ms=args.get("delay_ms", 100),
+    )
+
+# Agent/executor 提供 MCP wire 形状的参数；ActionSession 负责送达。
+result = await session.call("click", {"target": [500, 300], "times": 1})
+if result.ok:
+    print("点击动作已执行")
+else:
+    print(result.code, result.message)
+```
+
+真实实现中的 `_wire_click` 位于 [`action_specs.py`](../artemis/mcp/action_specs.py)，会从 `WireDialect.bind` 被调用；server 负责参数 schema 校验和包装 MCP 响应。上例刻意省略了这些基础设施代码。
 
 #### `Actuator` 为什么是 Protocol，而不是 MCP server？
 
