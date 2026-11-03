@@ -4,6 +4,12 @@
 
 > **范围说明：** 这里的 memory 主要是一次自动化任务中的运行上下文与历史，不是跨用户、跨任务的长期个人记忆。原始执行证据由 DataEngine 保存；memory 子系统负责整理 prompt 历史、异步生成摘要、压缩较旧的上下文，并提供按需回查入口。
 
+## 摘要：设计、问题与原因
+
+- **用什么设计：** 采用“原始证据持久化 + prompt 分层视图 + 异步分级压缩 + 按需回查”的组合设计。DataEngine 保留完整 Step、截图和 Trace；TranscriptLedger 组织当前对话；单步视觉摘要和多步 chunk capsule 按需异步生成；ContextPolicy 为不同 agent 挑选合适的历史视图。
+- **解决什么问题：** 长任务会累积大量截图、UI 内容、动作和推理，完整历史直接塞入每次 prompt 会造成上下文膨胀、成本和延迟上升，也可能超过模型上下文限制；而只保留摘要又会丢失核查细节所需的证据。
+- **为什么这么做：** 把“事实保存”和“模型可读上下文”分开：原始数据不因压缩而删除，近期关键步骤保留细节，较旧历史逐步摘要，精确证据再通过搜索或 replay 获取。摘要放在后台生成，避免阻塞操作主流程；各 agent 使用不同历史视图，避免无关历史干扰。
+
 ## 1. 总体架构
 
 memory 不是单个存储类，而是几层职责协作：
@@ -164,6 +170,23 @@ classDiagram
 
 这两种摘要不能互相代替：单步 lens 描述视觉变化；chunk lens 负责保留跨多步的任务意图与过程脉络。
 
+#### 哪些记忆步骤会调用 LLM？
+
+Memory 中只有“把事实转成自然语言摘要/胶囊”的生成步骤需要 LLM；调度、筛选、裁剪、账本和存储本身都是程序逻辑。
+
+| 阶段 | 是否调用 LLM | 具体行为与触发条件 |
+|---|---|---|
+| 单步视觉摘要 `VisualStepSummarizer` | **会** | 开启摘要且成功派发任务后，后台将动作、执行结果和前/后截图交给视觉模型生成该 Step 的变化摘要。Pro 和 Flash 都可能走此路径；它异步执行，不阻塞主操作循环。 |
+| 多步 capsule `StepCapsuleLens` | **会** | segment 到达边界/压缩触发条件并派发 capsule job 后，后台模型一次生成 band ①/②（结构化概述与区间摘要）。若输出校验失败会重试；配置了 fallback 时也可能切换模型。短任务、未触发压缩或未成功派发时，不会因此发生这次调用。 |
+| `StepMemoryService` 调度 | **自身不调用** | 管理并发、重试、任务状态和 flush；它调用 lens 的实现，而 LLM 调用发生在具体 lens 内。 |
+| Band ③动作账本 | **不需要** | 从 DataEngine Step 的动作、结果等字段按固定规则拼接；不由模型生成。 |
+| segment 划分、subgoal/milestone 标注、chunk 范围和压缩触发判断 | **不需要** | 解析计划/hash、比较步骤范围和阈值，由普通代码完成。 |
+| `TranscriptLedger` / scrub edge | **不需要** | stage/commit/render、查摘要状态、按深度移除旧 UI 文本或用已有摘要替换截图，均为确定性处理；这里消费摘要，不生成摘要。 |
+| `ContextPolicy` / `build_history_for()` | **不需要** | 按策略筛选步骤、选择详略、注入已有 chunk 并拼出历史文本，不在函数内部调用模型。 |
+| DataEngine 持久化、历史搜索和 replay | **不需要** | 写入/读取记录及按条件检索是存储和查询操作。Agent 可以在之后根据这些结果再调用 LLM，但那是调用方的推理，不是这些 Memory/存储接口自行发起的调用。 |
+
+因此，“memory 流程里出现模型”不等于每一步都要模型：原始证据采集、整理、裁剪、筛选和回查不依赖 LLM；只有可选的单步视觉摘要和满足条件后触发的多步 capsule 生成需要 LLM。即使摘要未就绪或失败，原始 Step/截图仍保留，prompt 可暂时保留原始内容或展示 pending/unavailable 占位。
+
 ### 3.4 TranscriptLedger 的 S/F/A/T 区域
 
 `TranscriptLedger` 为一条 session 保存 prompt transcript：
@@ -284,7 +307,26 @@ Step 3, T+00:09
 }
 ```
 
-与此同时，程序生成的 band ③保留逐步动作和结果：
+这份 JSON 是 **Band ① 的结构化数据**，其中 `intervals` 同时提供 Band ② 的区间摘要内容。存储/渲染后的 chunk 大致如下（字段和值是示例；标题与呈现结构按代码生成）：
+
+```text
+① Synopsis & effects
+  What this segment was doing: 查找并比较咖啡机商品
+  What was actually done: 打开搜索、提交“咖啡机”查询并到达结果列表
+  Effects / left behind: 当前页面显示多个商品及价格
+  Entry: 购物应用首页    Exit: 咖啡机搜索结果页
+  Verified: 搜索结果页可见商品价格
+  Unresolved: 尚未选定具体商品
+  Failed paths: -
+  Entities: 咖啡机
+
+② Compressed step summary
+  - Steps 1–3: 打开搜索并进入咖啡机结果列表
+```
+
+**怎么区分 ① 和 ②？** Band ①回答“这段整体在做什么、前后状态和结果是什么”；Band ②按连续步骤区间简述“过程大致怎么推进”。本例只有一个区间覆盖 Step 1–3；如果中间有不同阶段，可能拆成多个相邻 interval，例如 `Steps 1–2: 打开搜索并输入查询`、`Step 3: 显示结果列表`。LLM 产出区间文本，程序检查所有 interval 是否完整覆盖 chunk 的步骤范围且没有重叠，再由代码排版成 Band ②。
+
+Band ③与前两段不同：它不是概述，而是逐 Step 保留动作和执行结果。该段由 DataEngine 步骤记录按固定格式机械生成，不由 LLM 改写：
 
 ```text
 ③ Step action ledger
@@ -292,6 +334,14 @@ Step 3, T+00:09
 - Step 2 (T+00:06): input_text("咖啡机") -> dispatched
 - Step 3 (T+00:09): press_key(ENTER) -> dispatched
 ```
+
+如果某一步记录了用户注入指令，Band ③还会加一行原文，例如：
+
+```text
+  User @ Step 2: "只查看价格低于 1000 元的商品"
+```
+
+一句话记忆：**Band ①看整体结论和状态，Band ②看分段过程，Band ③查逐步动作/结果证据。** ①/②是供快速阅读的压缩内容；③更接近可审计的动作索引，但需要截图或完整过程时仍应通过 DataEngine 的历史/replay 接口回查。
 
 **阶段 C — Era：** 多个 chunk 可以合成普通 era：合并 verified facts，按 chunk 保留标题和账本。再遇到更强 context 压力或 era 数量上限时，旧 era 可变为 recall-only：
 
