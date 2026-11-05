@@ -2,6 +2,94 @@
 
 本文面向首次阅读源码的开发者和维护者，说明 ARTEMIS 解决什么问题、任务如何运行、源码模块如何分工，以及修改某类功能时应从哪里入手。内容依据当前仓库实现整理；具体配置项和接口行为以源码及各模块 README 为准。
 
+Search for `async def run|def run_task|async def run_task|async def execute|async def get...`
+
+Search for `async def __call__|async def perception_node|async def run_validation_loop|as...`
+
+Search for `class DataEngine|def record_trace|def record_step|def get_agent_friendly_step...`
+
+Find files matching `**/launch.json`
+
+Read , lines 1 to 160
+Completed with input: {
+  "path": "/workspaces/artemis/pyproject.toml",
+  "view_range": [
+    1,
+    160
+  ]
+}
+
+Read , lines 1 to 220
+Completed with input: {
+  "path": "/workspaces/artemis/artemis/interfaces/cli/commands/run.py",
+  "view_range": [
+    1,
+    220
+  ]
+}
+
+Search for `def _build_prompt\(|def _translate_and_validate_tool_inner|def _invoke_llm_lo...`
+
+Search for `def _build_history|def read_initial_screenshot|async def _get_mcp_session|asy...`
+
+Search for `pytest|testpaths|asyncio_mode|addopts`
+
+Search for `class FlashRunner|async def run\(|async def __call__|run_flash|McpActionExecutor`
+
+建议按“**先静态建立地图，再用一条小任务动态跟踪，最后对照测试和 trace**”来熟悉 ARTEMIS。不要一开始就从所有 agent 或配置文件漫游；先沿一条完整调用链跟到设备边界。
+
+## 建议的阅读顺序
+
+1. **入口和任务装配**：先看 `run.py:44`，确认 CLI 参数、profile、设备选择如何传给 `run_automation`。然后看 `graph.py:948`，理解节点与边如何组成任务流程。
+2. **一轮观察**：读 `perception.py:118`，关注截图、UI hierarchy、OCR 如何写入 State；再对照 `state.py:26`，搞清楚节点之间传递的数据字段。
+3. **LLM 决策**：读 `operator.py:203` 看 prompt 如何组装，再读 `operator.py:474` 看工具调用循环，以及 `operator.py:1087` 看动作参数如何转换和校验。
+4. **动作执行和反馈**：跟 `execution_loop.py:362`，查看 Safety Net、执行、失败报告和 incident 的生成；再看 `action_execution.py:67` 了解动作如何发给 MCP。
+5. **设备边界**：从 `action_session.py:216` 继续到 `actuators/adb.py:160` 和 `adb_driver.py:229`。设备观察则从 `adb_driver.py:121` 开始。
+
+先专注默认 **Pro** 主链路。Flash 是另一条执行路径，可在熟悉主流程后再看 `runner.py:1036` 和 `action_executor.py:154`，不要把它和 Pro 的 Validator 流程混为一谈。
+
+## 一次调试建议
+
+用 VS Code Python Debugger 运行一个简单、可重复的任务，并在这些位置设断点：
+
+| 阶段 | 建议断点 | 重点观察 |
+|---|---|---|
+| 任务入口 | `execute_task` | 最终 goal、profile、device serial、配置覆盖项 |
+| 图编排 | `get_graph` | 本次实际启用的节点和工具 |
+| 屏幕观察 | `perception_node` | 截图尺寸、元素数量、OCR 是否启用、返回的 State 更新 |
+| prompt 组装 | `_build_prompt` | 模型本轮实际获得的目标、计划、截图、元素清单和反馈 |
+| 工具决定 | `_invoke_llm_loop` | LLM 工具调用、参数校验结果、生成的动作记录 |
+| 执行前检查 | `run_validation_loop` | 是否走单动作安全网还是多动作 burst，检查结论和 retry 次数 |
+| 调用设备 | `exec_action` | canonical action、wire 参数、`ActionResult.ok/code` |
+| 驱动落点 | `AdbActuator.click`、`AndroidAdbDriver.tap` | 归一化点如何换算为像素，最终调用的设备操作 |
+
+建议在关键节点记录同一轮的 `current_step_id`，按这条顺序跟踪：
+
+```text
+State 输入
+→ perception 返回的 update
+→ Operator prompt 与 tool call
+→ structured_decisions
+→ Validator 的 action_item
+→ MCP wire args
+→ driver 参数和返回值
+→ last_execution_result / open_incident
+```
+
+重点是看清楚：LangGraph 节点通常**返回一个状态更新字典**，状态在图中归并；不要只观察局部变量，就误以为那是整个流程的最新状态。涉及异步调用时，在调用前后都设断点，确认 await 返回了什么。
+
+## 阅读代码时的几个原则
+
+- **区分“观察到”与“模型推断”**：元素序号对应 UI tree/OCR 清单中的观察数据；`target_description` 是模型对坐标目标的描述，不能当作设备事实。
+- **沿接口边界读，不必先读完类**：优先弄清楚 Operator dialect、wire dialect 和 driver 各自接收什么参数，可从 `action_specs.py` 开始。
+- **把错误当流程的一部分跟踪**：Safety Net 拒绝、设备返回失败、MCP 协议异常是不同层次；分别看 `ValidationErrorCategory`、`ActionResult` 和 incident。
+- **留意明确的行为分支**：单动作会做执行前核验；多动作 burst 为缩短延迟会跳过部分检查和重试。调试时记录分支条件，别把某条路径当作所有动作的通用规则。
+- **读配置和 prompt 时找“最终生效值”**：配置可能被 CLI、环境变量和 agent config 覆盖；提示词也会按后端工具能力裁剪。只读默认配置文件可能无法解释一次真实运行。
+- **测试优先于真实设备试错**：先查相关单元/集成测试，利用 mock 和 patch 验证转换逻辑；确认执行边界后再接设备。`DataEngine` 的动作 trace、step 和截图也适合在调试后复盘，见 `engine.py:1009`。
+
+**一个实用的熟悉项目节奏**：先画出一轮的输入/输出；选一个简单动作（例如点击已知按钮）；用断点确认坐标和结果；再制造一个可控失败（例如无效索引或 mock 失败），观察错误如何返回 Operator；最后对照对应测试，确认自己理解的是受测试约束的行为，而不只是一次运行的偶然现象。
+
+
 ## 项目是什么
 
 ARTEMIS 是一个面向 Android 真机和模拟器的多模态移动自动化 Agent 与测试平台。它接收自然语言目标，观察设备界面，再通过设备动作工具执行操作；同时提供任务规划、执行校验、日志/视频诊断、执行轨迹记录与结果回放能力。
