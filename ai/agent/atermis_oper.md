@@ -36,6 +36,80 @@ Validator ── 单动作安全网 / 坐标转换 / 执行动作 / 记录结果
 
 Perception 每轮获取设备屏幕数据，并按需等待界面稳定。观察数据包括截图、UI 层级和屏幕宽高；OCR 配置可用时还会对截图运行 OCR，再将 OCR 文本与 XML 元素融合。OCR 失败时继续使用 XML，不会因此丢弃整个观察结果。
 
+### UI tree 是什么，怎样获取
+
+这里的 **UI tree（UI 层级树）不是截图的像素识别结果**，而是 Android 界面向 Accessibility/UiAutomator 暴露的语义节点树。一个节点通常对应一个 View、Compose 语义节点、系统窗口里的控件或容器；树的父子关系表示界面结构。它能提供文本、控件类型、屏幕边界及可访问性标志，但应用没有暴露的语义不一定能从树里恢复。
+
+Helper 后端的采集过程是：
+
+1. Android 上运行 Artemis Accessibility Service。它通过 Android `AccessibilityService` API 读取活动窗口及可访问窗口，不需要 root。
+2. Helper 枚举窗口（应用、弹窗、系统 UI、输入法键盘、分屏等），按窗口层级排序；必要时回退到活动窗口或焦点节点向上追溯根节点。
+3. 从 `AccessibilityNodeInfo` 遍历每个根节点的子节点，读取节点属性并复制成独立的 `A11yNode` 快照。为避免过期 Binder 节点和无限递归，遍历有深度/节点数上限；默认跳过不可见节点，并将边界裁剪到屏幕、窗口和可滚动父容器内。
+4. 同一快照可序列化为嵌套 XML、平面元素 JSON 或嵌套 tree JSON。主机通过 ADB forward 到设备 loopback Helper；Android 11+ 可在一次 snapshot 请求中同时取得 hierarchy 和截图。默认 `auto` 后端优先 Helper，必要时回退到 UIAutomator2；两者之后均转换成下游使用的元素字典。
+5. Python 侧解析、过滤、融合并格式化节点：原始层级保留父子结构，模型和动作定位主要使用扁平元素表。过滤会去掉屏幕外/太小/语义空洞节点，并处理滚动容器可见范围和冗余节点。
+
+示例：Helper 生成的 UIAutomator 风格 XML（属性因控件和 Android 版本而异）：
+
+```xml
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="com.example:id/search"
+        class="android.widget.EditText" package="com.example"
+        content-desc="" checkable="false" checked="false"
+        clickable="false" enabled="true" focusable="true" focused="false"
+        scrollable="false" long-clickable="true" password="false"
+        selected="false" bounds="[40,120][1040,220]"
+        editable="true" hint="Search settings" />
+</hierarchy>
+```
+
+Python 解析后的一个元素大致如下（实际键会因后端、属性是否存在而有所不同）：
+
+```json
+{
+  "text": "",
+  "resource-id": "com.example:id/search",
+  "class": "android.widget.EditText",
+  "package": "com.example",
+  "clickable": "false",
+  "enabled": "true",
+  "focusable": "true",
+  "editable": "true",
+  "hint": "Search settings",
+  "bounds": "[40,120][1040,220]",
+  "parsed_bounds": {"left": 40, "top": 120, "right": 1040, "bottom": 220}
+}
+```
+
+其中 `text` 是控件当前文本；`content-desc` 是面向无障碍/屏幕阅读器的描述；`resource-id`、`class`、`package` 帮助识别节点；`bounds` 是屏幕像素矩形；`clickable`、`focusable`、`editable`、`scrollable`、`long-clickable`、`checkable` 等表示系统报告的交互语义；`enabled`、`focused`、`selected`、`checked`、`password` 是状态信息。Helper 还可能提供 `error`、`state-description`、`pane-title`、`tooltip`、窗口信息和 `hint`。
+
+取决于数据入口，属性表现形式可能不同：Accessibility Helper 的 JSON 表示布尔值，UIAutomator XML 解析常见为 `"true"` / `"false"` 字符串；客户端会尽量归一化，让下游比较不依赖单一后端的编码格式。
+
+关键代码：[HierarchyDumper.java](../packages/artemis-accessibility-helper/app/src/main/java/com/artemis/helper/HierarchyDumper.java)、[A11yNode.java](../packages/artemis-accessibility-helper/app/src/main/java/com/artemis/helper/A11yNode.java)、[accessibility_client.py](../artemis/clients/accessibility_client.py)、[hierarchy.py](../artemis/drivers/android/hierarchy.py)、[ui_filter.py](../artemis/utils/ui_filter.py)。
+
+### OCR 识别了什么，如何与 UI tree 合并
+
+配置 OCR API 后，Perception 将截图发给 Google Vision `TEXT_DETECTION`。主机解析每个文本 annotation 的：
+
+- `text`：识别出的文本内容；
+- `position`：文字区域的多边形顶点坐标；融合时取其外接矩形作为 bounds。
+
+OCR 解析会跳过 Vision 返回的第一条整页全文 annotation，只保留逐段/逐行文字和顶点。当前这条管线没有把识别置信度输出到 `ocr_results`，因此后续索引和动作判断**不能把置信度当作可用信号**。如果 OCR 前裁掉状态栏，会把识别到的 y 坐标加回裁剪偏移，映射回原屏幕坐标。
+
+融合时，系统按 OCR 文本框与 XML 节点边界的重叠比例匹配，优先选更小、更具体的节点；巨大的非文本容器会被排除。同一 XML 节点下的相邻词会按行和水平间距合并，并与已有 XML 文本去重。**当前实现虽将未匹配的 OCR 文字收集到临时 `unmatched_ocrs`，但没有把它们追加到最终融合层级**，所以未匹配文字不会进入后续索引/模型清单。OCR 命中节点继承该 XML 节点的 class/resource id 和交互标志；当前没有可单独点击的 unmatched OCR 节点。
+
+例：融合后的模型可见列表可能包含 `[3] Hint: 'Search settings' | Bounds: [37,50][962,91]`；结构化 indexed element 会进一步保留像素中心、像素 bounds、文本、class、resource id 和 `is_ocr` 来源标记。文字索引代码见 [ocr_api.py](../artemis/utils/ocr_api.py)、[ocr_xml_fusion.py](../artemis/utils/ocr_xml_fusion.py)、[visualization.py](../artemis/utils/visualization.py) 和 [screen_index.py](../artemis/agents/explorer/screen_index.py)。
+
+### 怎样判断能否点击、输入或滚动
+
+**UI tree 的交互标志是判断依据之一，不是所有动作的硬门槛，也不是 Android 对动作结果的保证。**
+
+- **点按/长按**：索引编号解析到对应元素中心；如果是归一化坐标，则先转为像素点。系统可以从 `clickable`、`long-clickable`、`enabled`、边界及截图判断目标，但底层点按本质上是坐标手势，不要求 `clickable=true`（例如画布、自定义控件、图标可能由父节点或应用手势处理）。执行前单动作安全网会核对原目标是否仍存在、移动或被遮挡。Helper 的 `clickable` 字段是 Android 暴露的语义，不代表“仅 clickable 节点才允许发 tap”。
+- **输入文本**：Operator 工具需要文本和目标。最有依据的是 `editable=true` 的节点，常见类型为 `EditText`；空输入框可通过 `hint` 呈现，资源 ID、边界和截图也用于辅助识别。执行端将目标位置聚焦（若尚未聚焦则点按），然后清空或追加并输入文本。若传输层已聚焦输入框，也可省略底层 wire 目标；但 LLM 面向的 Operator schema 要求提供输入目标。输入动作是否成功仍取决于应用、输入法和字段状态。
+- **滚动**：`scrollable=true` 是滚动容器的重要线索；模型可按容器区域选择 swipe。swipe 是起终点手势，不要求某个节点声明 `clickable`。截图和新的层级观察用于确认滚动后的内容，而不是只凭 `scrollable` 标志认定滚动生效。
+- **OCR 文字**：只有被融合附着到 XML 节点并进入索引的 OCR 文本，才可作为索引目标使用。它能指出文字大致位置，但不能单独证明文字可交互；对其点按仍是“尝试在该区域发出坐标手势”，如果区域实际不可点，可能没有效果。要输入文本，应结合周围输入框的 UI tree 元数据、截图和目标区域判断，不能仅因 OCR 识别出文字就把它当输入框。未匹配 XML 的 OCR 文本按当前实现不会进入清单。
+
+Operator 的 Visible UI Elements 是便于选目标的清单，含文本/提示和边界，但不是“已确认可点击控件列表”。真正的坐标动作会通过实时状态、预执行安全网和后续观察降低误点风险；动态界面或应用没有提供完整 Accessibility 信息时，仍可能需要视觉判断和执行后验证。
+
 核心 State 字段如下：
 
 | 字段 | 主要内容 / 用途 |
