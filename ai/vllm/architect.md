@@ -57,7 +57,7 @@ curl http://localhost:8000/v1/completions -H 'Content-Type: application/json' -d
 
 服务端进程继续运行时，可以接收后续请求；客户端不需要直接导入 vLLM 或持有 GPU 上的模型对象。实际可用 API 取决于模型任务类型：生成模型支持文本生成接口，Embedding、分类、重排和语音模型有各自适用的接口。接口列表和模型适用范围见[在线服务文档](../serving/online_serving/README.md)。
 
-![离线 LLM 与在线 API Server 的入口关系](../assets/design/arch_overview/entrypoints.excalidraw.png)
+![离线 LLM 与在线 API Server 的入口关系](https://raw.githubusercontent.com/vllm-project/vllm/main/docs/assets/design/arch_overview/entrypoints.excalidraw.png)
 
 离线 `LLM` 和在线 API Server 是两种用户入口。它们的输入和输出适配方式不同，但最终都需要引擎完成调度、模型执行和结果处理。在线请求通常包含 HTTP 路由、请求校验、tokenization/多模态数据处理和流式响应；离线调用则由 Python API 接收输入并返回生成对象。
 
@@ -89,11 +89,11 @@ V1 将服务拆分为 API Server、Engine Core 和 GPU Worker；启用数据并�
 
 单节点 4 卡、`TP=4` 的典型服务包含 1 个 API Server、1 个 Engine Core 和 4 个 GPU Worker，共 6 个进程：
 
-![4 卡张量并行时的 V1 进程架构](../assets/design/arch_overview/v1_process_architecture_tp4.png)
+![4 卡张量并行时的 V1 进程架构](https://raw.githubusercontent.com/vllm-project/vllm/main/docs/assets/design/arch_overview/v1_process_architecture_tp4.png)
 
 8 卡、`TP=2, DP=4` 时，每个 DP rank 有一个 Engine Core 和两个 GPU Worker；API Server 默认随 DP 扩展为 4 个，并增加一个负责负载均衡/协同的 DP Coordinator，共 17 个进程：
 
-![TP=2、DP=4 时的 V1 进程架构](../assets/design/arch_overview/v1_process_architecture_tp2_dp4.png)
+![TP=2、DP=4 时的 V1 进程架构](https://raw.githubusercontent.com/vllm-project/vllm/main/docs/assets/design/arch_overview/v1_process_architecture_tp2_dp4.png)
 
 可用以下数量关系快速估算典型部署进程数。这里 `A` 是 API Server 数量，`DP` 是 data-parallel size，`TP` 和 `PP` 分别是 tensor/pipeline-parallel size，`N` 是 GPU Worker 数量：
 
@@ -175,7 +175,7 @@ vllm serve facebook/opt-125m \\
 
 Scheduler 运行在 Engine Core 中，主要职责是**决定本轮要推进哪些请求、为每个请求安排多少 token，并协调所需 KV Cache block**。它不运行模型 forward；真正的设备计算由 Worker 中的 Model Runner 执行。
 
-![Engine 的输入处理、调度、模型执行和输出处理关系](../assets/design/arch_overview/llm_engine.excalidraw.png)
+![Engine 的输入处理、调度、模型执行和输出处理关系](https://raw.githubusercontent.com/vllm-project/vllm/main/docs/assets/design/arch_overview/llm_engine.excalidraw.png)
 
 V1 Scheduler 使用 token budget 驱动连续调度：每一步在 `max_num_batched_tokens` 限制内组合运行中的请求和等待请求，而不是把系统切成互不相干的“先 prefill、再 decode”两个阶段。Scheduler 跟踪每个请求已计算的 token 数，给它安排尚未计算的部分；因此同一调度循环可以处理 chunked prefill、prefix caching 和 speculative decoding 等场景。实现入口是 [scheduler.py](../../vllm/v1/core/sched/scheduler.py)。
 
@@ -306,7 +306,7 @@ tests/
 
 ## Model 类层次与配置传递
 
-![VllmConfig、Executor、Worker、Model Runner 与 Model 的层次关系](../assets/design/hierarchy.png)
+![VllmConfig、Executor、Worker、Model Runner 与 Model 的层次关系](https://raw.githubusercontent.com/vllm-project/vllm/main/docs/assets/design/hierarchy.png)
 
 vLLM 支持大量模型架构，因此上层执行框架不应为每个模型编写一套独立启动流程。模型、Worker、Runner 等组件通过配置对象共享初始化所需的信息，模型类再提供统一的构造约定。架构上的关键点有：
 
