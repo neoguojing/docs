@@ -237,6 +237,41 @@ Model input -> Decoder forward -> sampler -> output
 
 架构资料里的 `LLMEngine` / `AsyncLLMEngine` 图描述的是上层引擎 API 及其输入处理、调度、模型执行和输出处理职责。V1 运行时则把这些职责进一步拆分到 API Server、Engine Core 和 Worker 等进程中；阅读实现时应以 V1 的具体调用路径为准，不要把逻辑对象图当作进程部署图。
 
+### 为什么要分层
+
+这些名称首先代表**职责边界**，不代表每一层都要单独启动一个进程。将服务、调度、设备执行和模型结构拆开，是为了让每一层只处理自己最了解的问题：API 协议变化不需要改模型层；调度策略变化不需要重写 GPU kernel；同一个模型实现也能由不同 executor 放到单卡、多卡或多节点执行。
+
+| 抽象层 | 一次文本生成请求中做什么 | 为什么单独抽象 | 是否一定是独立进程 |
+| --- | --- | --- | --- |
+| API Server / 离线 API | 接收 HTTP 请求或 Python 调用，校验参数并组织 prompt | 隔离客户端协议和 Python API；核心引擎不必知道请求来自哪种接口 | 否；离线 API 在调用方进程中，API Server 是服务进程中的组件 |
+| Engine Core | 跟踪请求状态，调用 Scheduler，管理 KV Cache，并决定何时结束请求 | 集中管理并发请求和每一步调度；不把业务协议或设备细节塞进调度循环 | 在线服务通常单独运行；离线模式取决于引擎配置 |
+| Executor | 接收本步执行计划，把调用分发给一个或多个 Worker，并收集结果 | 隐藏本地调用、multiprocessing、Ray 等执行方式差异，让 Engine Core 使用统一执行接口 | Executor 是对象/策略；它可以在当前进程内工作，也可以管理其他进程 |
+| Worker | 绑定执行 rank 和设备，初始化 CUDA/分布式通信，持有该 rank 的运行状态 | 把设备资源、rank 和模型运行环境放在设备执行边界内；便于扩展到多个 GPU | 由 executor 决定；`UniProcExecutor` 可不创建独立 Worker 子进程，多进程 executor 会创建 |
+| Model Runner | 把调度计划转成设备张量、位置、KV slot 和注意力元数据，调用模型并处理运行时执行 | 模型 forward 不应重复实现请求 batching、KV Cache 地址和设备执行细节；Runner 统一承接这些运行时工作 | 通常是 Worker 内的对象，不是独立进程 |
+| Model | 实现模型层、权重参数、模型 forward 和模型专属输入/输出逻辑 | 让不同 Transformer/MoE/多模态架构复用相同的调度和设备运行框架 | 通常是 Model Runner 所在执行环境中的对象，不是独立进程 |
+
+### 用一次 OPT 生成串起各层
+
+例如客户端提交 `The capital of France is`，生成最多 16 个 token：
+
+```text
+HTTP client
+    -> API Server: 校验请求，按模型 tokenizer 处理 prompt
+    -> Engine Core: 建立 request 状态
+    -> Scheduler: 选择本轮 token，并安排 KV Cache block / slot
+    -> Executor: 将 SchedulerOutput 送到执行 rank
+    -> Worker: 确保设备与分布式环境已初始化
+    -> Model Runner: 准备 input_ids、positions、注意力元数据和 KV 映射
+    -> OPT model: 执行模型层，产生 hidden states / logits
+    -> sampler: 选择下一个 token
+    -> Engine Core: 更新 request 和已生成 token，判断是否继续
+    -> API Server: 将结果编码为响应；流式请求则逐步返回
+```
+
+每生成一个 token，Engine Core 都可能再次调度该请求与其他请求的工作。Scheduler 负责“这一步做什么”，Executor/Worker 负责“在哪里执行”，Model Runner 负责“怎样把这一步准备成模型可执行的张量”，Model 负责“按架构计算结果”。对于离线 `LLM.generate()`，入口和返回形式变为 Python API，但这些核心职责仍然适用。
+
+单卡下，`world_size=1` 常使用 `UniProcExecutor`，它可在当前进程内通过 Worker wrapper 调用设备执行；“Worker”仍是职责对象，但不一定对应额外 OS 进程。TP/PP 等多 rank 配置通常使用 MP、Ray 或其他分布式 executor 创建/管理多个 Worker 进程或 actor。多个 Worker 是为了共同组成模型执行组：TP 分摊张量/权重并协同完成同一次 forward，PP 将不同模型层放在不同 stage；它们不是简单复制多个完整模型来增加 HTTP 并发。
+
 从代码目录看，主模块可以压缩成下面这张图。箭头表示主要依赖/数据方向，不是严格的 Python import 图：
 
 ```text
@@ -282,18 +317,37 @@ vLLM 支持大量模型架构，因此上层执行框架不应为每个模型编
 
 ### 从模型名称到运行模型
 
-启动时，模型名称（本地目录或 Hugging Face ID）只是解析入口。vLLM 通常先读取模型配置，检查 `model_type` / `architectures` 并在模型注册表中选择实现；随后加载 tokenizer 和权重，构造 `VllmConfig`，再由 Worker/Model Runner 初始化设备侧模型。自定义模型代码只会在显式启用相应信任选项时执行。
+以已支持的 `facebook/opt-125m` 为例，Hugging Face 提供模型仓库格式的配置、Tokenizer 和权重；vLLM 在运行时将它们转换为自己的模型执行实例。模型 ID 是解析入口，不意味着 vLLM 一定直接把 `transformers.AutoModelForCausalLM` 当作执行实现：默认自动选择时会根据模型配置里的 `architectures` 查询 Model Registry，通常命中 vLLM 自己的优化实现；显式选择 Transformers 实现或自动回退时，解析路径也可以使用 Transformers 模型类。
 
 ```text
-Model path / Hugging Face ID
-CONFIG: config.json -> architecture -> Model Registry -> model class
-TOKENIZER: tokenizer files -> tokenizer / processor
-WEIGHTS: model files -> loader -> shard / quantize
-RUNTIME: VllmConfig + parallel config -> Worker / Model Runner
-RUNTIME: model class + loaded weights -> model instance
+Model ID / local model directory
+    -> config.json: read model_type, architectures, dimensions, attention settings
+    -> Model Registry: resolve a vLLM model class (or configured Transformers path)
+    -> VllmConfig: combine model, device, cache, parallel and compilation settings
+    -> Tokenizer / Processor: prepare text or model-specific multimodal inputs
+    -> model loader: read checkpoint tensors and map names to model parameters
+    -> Worker: initialize device and parallel rank
+    -> Model Runner: construct the runtime model and load its weights
+    -> request execution: prepare batches, KV Cache metadata and model inputs
+    -> model forward -> logits / embeddings -> sampling or task-specific output
 ```
 
-这条路径解释了为什么“支持一个模型”不仅是添加一个 `nn.Module`：还可能需要配置兼容、架构注册、权重名称映射、Tokenizer/Processor 适配、并行切分和行为测试。具体模型贡献流程见[开发贡献导读](development.md)及仓库的模型开发指南。
+大致分为三个阶段：
+
+1. **识别模型**：从本地目录或 Hugging Face Hub 读取配置；`model_type` 描述配置类型，`architectures` 用于识别模型架构。Registry 根据架构名、实现选择和兼容规则解析模型类；不支持的架构会在这里失败，而不是等到 forward 才发现。
+2. **准备输入与权重**：加载 Tokenizer（聊天模型还可能需要 chat template）；多模态模型还要加载或实现对应 Processor。Model loader 读取 checkpoint，并由模型的权重加载逻辑把 Hugging Face 参数名映射到 vLLM 参数。分布式模型可在各 rank 上按需加载对应权重分片；量化配置也会影响参数/层的构造和加载。
+3. **运行请求**：Worker 初始化设备及并行通信，Model Runner 准备请求 batch、positions、KV Cache slots 和 attention metadata，再调用已经加载权重的模型实例。生成任务将 logits 交给 sampler 选 token；池化模型则按任务返回 embedding、分类或打分结果。
+
+对已经支持的模型，用户通常只需选择正确的模型 ID 和任务入口，无需编写模型代码。若模型未被支持，接入 vLLM 通常需要完成下面这些工作（具体取决于架构，不是每项都要新增代码）：
+
+- **核对架构和任务**：检查 `config.json` 中的 `architectures`，确认目标任务，并先查[已支持模型列表](../models/supported_models.md)及 Registry 是否已有兼容实现。
+- **实现 vLLM 模型结构**：若没有可复用实现，在 `vllm/model_executor/models/` 编写模型类；使用 `VllmConfig` 和模块 `prefix` 初始化，按 vLLM 的 flattened token 输入约定实现 forward，尽量复用 `model_executor/layers/` 中的注意力、线性层和并行层。
+- **映射权重**：实现/配置 Hugging Face checkpoint 名称到 vLLM 参数的映射，处理 fused QKV、合并线性层、切分权重等布局差异，确保 checkpoint 可正确加载。
+- **注册架构**：把 architecture 名称接入 Model Registry；若在仓库外维护，可通过模型插件注册，避免直接修改核心仓库。
+- **补齐输入和并行适配**：仅在模型确有特殊需求时增加 config、Tokenizer/chat template 或多模态 Processor 适配；需要多 GPU 时实现并验证 TP/PP 切分，量化支持也需针对相应层和权重格式处理。
+- **验证行为**：覆盖模型初始化、权重加载、代表性输入输出和目标并行路径；模型贡献应遵循[模型开发指南](../contributing/model/basic.md)、[注册指南](../contributing/model/registration.md)和[模型测试要求](../contributing/model/tests.md)。
+
+因此，“支持一个 Hugging Face 模型”不等于只下载权重或简单包装一个 Transformers 类。vLLM 需要理解模型配置、架构、权重布局和输入契约，并把它们接到统一的 Worker/Model Runner 执行路径上。
 
 ## KV Cache 与前缀复用
 
