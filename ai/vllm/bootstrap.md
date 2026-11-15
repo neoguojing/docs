@@ -4,6 +4,254 @@
 
 **一句话总纲**：vLLM 的启动不是「加载模型」，而是在构建一个高性能推理运行时——依次完成 配置模型 → 选执行后端 → 建并行环境 → 建结构 → 加载/量化权重 → 规划 CPU/GPU 权重 → 多模态 profiling → 编译计算图 → 捕获 CUDA Graph → 规划 KV Cache → Warmup，最终 Engine Ready。
 
+## 断点测试
+
+### 问题：
+- vlm --omni 什么意思
+- vllm bench 做什么？如何做
+
+### 代码点：
+#### /home/neo/workspace/vllm/vllm/entrypoints/cli/main.py  入口，注册以下cmd
+vllm.entrypoints.cli.openai,
+vllm.entrypoints.cli.serve,
+vllm.entrypoints.cli.launch,
+vllm.entrypoints.cli.benchmark.main,
+vllm.entrypoints.cli.collect_env,
+vllm.entrypoints.cli.run_batch,
+
+几个关键点：
+每个模块的注册：cmd_init() 返回CLISubcommand 对象
+CLISubcommand：注册以下函数：
+cmd() validate subparser_init（用于解析子命令参数）
+
+#### /home/neo/workspace/vllm/vllm/entrypoints/cli/serve.py
+ServeSubcommand.cmd()
+```
+[ 用户执行 `vllm serve [model] [options]` ]
+                   │
+                   ▼
+       参数解析与校验 (validate_parsed_serve_args)
+                   │
+                   ▼
+         命令行位置参数与配置对齐
+                   │
+                   ├─► 【条件 1】是否配置了 `--grpc`？
+                   │      ├── Yes ──► 启动 gRPC 异步服务 (`serve_grpc`)
+                   │      └── No  ──► 继续向下判断
+                   │
+                   ├─► 【条件 2】是否为 `--headless` 模式（或 `api_server_count < 1`）？
+                   │      ├── Yes ──► 进入【无头/Worker 模式】(`run_headless`)
+                   │      └── No  ──► 继续向下判断
+                   │
+                   ├─► 【条件 3】是否启用多端口外部负载均衡 (`--data-parallel-multi-port-external-lb`)？
+                   │      ├── Yes ──► 进入【DP 监督者模式】(`run_dp_supervisor`)
+                   │      └── No  ──► 继续向下判断
+                   │
+                   ├─► 【条件 4】是否满足 `api_server_count > 1` 或启用 Rust 前端？
+                   │      ├── Yes ──► 进入【多 API Server 模式】(`run_multi_api_server`)
+                   │      │            (初始化 ZMQ 通信与多进程/Rust 前端管理器)
+                   │      │
+                   │      └── No  ──► 【默认分支：单进程标准服务模式】
+                   │                           │
+                   │                           ▼
+                   │                   启动单进程 FastAPI 服务 (`run_server`)
+                   │
+                   ▼
+         【生命周期管理与优雅退出】
+         (捕获 SIGTERM/SIGINT 信号，安全释放引擎与子进程)
+```
+```
+             Supervisor
+                  |
+        +---------+---------+
+        |         |         |
+        v         v         v
+     Server 0  Server 1  Server 2  Server 3
+     Port 8000 Port 8001 Port 8002 Port 8003
+        |         |         |         |
+        v         v         v         v
+     Rank 0    Rank 1    Rank 2    Rank 3
+
+特点：
+- 每个 Rank 有独立 API Server。
+- 每个 API Server 监听独立端口。
+- Supervisor 负责启动这些 Server。
+- 外部可以直接访问对应端口，或者通过外部负载均衡器访问。
+适合需要独立暴露每个 DP Rank 的场景。
+
+                 Client
+                    |
+                    v
+          +-------------------+
+          |   Rust Frontend   |
+          |                   |
+          | Thread 1          |
+          | Thread 2          |
+          | Thread 3          |
+          +-------------------+
+                    |
+                    v
+                DP Engine
+              /    |    \
+          Rank 0 Rank 1 Rank 2
+原因：
+
+Rust Frontend 本身采用多线程架构，不需要通过启动多个 API Server 进程来实现并发处理。
+
+注意：
+
+这里的 1 表示一个 Rust Frontend 实例，而不是只能处理一个请求。
+
+                   Client
+                      |
+                      v
+              Nginx / Envoy / LB
+                      |
+          +-----------+-----------+
+          |           |           |
+          v           v           v
+       Server 0    Server 1    Server 2
+          |           |           |
+          v           v           v
+        Rank 0      Rank 1      Rank 2
+这里的 1 指每个本地 DP Rank 配置一个 API Server。
+
+外部 LB 负责：
+- 请求分发。
+- 负载均衡。
+- 健康检查。
+- 故障转移。
+API Server 不需要再承担内部的 DP 负载均衡职责。
+
+                  Client
+                     |
+                     v
+               External LB
+                     |
+             +-------+-------+
+             |               |
+             v               v
+          Node 0           Node 1
+             |               |
+       Internal LB      Internal LB
+             |               |
+       +-----+-----+     +---+-----+
+       |     |     |     |   |     |
+       v     v     v     v   v     v
+      API   API   API   API API   API
+       |     |     |     |   |     |
+       v     v     v     v   v     v
+      DP0   DP1   DP2   DP3 DP4   DP5
+分发分成两级：
+1. External LB：把请求分发到不同 Node。
+2. Internal LB：在 Node 内部分发到本地 DP Rank。
+这种模式适合多节点 DP 部署。
+
+                  Client
+                     |
+                     v
+               API Frontend
+                     |
+                Internal LB
+                     |
+          +----------+----------+
+          |          |          |
+          v          v          v
+        Rank 0     Rank 1     Rank 2     Rank 3
+其核心区别是：
+- 不依赖外部 LB 进行 DP 分发。
+- 由 vLLM 内部机制负责 DP 请求分发。
+- API Server 数量按照完整 DP 规模设置。
+```
+#### /home/neo/workspace/vllm/vllm/entrypoints/launchers/api_server/entry.py
+run_server 函数入口
+EngineClient协议类，作为http后端，和底层engine通信，核心函数入generate，encode等
+class AsyncLLM(EngineClient): AsyncLLM继承了该类
+在 forkserver 启动时，先把 vllm 的核心推理引擎模块加载到内存里
+好处：以后真正开子进程时，这些大模块已经加载好了，子进程可以直接拿来用，不用重新导入
+    multiprocessing.set_forkserver_preload(["vllm.v1.engine.async_llm"])
+AsyncLLM.from_vllm_config 创建async_llm
+init_app_state 将各种变量挂载在fastapi服务器中，方便使用
+engine = request.app.state.engine_client
+
+
+
+```
+运行 `run_server(args)`
+                           │
+                           ├─► 1. 注册 SIGTERM 终端信号拦截
+                           ├─► 2. 调用 `setup_server()` 绑定 Socket 监听端口
+                           │
+                           ▼
+             进入 `run_server_worker()` 异步上下文
+                           │
+                           ├─► 检查并导入插件 (Tool / Reasoning Parser)
+                           │
+                           ▼
+               构建异步引擎客户端 (`build_async_engine_client`)
+               │ (检查 forkserver 优化，实例化 `AsyncLLM`)
+                           │
+                           ▼
+               构建 FastAPI 应用与服务 (`build_and_serve`)
+               │  ├── 调用 `build_app()` 创建 FastAPI 实例
+               │  ├── 调用 `init_app_state()` 将 `engine_client` 挂载到 `app.state`
+               │  └── 调用 `serve_http()` 启动 Uvicorn HTTP 服务器
+                           │
+                           ▼
+         【HTTP 服务运行中】 (接收 OpenAI 兼容请求，通过 `engine_client` 调用大模型)
+                           │
+                           ▼
+               【优雅退出与资源清理】 (收到停止信号)
+                ├── 等待 `shutdown_task` 完成
+                └── 安全关闭 `async_llm` 引擎与 Socket 连接
+
+async_llm = AsyncLLM.from_vllm_config(
+            vllm_config=vllm_config,
+            usage_context=usage_context,
+            enable_log_requests=engine_args.enable_log_requests,
+            aggregate_engine_logging=engine_args.aggregate_engine_logging,
+            disable_log_stats=engine_args.disable_log_stats,
+            client_addresses=client_config,
+            client_count=client_count,
+            client_index=client_index,
+        )
+```
+#### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
+启动http服务
+```
+[ 调用 `serve_http()` 启动服务 ]
+                   │
+                   ├─► 1. 遍历并打印 FastAPI 所有注册的路由和方法
+                   ├─► 2. 配置 Uvicorn 参数 (如 H11 协议头大小、并发限制等)
+                   ├─► 3. 实例化 `NoSignalServer` (接管底层服务，禁用 Uvicorn 自带信号)
+                   │
+                   ▼
+       初始化并创建两大核心异步任务 (`loop.create_task`)
+                   │
+                   ├─► 1. `watchdog_loop` (后台看门狗)
+                   │      └── 每隔 5 秒检查一次引擎状态，若引擎意外崩溃则触发退出
+                   │
+                   └─► 2. `server_task` (Uvicorn 服务任务)
+                          └── 在绑定的 Socket 上开始监听并处理客户端的 HTTP 请求
+                   │
+                   ▼
+         注册系统信号监听 (`SIGINT` / `SIGTERM`)
+                   │
+                   ▼
+         【HTTP 服务正常运行中 ⇄ 持续响应请求】
+                   │
+                   ├─► 收到中断信号 (如用户按下 `Ctrl+C` 或收到 `SIGTERM`)
+                   │         │
+                   │         ▼
+                   │   触发 `handle_shutdown()` 优雅退出流程 (Graceful Shutdown)
+                   │         ├── ① 停止大模型引擎客户端 (`engine_client.shutdown`)
+                   │         ├── ② 取消 `server_task` 和 `watchdog_task`
+                   │         └── ③ 释放网络 Socket 资源
+                   │
+                   └─► 异常捕获与强制清理
+                          └── 确保最终安全关闭 Uvicorn 服务并退出进程
+```
+
 ## 一、启动全景流程
 
 主线来自真实启动日志（vLLM V1 Engine + Gemma 多模态 + AWQ-4bit + Prefetch Offload + Triton Attention + torch.compile + CUDA Graph + KV Cache）：
