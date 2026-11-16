@@ -255,7 +255,7 @@ self.engine_core = EngineCoreClient.make_async_mp_client(
                            │    └── 启动前端多模态预热 (`_start_mm_warmup()`)
                            │
                            └─► 【内部管理模式】
-                                ├── 获取默认 ZMQ 引擎通信地址并解析占位符
+                                ├── 获取默认 ZMQ 引擎通信地址并解析占位符: ipc:///tmp/%%%
                                 ├── 调用 `launch_core_engines()` 拉起后台多进程 EngineCore
                                 └── 启动前端多模态预热 (`_start_mm_warmup()`)
                            │
@@ -279,6 +279,74 @@ self.engine_core = EngineCoreClient.make_async_mp_client(
                            ├─► 调用 `start_engine_core_monitor()` 监控后台核心进程状态
                            └─► 【异常保护】设置 `success = True`；若初始化中途失败，在 `finally` 触发清理
 ```
+
+#### /home/neo/workspace/vllm/vllm/v1/engine/utils.py 
+- launch_core_engines：核心启动函数
+- CoreEngineProcManager__init__ 创建进程
+- EngineCoreProc.run_engine_core： 新的进程的入口
+- 
+```
+local_engine_manager = CoreEngineProcManager(
+                vllm_config=vllm_config,
+                executor_class=executor_class,
+                log_stats=log_stats,
+                handshake_address=handshake_address,
+                client_handshake_address=client_handshake_address,
+                local_client=True,
+                local_engine_count=local_engine_count,
+                start_index=dp_rank,
+                local_start_index=local_start_index or 0,
+                tensor_queue=tensor_queue,
+            )
+`launch_core_engines(vllm_config, ...)` 启动流程
+                           │
+                           ├─► 1. 检查多模态配置，必要时创建跨进程 `tensor_queue` (torch_shm)
+                           ├─► 2. 检查并启动 `DPCoordinator` (仅当在线 DP 且 `dp_rank == 0` 时)
+                           │
+                           ▼
+             判断数据并行后端类型 (`parallel_config.data_parallel_backend`)
+                           │
+                           ├─► 【Ray 后端】
+                           │    ├── 实例化 `CoreEngineActorManager`
+                           │    └── `yield CoreEngineLaunch` 并返回
+                           │
+                           └─► 【原生多进程后端】
+                                ├── 根据 `offline_mode` 与 `dp_rank` 计算需要握手的引擎列表 (`engines_to_handshake`)
+                                ├── 计算 `handshake_local_only` 与生成 ZMQ 握手地址 (支持 TCP 或 IPC)
+                                └── 创建 ZMQ 握手 ROUTER Socket (`handshake_socket`)
+                           │
+                           ▼
+             拉起本地引擎并进入上下文挂载
+                           │
+                           ├─► 若 `local_engine_count > 0`：实例化 `CoreEngineProcManager` (拉起子进程)
+                           ├─► 封装 `CoreEngineLaunch` 并执行 `yield launch` (将控制权交回调用方)
+                           └─► 执行 `wait_for_engine_startup()` 阻塞等待所有后台引擎完成握手连接
+
+`CoreEngineProcManager.__init__(...)` 执行流程
+                           │
+                           ├─► 1. 获取多进程上下文并组装通用参数 (`common_kwargs`)
+                           ├─► 2. 根据 `local_engine_count` 循环实例化 `context.Process` 
+                           │   (目标函数: `EngineCoreProc.run_engine_core`)
+                           ├─► 3. 注册 `weakref.finalize` 资源清理终结器
+                           │
+                           ▼
+             遍历并逐个启动后台引擎子进程
+                           │
+                           ├─► 检查并配置 DP 物理 GPU 映射关系 (`set_assigned_physical_gpu_ids_for_dp_rank`)
+                           ├─► 通过 `numa_utils.configure_subprocess` 配置 NUMA 亲和性
+                           └─► 调用 `proc.start()` 真正拉起子进程
+                           │
+                           ▼
+             【异常保护检查 (finally)】
+                           │
+                           ├─► 检查是否有进程启动失败 (`self.finished_procs()`)
+                           └─► 若有失败：立即调用 `self.shutdown()` 清理并终止所有已拉起的进程
+```
+
+#### /home/neo/workspace/vllm/vllm/v1/engine/core.py
+- run_engine_core
+- EngineCoreProc的初始化函数和EngineCore的初始化函数
+- engine_core.run_busy_loop()：进程进入循环
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
 启动http服务
 ```
