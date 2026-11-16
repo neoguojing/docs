@@ -236,9 +236,39 @@ self.engine_core = EngineCoreClient.make_async_mp_client(
 ```
 #### /home/neo/workspace/vllm/vllm/v1/engine/core_client.py
 - make_async_mp_client：创建AsyncMPClient 对象
+- 调用MPClient._init_:
 - AsyncMPClient：
 - - 创建output——queue
-  - 
+
+```
+graph TD
+    A[开始初始化 MPClient] --> B[初始化 ZMQ Context & BackgroundResources]
+    B --> C{是否提供 client_addresses?}
+    
+    C -- 是 (外部管理引擎) --> D[绑定传入的 input 和 output ZMQ Socket]
+    D --> E[通过 pipe 回传实际监听地址]
+    E --> F[启动多模态预热 _start_mm_warmup]
+    
+    C -- 否 (内部管理引擎) --> G[获取 ZMQ 默认地址]
+    G --> H[绑定 Socket 并解析 LAST_ENDPOINT]
+    H --> I[通过 launch_core_engines 启动后台 Engine 进程]
+    I --> F
+    
+    F --> J[初始化 Msgpack 编解码器 & TensorIpcSender]
+    J --> K[计算数据并行 Rank 范围与 Core Engines 身份]
+    K --> L[循环轮询等待所有 Engine 发送 Ready 信号]
+    
+    L --> M{是否超时?}
+    M -- 是 --> N[抛出 TimeoutError 异常]
+    M -- 否 --> O[收到所有 Ready 响应]
+    
+    O --> P[启动后台 Engine Core 进程监控]
+    P --> Q[初始化成功 (success = True)]
+    
+    N --> R[触发 finally: success 为 False 则调用 _finalizer 清理资源]
+    Q --> S[结束]
+    R --> S
+```
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
 启动http服务
 ```
