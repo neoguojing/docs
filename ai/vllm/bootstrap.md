@@ -217,6 +217,23 @@ async_llm = AsyncLLM.from_vllm_config(
             client_index=client_index,
         )
 ```
+
+#### /home/neo/workspace/vllm/vllm/v1/engine/async_llm.py
+- 在init的函数中初始化类
+- 如下创建engine_core client用于和其他通信
+- 
+```
+self.engine_core = EngineCoreClient.make_async_mp_client(
+            vllm_config=vllm_config,
+            executor_class=executor_class,
+            log_stats=self.log_stats,
+            client_addresses=client_addresses,
+            client_count=client_count,
+            client_index=client_index,
+            renderer=renderer,
+        )
+```
+
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
 启动http服务
 ```
