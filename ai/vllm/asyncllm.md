@@ -2,6 +2,11 @@
 
 已将这部分补充为 **请求接入控制、引擎运行控制、缓存管理、模型管理、分布式控制与故障处理** 六类，并纳入 AsyncLLM 文档。特别区分 AsyncLLM 的接口职责与底层执行职责。
 
+### 
+InputProcessor 机制
+OutputProcessor 如何实现
+
+
 # vLLM V1：AsyncLLM 类源码分析
 
 ## 1. AsyncLLM 的定位与整体架构
