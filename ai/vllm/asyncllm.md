@@ -6,6 +6,7 @@
 - InputProcessor 机制
 - OutputProcessor 如何实现
 - EngineCoreClient.make_async_mp_client 启动创建和启动engineCore
+-  asyncio.get_running_loop() self._run_output_handler()： 启动输出检测循环
 
 
 # vLLM V1：AsyncLLM 类源码分析
