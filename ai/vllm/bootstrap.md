@@ -241,33 +241,43 @@ self.engine_core = EngineCoreClient.make_async_mp_client(
 - - 创建output——queue
 
 ```
-graph TD
-    A[开始初始化 MPClient] --> B[初始化 ZMQ Context & BackgroundResources]
-    B --> C{是否提供 client_addresses?}
-    
-    C -- 是 (外部管理引擎) --> D[绑定传入的 input 和 output ZMQ Socket]
-    D --> E[通过 pipe 回传实际监听地址]
-    E --> F[启动多模态预热 _start_mm_warmup]
-    
-    C -- 否 (内部管理引擎) --> G[获取 ZMQ 默认地址]
-    G --> H[绑定 Socket 并解析 LAST_ENDPOINT]
-    H --> I[通过 launch_core_engines 启动后台 Engine 进程]
-    I --> F
-    
-    F --> J[初始化 Msgpack 编解码器 & TensorIpcSender]
-    J --> K[计算数据并行 Rank 范围与 Core Engines 身份]
-    K --> L[循环轮询等待所有 Engine 发送 Ready 信号]
-    
-    L --> M{是否超时?}
-    M -- 是 --> N[抛出 TimeoutError 异常]
-    M -- 否 --> O[收到所有 Ready 响应]
-    
-    O --> P[启动后台 Engine Core 进程监控]
-    P --> Q[初始化成功 (success = True)]
-    
-    N --> R[触发 finally: success 为 False 则调用 _finalizer 清理资源]
-    Q --> S[结束]
-    R --> S
+`MPClient.__init__(...)` 初始化
+                           │
+                           ├─► 1. 初始化 ZMQ 上下文与资源管理器 (`BackgroundResources`, `weakref.finalize`)
+                           ├─► 2. 检查多进程并行配置 (`enable_elastic_ep`) 决定是否启用 socket handover
+                           │
+                           ▼
+             判断引擎管理模式 (`client_addresses`)
+                           │
+                           ├─► 【外部管理模式】
+                           │    ├── 绑定传入的 `input_address` (ROUTER) 与 `output_address` (PULL)
+                           │    ├── 通过管道回传实际绑定的 ZMQ 监听地址
+                           │    └── 启动前端多模态预热 (`_start_mm_warmup()`)
+                           │
+                           └─► 【内部管理模式】
+                                ├── 获取默认 ZMQ 引擎通信地址并解析占位符
+                                ├── 调用 `launch_core_engines()` 拉起后台多进程 EngineCore
+                                └── 启动前端多模态预热 (`_start_mm_warmup()`)
+                           │
+                           ▼
+             初始化编解码器与多进程 IPC
+                           │
+                           ├─► 实例化 `MsgpackEncoder` 与 `MsgpackDecoder`
+                           ├─► 根据多模态配置初始化 `TensorIpcSender` (支持 torch_shm 共享内存)
+                           └─► 计算数据并行 Rank 范围与 Core Engines 身份标识 (`core_engines`)
+                           │
+                           ▼
+           【阻塞等待引擎就绪握手】
+                           │
+                           ├─► 轮询 `sync_input_socket.poll()` 等待所有后台 Engine 发送 Ready 信号
+                           │   (受 `VLLM_ENGINE_READY_TIMEOUT_S` 控制，超时则抛出 `TimeoutError`)
+                           └─► 收到就绪响应并调用 `_apply_ready_response()`
+                           │
+                           ▼
+             启动引擎监控与收尾清理
+                           │
+                           ├─► 调用 `start_engine_core_monitor()` 监控后台核心进程状态
+                           └─► 【异常保护】设置 `success = True`；若初始化中途失败，在 `finally` 触发清理
 ```
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
 启动http服务
