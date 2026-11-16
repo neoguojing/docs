@@ -1,687 +1,963 @@
-# **vLLM Core Engine Process Manager：架构、类图与关键流程**
+# **vLLM EngineCoreClient 源码解析**
 
-这份代码的核心职责是：**管理 EngineCore 的创建、进程调度、启动握手、就绪检测、故障监控和资源回收。**
+这份代码的核心是 vLLM V1 的 **EngineCoreClient 通信与管理层**。
 
-它位于 vLLM V1 Engine 的进程管理层，主要解决一个问题：
+它不是模型推理的执行主体，而是连接前端 API/AsyncLLM 与后台 EngineCore 的中间层，负责：
 
-> API Frontend 如何找到并连接多个 EngineCore？如何保证这些 EngineCore 正确启动、分配 GPU、完成初始化，并在故障时及时处理？
+1. EngineCore 的创建与进程管理。
+2. 请求从前端发送到 EngineCore。
+3. EngineCore 推理结果返回前端。
+4. 同步、异步、多进程通信适配。
+5. Data Parallel（DP）EngineCore 的请求路由与负载均衡。
+6. Utility RPC、引擎状态管理、故障监控和资源清理。
 
-代码最重要的入口：
+**阅读这份代码时，最重要的是抓住一条主线：**
 
-- `launch_core_engines()`：整体启动入口。
-- `CoreEngineProcManager`：Python multiprocessing 进程管理。
-- `CoreEngineActorManager`：Ray Actor 管理。
-- `wait_for_engine_startup()`：启动握手与 READY 屏障。
-- `get_engine_zmq_addresses()`：生成 Engine 与 Frontend 的通信地址。
+`AsyncLLM → AsyncMPClient → ZMQ → EngineCoreProc → EngineCore`
 
-## **1. 整体架构**
+其中，AsyncMPClient 负责异步通信，EngineCoreProc 负责后台进程运行，EngineCore 才负责调度和推理。
 
-这份代码可以分成五个子系统。
+粘贴的文本 (1)(20261115-152447).txt
 
-**Frontend / API Server**
+## **一、整体架构与类图**
 
-AsyncLLM / LLMEngine / API Server
+### **1.1 类继承关系**
 
-请求入口、ZMQ Client、接收 Engine 地址
+这份源码采用抽象接口 + 多种通信实现 + DP 扩展的设计。
 
-ZMQ Handshake / HELLO / READY
+\#chatgpt-mermaid-\_r_220\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_220\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_220\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_220\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_220\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_220\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_220\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_220\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_220\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_220\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_220\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_220\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_220\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_220\_ p{margin:0;}#chatgpt-mermaid-\_r_220\_ g.classGroup text{fill:rgb(83, 154, 248);stroke:none;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:10px;}#chatgpt-mermaid-\_r_220\_ g.classGroup text .title{font-weight:bolder;}#chatgpt-mermaid-\_r_220\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_220\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_220\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .nodeLabel,#chatgpt-mermaid-\_r_220\_ .edgeLabel{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .noteLabel .nodeLabel,#chatgpt-mermaid-\_r_220\_ .noteLabel .edgeLabel{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .edgeLabel .label rect{fill:rgb(222, 234, 251);}#chatgpt-mermaid-\_r_220\_ .label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .labelBkg{background:rgb(222, 234, 251);}#chatgpt-mermaid-\_r_220\_ .edgeLabel .label span{background:rgb(222, 234, 251);}#chatgpt-mermaid-\_r_220\_ .classTitle{font-weight:bolder;}#chatgpt-mermaid-\_r_220\_ .node rect,#chatgpt-mermaid-\_r_220\_ .node circle,#chatgpt-mermaid-\_r_220\_ .node ellipse,#chatgpt-mermaid-\_r_220\_ .node polygon,#chatgpt-mermaid-\_r_220\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1;}#chatgpt-mermaid-\_r_220\_ .divider{stroke:rgb(83, 154, 248);stroke-width:1;}#chatgpt-mermaid-\_r_220\_ g.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_220\_ g.classGroup rect{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_220\_ g.classGroup line{stroke:rgb(83, 154, 248);stroke-width:1;}#chatgpt-mermaid-\_r_220\_ .classLabel .box{stroke:none;stroke-width:0;fill:rgb(222, 234, 251);opacity:0.5;}#chatgpt-mermaid-\_r_220\_ .classLabel .label{fill:rgb(83, 154, 248);font-size:10px;}#chatgpt-mermaid-\_r_220\_ .relation{stroke:rgb(143, 143, 143);stroke-width:1;fill:none;}#chatgpt-mermaid-\_r_220\_ .dashed-line{stroke-dasharray:3;}#chatgpt-mermaid-\_r_220\_ .dotted-line{stroke-dasharray:1 2;}#chatgpt-mermaid-\_r_220\_ [id$="-compositionStart"],#chatgpt-mermaid-\_r_220\_ .composition{fill:rgb(143, 143, 143)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-compositionEnd"],#chatgpt-mermaid-\_r_220\_ .composition{fill:rgb(143, 143, 143)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-dependencyStart"],#chatgpt-mermaid-\_r_220\_ .dependency{fill:rgb(143, 143, 143)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-dependencyEnd"],#chatgpt-mermaid-\_r_220\_ .dependency{fill:rgb(143, 143, 143)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-extensionStart"],#chatgpt-mermaid-\_r_220\_ .extension{fill:transparent!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-extensionEnd"],#chatgpt-mermaid-\_r_220\_ .extension{fill:transparent!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-aggregationStart"],#chatgpt-mermaid-\_r_220\_ .aggregation{fill:transparent!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-aggregationEnd"],#chatgpt-mermaid-\_r_220\_ .aggregation{fill:transparent!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-lollipopStart"],#chatgpt-mermaid-\_r_220\_ .lollipop{fill:rgb(222, 234, 251)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ [id$="-lollipopEnd"],#chatgpt-mermaid-\_r_220\_ .lollipop{fill:rgb(222, 234, 251)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_220\_ .edgeTerminals{font-size:11px;line-height:initial;}#chatgpt-mermaid-\_r_220\_ .classTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_220\_ .edgeLabel[data-look="neo"]{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_220\_ .edgeLabel[data-look="neo"] p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_220\_ .edgeLabel[data-look="neo"] rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_220\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_220\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_220\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_220\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_220\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_220\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_220\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_220\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_220\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_220\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_220\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_220\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}«abstract»EngineCoreClient+make_client()+make_async_mp_client()+add_request()+get_output()+abort_requests()+shutdown()+collective_rpc()InprocClient+engine_core: EngineCore+add_request()+get_output()«abstract»MPClient+input_socket+output_socket+encoder+decoder+utility_results+start_engine_core_monitor()+call_utility()SyncMPClient+outputs_queue+output_queue_thread+\_send_input()+call_utility()+get_output()AsyncMPClient+outputs_queue+\_ensure_output_queue_task()+\_send_input()+call_utility_async()+get_output_async()DPAsyncMPClient+current_wave+lb_engines+\_ensure_stats_update_task()+get_core_engine_for_request()DPLBAsyncMPClient+reqs_in_flight+engine_inflight+get_core_engine_for_request()+process_engine_outputs()+prepare_elastic_ep()+commit_elastic_ep()BackgroundResourcesEngineCoreProcEngineCore
 
-**Engine Launch & Process Management**
+类图根据本文件中的继承、成员和调用关系整理；EngineCoreProc 与 EngineCore 的内部实现不在本文件中。
 
-**ProcManager**
+### **1.2 各类的职责**
 
-multiprocessing
+| 类                   | 核心职责                          | 适用场景     |
+| ------------------- | ----------------------------- | -------- |
+| `EngineCoreClient`  | 定义统一接口、工厂选择                   | 所有模式     |
+| `InprocClient`      | 直接调用 EngineCore               | 同进程同步    |
+| `MPClient`          | 多进程通信基础设施                     | 同步/异步共用  |
+| `SyncMPClient`      | ZMQ + 线程 + 同步 Queue           | LLM      |
+| `AsyncMPClient`     | ZMQ + asyncio Task + 异步 Queue | AsyncLLM |
+| `DPAsyncMPClient`   | DP 状态同步、统计订阅                  | 外部 LB    |
+| `DPLBAsyncMPClient` | 内部负载均衡、请求跟踪                   | 内部 LB    |
 
-**ActorManager**
+这里有三个重要的设计层次：
 
-Ray Actor
+- `EngineCoreClient`：解决接口统一问题。
+- `MPClient`：解决跨进程通信问题。
+- `AsyncMPClient / DPAsyncMPClient / DPLBAsyncMPClient`：逐步增加异步和分布式能力。
 
-**EngineCore 实例**
+注意：`DPAsyncMPClient` 并不负责内部请求均衡，它默认将请求发给自己的 `core_engine`。真正的内部多 EngineCore 负载均衡在 `DPLBAsyncMPClient`。
 
-**EngineCore DP0**
+粘贴的文本 (1)(20261115-152447).txt
 
-**EngineCore DP1 ... DPn**
+## **二、工厂模式：客户端是如何选择的？**
 
-Executor / Worker / GPU
+核心入口：
 
-**GPU Worker 集群**
+```
+EngineCoreClient.make_client(    multiprocess_mode,    asyncio_mode,    vllm_config,    executor_class,    log_stats,    renderer,)
+```
 
-TP / PP / EP 等模型并行执行
+### **2.1 第一层：同步/异步与多进程**
 
-**DP Coordinator（可选）**
+| multiprocess | asyncio | 创建对象                      |
+| ------------ | ------- | ------------------------- |
+| False        | False   | `InprocClient`            |
+| True         | False   | `SyncMPClient`            |
+| True         | True    | 进入 DP 判断或 `AsyncMPClient` |
+| False        | True    | 不支持，抛出异常                  |
 
-负载统计、内部 LB、MoE Wave Coordination
+### **2.2 第二层：AsyncMPClient 的 DP 分流**
 
-注意区分两个层次：
+```
+if parallel_config.data_parallel_size > 1:    if parallel_config.data_parallel_external_lb:        return DPAsyncMPClient(...)    return DPLBAsyncMPClient(...)return AsyncMPClient(...)
+```
 
-- **DP Rank**：一个独立的 EngineCore 实例，负责一份数据并行模型副本。
-- **TP/PP Rank**：一个 EngineCore 内部的 GPU Worker 并行执行单元。
+对应架构：
+
+\#chatgpt-mermaid-\_r_22l\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_22l\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_22l\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_22l\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_22l\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_22l\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_22l\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_22l\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_22l\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_22l\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_22l\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_22l\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_22l\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_22l\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_22l\_ p{margin:0;}#chatgpt-mermaid-\_r_22l\_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_22l\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_22l\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_22l\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_22l\_ .label text,#chatgpt-mermaid-\_r_22l\_ span{fill:rgb(13, 13, 13);color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_22l\_ .node rect,#chatgpt-mermaid-\_r_22l\_ .node circle,#chatgpt-mermaid-\_r_22l\_ .node ellipse,#chatgpt-mermaid-\_r_22l\_ .node polygon,#chatgpt-mermaid-\_r_22l\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1px;}#chatgpt-mermaid-\_r_22l\_ .rough-node .label text,#chatgpt-mermaid-\_r_22l\_ .node .label text,#chatgpt-mermaid-\_r_22l\_ .image-shape .label,#chatgpt-mermaid-\_r_22l\_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-\_r_22l\_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-\_r_22l\_ .rough-node .label,#chatgpt-mermaid-\_r_22l\_ .node .label,#chatgpt-mermaid-\_r_22l\_ .image-shape .label,#chatgpt-mermaid-\_r_22l\_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-\_r_22l\_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_22l\_ .root .anchor path{fill:rgb(143, 143, 143)!important;stroke-width:0;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_22l\_ .arrowheadPath{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_22l\_ .edgePath .path{stroke:rgb(143, 143, 143);stroke-width:1px;}#chatgpt-mermaid-\_r_22l\_ .flowchart-link{stroke:rgb(143, 143, 143);fill:none;}#chatgpt-mermaid-\_r_22l\_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_22l\_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_22l\_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_22l\_ .labelBkg{background-color:rgba(252, 252, 252, 0.5);}#chatgpt-mermaid-\_r_22l\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_22l\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_22l\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_22l\_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(243, 243, 243);border:1px solid rgba(0, 0, 0, 0.1);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-\_r_22l\_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_22l\_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-\_r_22l\_ .icon-shape,#chatgpt-mermaid-\_r_22l\_ .image-shape{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_22l\_ .icon-shape p,#chatgpt-mermaid-\_r_22l\_ .image-shape p{background-color:rgb(252, 252, 252);padding:2px;}#chatgpt-mermaid-\_r_22l\_ .icon-shape .label rect,#chatgpt-mermaid-\_r_22l\_ .image-shape .label rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_22l\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_22l\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_22l\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_22l\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_22l\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_22l\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_22l\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_22l\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_22l\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_22l\_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_22l\_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_22l\_ .node tspan[font-weight="normal"],#chatgpt-mermaid-\_r_22l\_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-\_r_22l\_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-width:1px;}#chatgpt-mermaid-\_r_22l\_ .node rect,#chatgpt-mermaid-\_r_22l\_ .node circle,#chatgpt-mermaid-\_r_22l\_ .node ellipse,#chatgpt-mermaid-\_r_22l\_ .node polygon,#chatgpt-mermaid-\_r_22l\_ .node path{fill:rgb(229, 243, 255);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_22l\_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-\_r_22l\_ .mermaid-decision .label-container{fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-dasharray:2,2;}#chatgpt-mermaid-\_r_22l\_ .edgePaths .flowchart-link{stroke:rgb(143, 143, 143);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-\_r_22l\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_22l\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}EngineCoreClient.make_clientmultiprocess_mode?InprocClientasyncio_mode?SyncMPClientmake_async_mp_clientDP size 1?AsyncMPClientExternal LB?DPAsyncMPClientDPLBAsyncMPClientFalseTrueFalseTrueNoYesYesNo
+
+### **2.3 为什么要这么设计？**
+
+因为不同场景需要不同的通信模型：
+
+- Inproc：不需要跨进程通信，直接调用对象。
+- Sync：同步调用接口，后台线程接收结果。
+- Async：异步调用接口，使用 asyncio Task 接收结果。
+- DP External LB：每个客户端通常负责自己的 DP Rank。
+- DP Internal LB：一个客户端需要在多个 DP Rank 之间分配请求。
+
+**重点：DP 是模型执行实例的并行部署方式，不是把一个请求拆成多个 Rank 再汇总结果。**
+
+这里的 DP 主要体现为多个独立 EngineCore 接收不同请求。
+
+粘贴的文本 (1)(20261115-152447).txt
+
+## **三、MPClient：整个文件最重要的基础类**
+
+建议重点阅读 `MPClient.__init__()`，它决定了多进程通信架构。
+
+### **3.1 核心对象关系**
+
+**Frontend Process**
+
+`MPClient`
+
+ZMQ Context / Encoder / Decoder / Monitor
+
+**Input Socket**
+
+`ROUTER`
+
+发送请求
+
+**Output Socket**
+
+`PULL`
+
+接收结果
+
+跨进程 ZMQ 通信
+
+**EngineCore Process**
+
+`EngineCoreProc`
+
+`EngineCore → Scheduler → Executor → Worker`
+
+注意：上图中 Scheduler、Executor、Worker 是 EngineCore 执行侧的逻辑示意，不是当前文件的类定义。
+
+### **3.2 初始化关键步骤**
+
+源码主线：
+
+```
+sync_ctx = zmq.Context(io_threads=2)self.ctx = (    zmq.asyncio.Context(sync_ctx)    if asyncio_mode else sync_ctx)self.resources = BackgroundResources(ctx=sync_ctx)self._finalizer = weakref.finalize(    self, self.resources)
+```
+
+接下来：
+
+1. 创建 ZMQ Context。
+2. 创建输入 ROUTER Socket。
+3. 创建输出 PULL Socket。
+4. 调用 `launch_core_engines()` 启动 EngineCore 进程。
+5. 初始化序列化 Encoder/Decoder。
+6. 等待所有 EngineCore Ready。
+7. 启动 EngineCore 监控线程。
+
+其中最值得注意的是：
+
+```
+self.input_socket = make_zmq_socket(    self.ctx,    addresses.inputs[0],    zmq.ROUTER,    bind=True,)self.resources.output_socket = make_zmq_socket(    self.ctx,    addresses.outputs[0],    zmq.PULL,)
+```
+
+为什么使用 ROUTER 和 PULL？
+
+| Socket | 作用                     | 方向              |
+| ------ | ---------------------- | --------------- |
+| ROUTER | 按 Engine Identity 路由请求 | Client → Engine |
+| PULL   | 汇聚 Engine 输出消息         | Engine → Client |
+
+在客户端这一侧，ROUTER 可以根据消息中的 Engine Identity 将请求发送给指定的 EngineCore。
+
+### **3.3 Engine Identity 是什么？**
+
+```
+EngineIdentity = bytesself.core_engines = [    rank.to_bytes(2, "little")    for rank in self.engine_ranks_managed]
+```
 
 例如：
 
 ```
-DP Size = 2
-TP Size = 4
-PP Size = 1
-
-EngineCore DP0
-    ├── Worker TP0
-    ├── Worker TP1
-    ├── Worker TP2
-    └── Worker TP3
-
-EngineCore DP1
-    ├── Worker TP0
-    ├── Worker TP1
-    ├── Worker TP2
-    └── Worker TP3
+rank = 0  # b'\x00\x00'rank = 1  # b'\x01\x00'rank = 2  # b'\x02\x00'
 ```
 
-总共是 2 个 EngineCore，8 个 GPU Worker（假设每个 TP Rank 对应一个 GPU）。
+它是 EngineCore 在 ZMQ 通信中的身份标识。
 
-这里的 Process Manager 管理的是 EngineCore 这一层，不直接负责每个 TP Worker 的生命周期。
+注意区分：
 
-## **2. 核心类图**
+| 概念              | 含义                     |
+| --------------- | ---------------------- |
+| DP Rank         | DP 维度的逻辑编号             |
+| Engine Identity | 客户端用于路由通信的字节标识         |
+| Process PID     | 操作系统进程编号               |
+| TP Rank         | Tensor Parallel 中的逻辑编号 |
 
-这份代码的类关系可以归纳为三组：进程管理、Ray 管理、启动握手。
+**DP Rank 不等于 PID，也不等于 TP Rank。**
 
-\#chatgpt-mermaid-\_r_f2\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_f2\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_f2\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_f2\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_f2\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_f2\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_f2\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_f2\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_f2\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_f2\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_f2\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_f2\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_f2\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_f2\_ p{margin:0;}#chatgpt-mermaid-\_r_f2\_ g.classGroup text{fill:rgb(83, 154, 248);stroke:none;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:10px;}#chatgpt-mermaid-\_r_f2\_ g.classGroup text .title{font-weight:bolder;}#chatgpt-mermaid-\_r_f2\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_f2\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_f2\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .nodeLabel,#chatgpt-mermaid-\_r_f2\_ .edgeLabel{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .noteLabel .nodeLabel,#chatgpt-mermaid-\_r_f2\_ .noteLabel .edgeLabel{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .edgeLabel .label rect{fill:rgb(222, 234, 251);}#chatgpt-mermaid-\_r_f2\_ .label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .labelBkg{background:rgb(222, 234, 251);}#chatgpt-mermaid-\_r_f2\_ .edgeLabel .label span{background:rgb(222, 234, 251);}#chatgpt-mermaid-\_r_f2\_ .classTitle{font-weight:bolder;}#chatgpt-mermaid-\_r_f2\_ .node rect,#chatgpt-mermaid-\_r_f2\_ .node circle,#chatgpt-mermaid-\_r_f2\_ .node ellipse,#chatgpt-mermaid-\_r_f2\_ .node polygon,#chatgpt-mermaid-\_r_f2\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ .divider{stroke:rgb(83, 154, 248);stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ g.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_f2\_ g.classGroup rect{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_f2\_ g.classGroup line{stroke:rgb(83, 154, 248);stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ .classLabel .box{stroke:none;stroke-width:0;fill:rgb(222, 234, 251);opacity:0.5;}#chatgpt-mermaid-\_r_f2\_ .classLabel .label{fill:rgb(83, 154, 248);font-size:10px;}#chatgpt-mermaid-\_r_f2\_ .relation{stroke:rgb(143, 143, 143);stroke-width:1;fill:none;}#chatgpt-mermaid-\_r_f2\_ .dashed-line{stroke-dasharray:3;}#chatgpt-mermaid-\_r_f2\_ .dotted-line{stroke-dasharray:1 2;}#chatgpt-mermaid-\_r_f2\_ [id$="-compositionStart"],#chatgpt-mermaid-\_r_f2\_ .composition{fill:rgb(143, 143, 143)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-compositionEnd"],#chatgpt-mermaid-\_r_f2\_ .composition{fill:rgb(143, 143, 143)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-dependencyStart"],#chatgpt-mermaid-\_r_f2\_ .dependency{fill:rgb(143, 143, 143)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-dependencyEnd"],#chatgpt-mermaid-\_r_f2\_ .dependency{fill:rgb(143, 143, 143)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-extensionStart"],#chatgpt-mermaid-\_r_f2\_ .extension{fill:transparent!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-extensionEnd"],#chatgpt-mermaid-\_r_f2\_ .extension{fill:transparent!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-aggregationStart"],#chatgpt-mermaid-\_r_f2\_ .aggregation{fill:transparent!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-aggregationEnd"],#chatgpt-mermaid-\_r_f2\_ .aggregation{fill:transparent!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-lollipopStart"],#chatgpt-mermaid-\_r_f2\_ .lollipop{fill:rgb(222, 234, 251)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ [id$="-lollipopEnd"],#chatgpt-mermaid-\_r_f2\_ .lollipop{fill:rgb(222, 234, 251)!important;stroke:rgb(143, 143, 143)!important;stroke-width:1;}#chatgpt-mermaid-\_r_f2\_ .edgeTerminals{font-size:11px;line-height:initial;}#chatgpt-mermaid-\_r_f2\_ .classTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_f2\_ .edgeLabel[data-look="neo"]{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_f2\_ .edgeLabel[data-look="neo"] p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_f2\_ .edgeLabel[data-look="neo"] rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_f2\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_f2\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_f2\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_f2\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_f2\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_f2\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_f2\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_f2\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_f2\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_f2\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}CoreEngine+bool local+bytes identity+CoreEngineState state«enumeration»CoreEngineStateNEWCONNECTEDREADYCoreEngineProcManager+list processes+Event manager_stopped+str failed_proc_name+shutdown()+monitor_engine_liveness()+sentinels()+finished_procs()CoreEngineActorManager+list local_engine_actors+list remote_engine_actors+list run_refs+shutdown()+monitor_engine_liveness()+create_dp_placement_groups()+scale_up_elastic_ep()+scale_down_elastic_ep()EngineZmqAddresses+list inputs+list outputs+str coordinator_input+str coordinator_output+str frontend_stats_publish_addressEngineHandshakeMetadata+EngineZmqAddresses addresses+dict parallel_configCoreEngineLaunch+engine_manager+coordinator+addresses+tensor_queue+watched_frontend_processesDPCoordinator+get_engine_socket_addresses()+get_stats_publish_address()EngineCoreProc+run_engine_core()multiprocessingstartup trackingstartup tracking
-
-### **2.1 核心类职责**
-
-| 类                         | 职责                   | 关键属性/方法                       |
-| ------------------------- | -------------------- | ----------------------------- |
-| `CoreEngine`              | 跟踪每个 DP Engine 的握手状态 | `identity`、`state`            |
-| `CoreEngineState`         | 握手状态枚举               | NEW / CONNECTED / READY       |
-| `CoreEngineProcManager`   | 管理本地 Python 子进程      | `Process`、`shutdown()`        |
-| `CoreEngineActorManager`  | 管理 Ray Engine Actor  | `ActorHandle`、PlacementGroup  |
-| `EngineZmqAddresses`      | 保存通信地址               | inputs / outputs              |
-| `EngineHandshakeMetadata` | 向 Engine 下发初始化信息     | addresses / parallel_config   |
-| `CoreEngineLaunch`        | 启动阶段资源上下文            | manager / coordinator / queue |
-| `SignalCallback`          | 将信号处理回调转交独立线程        | Event / Thread                |
-
-其中最值得重点研究的是三个类：
-
-**① CoreEngineProcManager**
-
-它解决本地进程生命周期问题：
-
-- 创建多少个 EngineCore 进程？
-- 每个进程对应哪个 DP Rank？
-- 如何设置 GPU 映射？
-- 进程是否异常退出？
-- 如何统一关闭？
-
-**② CoreEngineActorManager**
-
-它解决分布式资源调度问题：
-
-- Ray 集群中如何分配 GPU？
-- 一个 DP Rank 如何绑定多个 GPU？
-- 如何创建 Placement Group？
-- 如何跨节点创建 Engine Actor？
-- 如何动态扩缩容？
-
-**③ CoreEngine**
-
-它解决启动状态跟踪问题。
+### **3.4 Ready 握手机制**
 
 ```
-class CoreEngine:    def __init__(self, index=0, local=True):        self.local = local        self.identity = index.to_bytes(2, "little")        self.state = CoreEngineState.NEW
+while identities:    if not sync_input_socket.poll(timeout=...):        raise TimeoutError(...)    identity, payload = sync_input_socket.recv_multipart()    identities.remove(identity)    self._apply_ready_response(payload)
 ```
 
-这里的 `identity` 是 ZMQ ROUTER/DEALER 通信中的身份标识。
+这个阶段非常重要。
 
-为什么需要它？
+EngineCore 进程启动不代表模型已经可用。
 
-因为多个 EngineCore 都会连接同一个 ROUTER Socket，Frontend 必须知道：
+客户端必须等待每个 EngineCore 发送 Ready 消息。
 
-- 哪个 Engine 发来的消息？
-- 对应哪个 DP Rank？
-- 哪个 Engine 已经完成初始化？
+Ready 消息中的 `EngineCoreReadyResponse` 会同步以下配置：
 
-`identity` 就是消息路由和状态关联的依据。
+- `max_model_len`
+- `num_gpu_blocks`
+- `block_size`
+- `mamba_block_size`
+- KV Cache 容量和并发信息
 
-## **3. 关键概念剖析**
+因此，**Ready 握手也是前后端配置同步的过程，而不只是进程存活检测。**
 
-### **3.1 Process Manager 和 Actor Manager 的区别**
+粘贴的文本 (1)(20261115-152447).txt
 
-这是代码最重要的架构分支。
+## **四、关键流程一：请求发送与结果接收**
 
-| 对比       | ProcManager               | ActorManager    |
-| -------- | ------------------------- | --------------- |
-| 执行环境     | 单机/本地多进程                  | Ray 集群          |
-| 进程创建     | `multiprocessing.Process` | `ray.remote()`  |
-| 实例标识     | Process name              | ActorHandle     |
-| GPU 资源管理 | 本地 GPU ID 映射              | Placement Group |
-| 运行监控     | Process Sentinel          | Ray ObjectRef   |
-| 退出方式     | shutdown / terminate      | ray.kill        |
-| 跨节点      | 不负责跨节点调度                  | 支持              |
+这是整个文件最值得掌握的流程。
 
-两者并不是同时工作的两个管理器，而是根据配置选择其一：
+### **4.1 请求发送**
+
+以 `AsyncMPClient.add_request_async()` 为例：
 
 ```
-if parallel_config.data_parallel_backend == "ray":    engine_actor_manager = CoreEngineActorManager(...)else:    local_engine_manager = CoreEngineProcManager(...)
+async def add_request_async(self, request):    request.client_index = self.client_index    await self._send_input(        EngineCoreRequestType.ADD,        request    )    self._ensure_output_queue_task()
 ```
 
-### **3.2 Rank 的概念**
+实际发送：
 
-这份代码主要涉及三种 Rank。
+```
+async def _send_input(self, request_type, request, engine=None):    if engine is None:        engine = self.core_engine    message = (        request_type.value,        *self.encoder.encode(request)    )    return self._send_input_message(message, engine)
+```
 
-| Rank            | 含义             | 作用                      |
-| --------------- | -------------- | ----------------------- |
-| `dp_rank`       | 全局 DP Rank     | 唯一标识一个 EngineCore       |
-| `local_dp_rank` | 本机 DP Rank     | 确定本机第几个 DP Engine       |
-| `tp_rank`       | TP Worker Rank | 一个 EngineCore 内部的模型并行编号 |
+```
+async def _send_input_message(self, message, engine):    self.ensure_alive()    return await self.input_socket.send_multipart(        (engine,) + message,        copy=False    )
+```
+
+请求结构：
+
+```
+(engine_identity,
+ request_type,
+ serialized_request)
+```
+
+注意：实际消息可能包含多个 Frame，例如多模态 Tensor 的带外数据，不应简单理解为只有三个字节帧。
+
+### **4.2 请求发送流程图**
+
+EngineCoreEngineCoreProcZMQ ROUTERAsyncMPClientAsyncLLMEngineCoreEngineCoreProcZMQ ROUTERAsyncMPClientAsyncLLM#chatgpt-mermaid-\_r_24s\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_24s\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_24s\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_24s\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_24s\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_24s\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_24s\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_24s\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_24s\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_24s\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_24s\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_24s\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_24s\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_24s\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_24s\_ p{margin:0;}#chatgpt-mermaid-\_r_24s\_ .actor{stroke:rgb(83, 154, 248);fill:rgb(222, 234, 251);stroke-width:1;}#chatgpt-mermaid-\_r_24s\_ rect.actor.outer-path[data-look="neo"]{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_24s\_ rect.note[data-look="neo"]{stroke:rgb(107, 198, 127);fill:rgb(243, 243, 243);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_24s\_ text.actor>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_24s\_ .actor-line{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_24s\_ .innerArc{stroke-width:1.5;stroke-dasharray:none;}#chatgpt-mermaid-\_r_24s\_ .messageLine0{stroke-width:1.5;stroke-dasharray:none;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_24s\_ .messageLine1{stroke-width:1.5;stroke-dasharray:2,2;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_24s\_ [id$="-arrowhead"] path{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_24s\_ .sequenceNumber{fill:#707070;}#chatgpt-mermaid-\_r_24s\_ [id$="-sequencenumber"]{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_24s\_ [id$="-crosshead"] path{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_24s\_ .messageText{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_24s\_ .labelBox{stroke:rgba(0, 0, 0, 0.1);fill:rgb(252, 252, 252);filter:none;}#chatgpt-mermaid-\_r_24s\_ .labelText,#chatgpt-mermaid-\_r_24s\_ .labelText>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_24s\_ .loopText,#chatgpt-mermaid-\_r_24s\_ .loopText>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_24s\_ .sectionTitle,#chatgpt-mermaid-\_r_24s\_ .sectionTitle>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_24s\_ .loopLine{stroke-width:2px;stroke-dasharray:2,2;stroke:rgba(0, 0, 0, 0.1);fill:rgba(0, 0, 0, 0.1);}#chatgpt-mermaid-\_r_24s\_ .note{stroke:rgb(107, 198, 127);fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_24s\_ .noteText,#chatgpt-mermaid-\_r_24s\_ .noteText>tspan{fill:rgb(13, 13, 13);stroke:none;font-weight:normal;}#chatgpt-mermaid-\_r_24s\_ .activation0{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_24s\_ .activation1{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_24s\_ .activation2{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_24s\_ .actorPopupMenu{position:absolute;}#chatgpt-mermaid-\_r_24s\_ .actorPopupMenuPanel{position:absolute;fill:rgb(222, 234, 251);box-shadow:0px 8px 16px 0px rgba(0,0,0,0.2);filter:drop-shadow(3px 5px 2px rgb(0 0 0 / 0.4));}#chatgpt-mermaid-\_r_24s\_ .actor-man circle,#chatgpt-mermaid-\_r_24s\_ line{fill:rgb(222, 234, 251);stroke-width:2px;}#chatgpt-mermaid-\_r_24s\_ g rect.rect{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_24s\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_24s\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_24s\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_24s\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_24s\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_24s\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_24s\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_24s\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}add_request_async(request)设置 client_indexEncoder.encode(request)send_multipart(identity, ADD, data)路由到指定 Engine处理 EngineCoreRequestEngineCoreOutputs返回输出PULL 接收Decoder.decode()outputs_queue.put_nowait()get_output_async()
+
+这里需要区分两个动作：
+
+- `add_request_async()`：把请求发送出去。
+- `get_output_async()`：从异步队列获取结果。
+
+它们不是一个同步的请求-响应函数。
+
+请求发送后，前端可以继续处理其他请求，不需要阻塞等待当前请求生成完毕。
+
+### **4.3 结果接收**
+
+`AsyncMPClient._ensure_output_queue_task()` 创建后台 Task：
+
+```
+async def process_outputs_socket():    while True:        frames = await output_socket.recv_multipart(            copy=False        )        outputs = decoder.decode(frames)        if outputs.utility_output:            _process_utility_output(                outputs.utility_output,                utility_results            )            continue        if outputs.outputs or outputs.scheduler_stats:            outputs_queue.put_nowait(outputs)
+```
+
+这里有一个关键设计：
+
+**结果接收与业务读取解耦。**
+
+```
+ZMQ Socket
+    ↓
+后台 asyncio Task
+    ↓
+Decoder
+    ↓
+分类处理
+    ├── UtilityOutput → Future
+    └── 普通推理结果 → asyncio.Queue
+                              ↓
+                       get_output_async()
+```
+
+这意味着：
+
+- ZMQ 接收任务不会等待上层 API 消费结果。
+- 上层通过 Queue 获取结果。
+- Utility RPC 通过 Future 获取对应调用结果。
+
+粘贴的文本 (1)(20261115-152447).txt
+
+## **五、关键流程二：Utility RPC**
+
+这是第二个必须掌握的机制。
+
+EngineCoreClient 不只是发送推理请求，还需要执行各种控制操作。
 
 例如：
 
 ```
-两台机器，每台 8 张 GPU
-
-机器 A：
-  DP0 -> TP0~TP7
-  DP1 -> TP0~TP7
-
-机器 B：
-  DP2 -> TP0~TP7
-  DP3 -> TP0~TP7
+await client.pause_scheduler_async()await client.resume_scheduler_async()await client.reset_prefix_cache_async()await client.add_lora_async(...)await client.collective_rpc_async(...)
 ```
 
-此时：
+这些操作不是普通的 `ADD` 请求，而是通过 `UTILITY` 消息发送。
 
-- `dp_rank`：0、1、2、3。
-- `local_dp_rank`：机器 A 是 0、1；机器 B 也是 0、1。
-- `tp_rank`：每个 DP Engine 内部都是 0\~7。
-
-**注意：DP Rank 标识的是模型副本，不是 GPU Worker。**
-
-### **3.3 Placement Group 是什么？**
-
-这是 Ray 后端的重要概念。
-
-Ray Placement Group 可以把一组资源作为一个整体申请，避免一个 DP Engine 所需的 GPU 被零散分配到不合适的节点。
-
-例如：
+### **5.1 Utility RPC 的核心实现**
 
 ```
-bundles = [    {"GPU": 1.0},    {"GPU": 1.0},    {"GPU": 1.0},    {"GPU": 1.0},    {"CPU": 1.0},]pg = ray.util.placement_group(    bundles=bundles,    strategy="STRICT_PACK",)
+async def _call_utility_async(self, method, *args, engine):    call_id = uuid.uuid1().int >> 64    future = asyncio.get_running_loop().create_future()    self.utility_results[call_id] = future    message = (        EngineCoreRequestType.UTILITY.value,        *self.encoder.encode(            (self.client_index, call_id, method, args)        )    )    await self._send_input_message(message, engine)    self._ensure_output_queue_task()    return await future
+```
+
+这里有三个核心元素：
+
+| 对象                | 作用                      |
+| ----------------- | ----------------------- |
+| `call_id`         | 唯一标识一次 RPC 调用           |
+| `utility_results` | 保存 call_id 到 Future 的映射 |
+| `Future`          | 等待后台执行结果                |
+
+### **5.2 RPC 完整流程**
+
+Output HandlerEngineCoreutility_resultsAsyncMPClientOutput HandlerEngineCoreutility_resultsAsyncMPClient#chatgpt-mermaid-\_r_25r\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_25r\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_25r\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_25r\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_25r\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_25r\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_25r\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_25r\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_25r\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_25r\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_25r\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_25r\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_25r\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_25r\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_25r\_ p{margin:0;}#chatgpt-mermaid-\_r_25r\_ .actor{stroke:rgb(83, 154, 248);fill:rgb(222, 234, 251);stroke-width:1;}#chatgpt-mermaid-\_r_25r\_ rect.actor.outer-path[data-look="neo"]{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25r\_ rect.note[data-look="neo"]{stroke:rgb(107, 198, 127);fill:rgb(243, 243, 243);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25r\_ text.actor>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_25r\_ .actor-line{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_25r\_ .innerArc{stroke-width:1.5;stroke-dasharray:none;}#chatgpt-mermaid-\_r_25r\_ .messageLine0{stroke-width:1.5;stroke-dasharray:none;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_25r\_ .messageLine1{stroke-width:1.5;stroke-dasharray:2,2;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_25r\_ [id$="-arrowhead"] path{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_25r\_ .sequenceNumber{fill:#707070;}#chatgpt-mermaid-\_r_25r\_ [id$="-sequencenumber"]{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_25r\_ [id$="-crosshead"] path{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_25r\_ .messageText{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_25r\_ .labelBox{stroke:rgba(0, 0, 0, 0.1);fill:rgb(252, 252, 252);filter:none;}#chatgpt-mermaid-\_r_25r\_ .labelText,#chatgpt-mermaid-\_r_25r\_ .labelText>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_25r\_ .loopText,#chatgpt-mermaid-\_r_25r\_ .loopText>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_25r\_ .sectionTitle,#chatgpt-mermaid-\_r_25r\_ .sectionTitle>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_25r\_ .loopLine{stroke-width:2px;stroke-dasharray:2,2;stroke:rgba(0, 0, 0, 0.1);fill:rgba(0, 0, 0, 0.1);}#chatgpt-mermaid-\_r_25r\_ .note{stroke:rgb(107, 198, 127);fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_25r\_ .noteText,#chatgpt-mermaid-\_r_25r\_ .noteText>tspan{fill:rgb(13, 13, 13);stroke:none;font-weight:normal;}#chatgpt-mermaid-\_r_25r\_ .activation0{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_25r\_ .activation1{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_25r\_ .activation2{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_25r\_ .actorPopupMenu{position:absolute;}#chatgpt-mermaid-\_r_25r\_ .actorPopupMenuPanel{position:absolute;fill:rgb(222, 234, 251);box-shadow:0px 8px 16px 0px rgba(0,0,0,0.2);filter:drop-shadow(3px 5px 2px rgb(0 0 0 / 0.4));}#chatgpt-mermaid-\_r_25r\_ .actor-man circle,#chatgpt-mermaid-\_r_25r\_ line{fill:rgb(222, 234, 251);stroke-width:2px;}#chatgpt-mermaid-\_r_25r\_ g rect.rect{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_25r\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_25r\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_25r\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_25r\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_25r\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25r\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_25r\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25r\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}生成 call_id保存 call_id → Future发送 UTILITY(method,args)执行对应方法UtilityOutput(call_id,result)根据 call_id 查找 Futurefuture.set_result(result)await future 返回
+
+结果匹配：
+
+```
+def _process_utility_output(output, utility_results):    future = utility_results.pop(output.call_id)    if output.failure_message is not None:        future.set_exception(...)    else:        future.set_result(output.result.result)
+```
+
+### **5.3 为什么需要 Future 映射？**
+
+假设同时发出三个控制请求：
+
+```
+call_id=101 → pause_scheduler
+call_id=102 → reset_prefix_cache
+call_id=103 → add_lora
+```
+
+后台返回顺序可能是：
+
+```
+103 → 101 → 102
+```
+
+如果采用简单的 FIFO 队列，就可能将结果分配给错误的调用者。
+
+使用 `call_id → Future` 映射，可以做到：
+
+- 多个 RPC 并发执行。
+- 返回顺序不必与请求顺序一致。
+- 每个调用者等待自己的 Future。
+- 失败通过 `set_exception()` 传递。
+
+这实际上是一个典型的异步 RPC 请求关联机制。
+
+粘贴的文本 (1)(20261115-152447).txt
+
+## **六、SyncMPClient 与 AsyncMPClient 的区别**
+
+这两个类继承同一个 `MPClient`，但结果接收模型不同。
+
+### **6.1 对比**
+
+| 维度     | SyncMPClient                | AsyncMPClient       |
+| ------ | --------------------------- | ------------------- |
+| Socket | zmq.Socket                  | zmq.asyncio.Socket  |
+| 接收方式   | 独立 Thread                   | asyncio Task        |
+| 结果队列   | `queue.Queue`               | `asyncio.Queue`     |
+| 等待结果   | `queue.get()`               | `await queue.get()` |
+| RPC 等待 | `concurrent.futures.Future` | `asyncio.Future`    |
+| 发送     | 同步 send                     | await send          |
+| 典型使用   | LLM                         | AsyncLLM            |
+
+### **6.2 SyncMPClient 的线程模型**
+
+\#chatgpt-mermaid-\_r_26i\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_26i\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_26i\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_26i\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_26i\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_26i\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_26i\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_26i\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_26i\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_26i\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_26i\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_26i\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_26i\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_26i\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_26i\_ p{margin:0;}#chatgpt-mermaid-\_r_26i\_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_26i\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_26i\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_26i\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_26i\_ .label text,#chatgpt-mermaid-\_r_26i\_ span{fill:rgb(13, 13, 13);color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_26i\_ .node rect,#chatgpt-mermaid-\_r_26i\_ .node circle,#chatgpt-mermaid-\_r_26i\_ .node ellipse,#chatgpt-mermaid-\_r_26i\_ .node polygon,#chatgpt-mermaid-\_r_26i\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1px;}#chatgpt-mermaid-\_r_26i\_ .rough-node .label text,#chatgpt-mermaid-\_r_26i\_ .node .label text,#chatgpt-mermaid-\_r_26i\_ .image-shape .label,#chatgpt-mermaid-\_r_26i\_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-\_r_26i\_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-\_r_26i\_ .rough-node .label,#chatgpt-mermaid-\_r_26i\_ .node .label,#chatgpt-mermaid-\_r_26i\_ .image-shape .label,#chatgpt-mermaid-\_r_26i\_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-\_r_26i\_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_26i\_ .root .anchor path{fill:rgb(143, 143, 143)!important;stroke-width:0;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_26i\_ .arrowheadPath{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_26i\_ .edgePath .path{stroke:rgb(143, 143, 143);stroke-width:1px;}#chatgpt-mermaid-\_r_26i\_ .flowchart-link{stroke:rgb(143, 143, 143);fill:none;}#chatgpt-mermaid-\_r_26i\_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_26i\_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_26i\_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_26i\_ .labelBkg{background-color:rgba(252, 252, 252, 0.5);}#chatgpt-mermaid-\_r_26i\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_26i\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_26i\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_26i\_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(243, 243, 243);border:1px solid rgba(0, 0, 0, 0.1);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-\_r_26i\_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_26i\_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-\_r_26i\_ .icon-shape,#chatgpt-mermaid-\_r_26i\_ .image-shape{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_26i\_ .icon-shape p,#chatgpt-mermaid-\_r_26i\_ .image-shape p{background-color:rgb(252, 252, 252);padding:2px;}#chatgpt-mermaid-\_r_26i\_ .icon-shape .label rect,#chatgpt-mermaid-\_r_26i\_ .image-shape .label rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_26i\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_26i\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_26i\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_26i\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_26i\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_26i\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_26i\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_26i\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_26i\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_26i\_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_26i\_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_26i\_ .node tspan[font-weight="normal"],#chatgpt-mermaid-\_r_26i\_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-\_r_26i\_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-width:1px;}#chatgpt-mermaid-\_r_26i\_ .node rect,#chatgpt-mermaid-\_r_26i\_ .node circle,#chatgpt-mermaid-\_r_26i\_ .node ellipse,#chatgpt-mermaid-\_r_26i\_ .node polygon,#chatgpt-mermaid-\_r_26i\_ .node path{fill:rgb(229, 243, 255);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_26i\_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-\_r_26i\_ .mermaid-decision .label-container{fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-dasharray:2,2;}#chatgpt-mermaid-\_r_26i\_ .edgePaths .flowchart-link{stroke:rgb(143, 143, 143);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-\_r_26i\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_26i\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}SyncMPClient发送请求get_output()Output ThreadZMQ PULLDecoder消息类型Future.set_resultqueue.QueueUtility普通结果
+
+关键代码：
+
+```
+self.output_queue_thread = Thread(    target=process_outputs_socket,    daemon=True,)self.output_queue_thread.start()
+```
+
+线程负责持续接收 ZMQ 消息。
+
+而 `get_output()`：
+
+```
+outputs = self.outputs_queue.get()
+```
+
+会阻塞等待结果。
+
+### **6.3 AsyncMPClient 的 Task 模型**
+
+\#chatgpt-mermaid-\_r_275\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_275\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_275\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_275\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_275\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_275\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_275\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_275\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_275\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_275\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_275\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_275\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_275\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_275\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_275\_ p{margin:0;}#chatgpt-mermaid-\_r_275\_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_275\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_275\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_275\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_275\_ .label text,#chatgpt-mermaid-\_r_275\_ span{fill:rgb(13, 13, 13);color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_275\_ .node rect,#chatgpt-mermaid-\_r_275\_ .node circle,#chatgpt-mermaid-\_r_275\_ .node ellipse,#chatgpt-mermaid-\_r_275\_ .node polygon,#chatgpt-mermaid-\_r_275\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1px;}#chatgpt-mermaid-\_r_275\_ .rough-node .label text,#chatgpt-mermaid-\_r_275\_ .node .label text,#chatgpt-mermaid-\_r_275\_ .image-shape .label,#chatgpt-mermaid-\_r_275\_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-\_r_275\_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-\_r_275\_ .rough-node .label,#chatgpt-mermaid-\_r_275\_ .node .label,#chatgpt-mermaid-\_r_275\_ .image-shape .label,#chatgpt-mermaid-\_r_275\_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-\_r_275\_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_275\_ .root .anchor path{fill:rgb(143, 143, 143)!important;stroke-width:0;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_275\_ .arrowheadPath{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_275\_ .edgePath .path{stroke:rgb(143, 143, 143);stroke-width:1px;}#chatgpt-mermaid-\_r_275\_ .flowchart-link{stroke:rgb(143, 143, 143);fill:none;}#chatgpt-mermaid-\_r_275\_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_275\_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_275\_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_275\_ .labelBkg{background-color:rgba(252, 252, 252, 0.5);}#chatgpt-mermaid-\_r_275\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_275\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_275\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_275\_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(243, 243, 243);border:1px solid rgba(0, 0, 0, 0.1);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-\_r_275\_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_275\_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-\_r_275\_ .icon-shape,#chatgpt-mermaid-\_r_275\_ .image-shape{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_275\_ .icon-shape p,#chatgpt-mermaid-\_r_275\_ .image-shape p{background-color:rgb(252, 252, 252);padding:2px;}#chatgpt-mermaid-\_r_275\_ .icon-shape .label rect,#chatgpt-mermaid-\_r_275\_ .image-shape .label rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_275\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_275\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_275\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_275\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_275\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_275\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_275\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_275\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_275\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_275\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_275\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_275\_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_275\_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_275\_ .node tspan[font-weight="normal"],#chatgpt-mermaid-\_r_275\_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-\_r_275\_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-width:1px;}#chatgpt-mermaid-\_r_275\_ .node rect,#chatgpt-mermaid-\_r_275\_ .node circle,#chatgpt-mermaid-\_r_275\_ .node ellipse,#chatgpt-mermaid-\_r_275\_ .node polygon,#chatgpt-mermaid-\_r_275\_ .node path{fill:rgb(229, 243, 255);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_275\_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-\_r_275\_ .mermaid-decision .label-container{fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-dasharray:2,2;}#chatgpt-mermaid-\_r_275\_ .edgePaths .flowchart-link{stroke:rgb(143, 143, 143);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-\_r_275\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_275\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}AsyncMPClientadd_request_async()get_output_async()Output Taskawait ZMQ recvDecoder消息类型Future.set_resultasyncio.QueueUtility普通结果
+
+核心区别：
+
+- Sync：线程负责 I/O，Queue 负责跨线程交付。
+- Async：Task 负责 I/O，asyncio.Queue 负责异步交付。
+
+**不要把 AsyncMPClient 理解为没有后台接收循环，它同样有一个持续运行的接收任务。**
+
+## **七、关键流程三：Data Parallel 请求负载均衡**
+
+这是这份代码中最有价值的分布式系统设计。
+
+重点阅读：
+
+```
+DPLBAsyncMPClient.get_core_engine_for_request()
+```
+
+### **7.1 DP 内部 LB 与外部 LB**
+
+**External Load Balancing**
+
+Load Balancer
+
+Client 0
+
+DP Rank 0
+
+Client 1
+
+DP Rank 1
+
+**Internal Load Balancing**
+
+One DPLBAsyncMPClient
+
+**Engine 0**
+
+DP Rank 0
+
+**Engine 1**
+
+DP Rank 1
+
+**Engine 2**
+
+DP Rank 2
+
+内部 LB 由客户端选择具体 EngineCore；外部 LB 由外部机制决定请求落在哪个 DP Rank。
+
+区别：
+
+- `DPAsyncMPClient`：请求默认发往自己的 `core_engine`。
+- `DPLBAsyncMPClient`：客户端自己在多个 EngineCore 中选择目标。
+
+### **7.2 负载均衡依据**
+
+DPLBAsyncMPClient 保存三个重要变量：
+
+```
+self.lb_enginesself.reqs_in_flightself.engine_inflight
 ```
 
 含义：
 
-- 前四个 Bundle：为 TP=4 的 Worker 预留 GPU。
-- 最后一个 Bundle：为 EngineCore Actor 预留 CPU。
-- `STRICT_PACK`：要求整个 Placement Group 放在同一节点。
-
-代码通过：
-
-```
-PlacementGroupSchedulingStrategy(    placement_group=pg,    placement_group_bundle_index=world_size,)
-```
-
-把 EngineCore Actor 放在最后一个 CPU Bundle 上。
-
-这里 `world_size` 对应最后一个 Bundle 的索引，因为索引从 0 开始，前面恰好有 `world_size` 个 GPU Bundle。
-
-### **3.4 ZMQ Handshake 是什么？**
-
-Handshake 是 EngineCore 启动时与管理端进行的通信协议。
-
-它不是推理请求通信，而是**进程发现、初始化参数交换和启动状态确认**。
-
-核心消息：
-
-| 消息    | 发送方          | 含义               |
-| ----- | ------------ | ---------------- |
-| HELLO | EngineCore   | 我已经启动，可以建立连接     |
-| 初始化信息 | Frontend/管理端 | 下发 ZMQ 地址和 DP 配置 |
-| READY | EngineCore   | 初始化完成，可以投入运行     |
-
-## **4. 关键流程一：EngineCore 启动流程**
-
-核心入口是：
-
-```
-@contextlib.contextmanagerdef launch_core_engines(    vllm_config,    executor_class,    log_stats,    addresses,):
-```
-
-整体调用关系：
-
-\#chatgpt-mermaid-\_r_gb\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_gb\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_gb\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_gb\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_gb\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_gb\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_gb\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_gb\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_gb\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_gb\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_gb\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_gb\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_gb\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_gb\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_gb\_ p{margin:0;}#chatgpt-mermaid-\_r_gb\_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_gb\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_gb\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_gb\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_gb\_ .label text,#chatgpt-mermaid-\_r_gb\_ span{fill:rgb(13, 13, 13);color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_gb\_ .node rect,#chatgpt-mermaid-\_r_gb\_ .node circle,#chatgpt-mermaid-\_r_gb\_ .node ellipse,#chatgpt-mermaid-\_r_gb\_ .node polygon,#chatgpt-mermaid-\_r_gb\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1px;}#chatgpt-mermaid-\_r_gb\_ .rough-node .label text,#chatgpt-mermaid-\_r_gb\_ .node .label text,#chatgpt-mermaid-\_r_gb\_ .image-shape .label,#chatgpt-mermaid-\_r_gb\_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-\_r_gb\_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-\_r_gb\_ .rough-node .label,#chatgpt-mermaid-\_r_gb\_ .node .label,#chatgpt-mermaid-\_r_gb\_ .image-shape .label,#chatgpt-mermaid-\_r_gb\_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-\_r_gb\_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_gb\_ .root .anchor path{fill:rgb(143, 143, 143)!important;stroke-width:0;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_gb\_ .arrowheadPath{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_gb\_ .edgePath .path{stroke:rgb(143, 143, 143);stroke-width:1px;}#chatgpt-mermaid-\_r_gb\_ .flowchart-link{stroke:rgb(143, 143, 143);fill:none;}#chatgpt-mermaid-\_r_gb\_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_gb\_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_gb\_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_gb\_ .labelBkg{background-color:rgba(252, 252, 252, 0.5);}#chatgpt-mermaid-\_r_gb\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_gb\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_gb\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_gb\_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(243, 243, 243);border:1px solid rgba(0, 0, 0, 0.1);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-\_r_gb\_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_gb\_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-\_r_gb\_ .icon-shape,#chatgpt-mermaid-\_r_gb\_ .image-shape{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_gb\_ .icon-shape p,#chatgpt-mermaid-\_r_gb\_ .image-shape p{background-color:rgb(252, 252, 252);padding:2px;}#chatgpt-mermaid-\_r_gb\_ .icon-shape .label rect,#chatgpt-mermaid-\_r_gb\_ .image-shape .label rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_gb\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_gb\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_gb\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_gb\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_gb\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_gb\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_gb\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_gb\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_gb\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_gb\_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_gb\_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_gb\_ .node tspan[font-weight="normal"],#chatgpt-mermaid-\_r_gb\_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-\_r_gb\_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-width:1px;}#chatgpt-mermaid-\_r_gb\_ .node rect,#chatgpt-mermaid-\_r_gb\_ .node circle,#chatgpt-mermaid-\_r_gb\_ .node ellipse,#chatgpt-mermaid-\_r_gb\_ .node polygon,#chatgpt-mermaid-\_r_gb\_ .node path{fill:rgb(229, 243, 255);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_gb\_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-\_r_gb\_ .mermaid-decision .label-container{fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-dasharray:2,2;}#chatgpt-mermaid-\_r_gb\_ .edgePaths .flowchart-link{stroke:rgb(143, 143, 143);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-\_r_gb\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_gb\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}launch_core_engines()读取 ParallelConfig判断 Offline / Online创建 tensor_queue（可选）需要 DP Coordinator?启动 DPCoordinator跳过 CoordinatorDP BackendCoreEngineActorManager创建 ZMQ ROUTERCoreEngineProcManager启动 EngineCore 子进程返回 CoreEngineLaunchFrontend 启动及连接wait_for_engine_startup全部 Engine READY是否RayMP
-
-### **第一步：准备配置和通信资源**
-
-主要变量：
-
-```
-dp_size = parallel_config.data_parallel_sizelocal_engine_count = parallel_config.data_parallel_size_localdp_rank = parallel_config.data_parallel_rank
-```
-
-它们分别表示：
-
-- `dp_size`：全局 DP Engine 数量。
-- `local_engine_count`：当前节点负责启动的 Engine 数量。
-- `dp_rank`：当前启动进程所处的 DP Rank 起始位置。
-
-随后可能创建多模态 Tensor IPC Queue：
-
-```
-if multimodal_config is not None \    and multimodal_config.mm_tensor_ipc == "torch_shm":    tensor_queue = get_mp_context().Queue()
-```
-
-它用于 API Server 与 EngineCore 之间共享多模态 Tensor。
-
-### **第二步：启动 DP Coordinator**
-
-```
-run_coordinator = (    vllm_config.needs_dp_coordinator    and not offline_mode    and dp_rank == 0)
-```
-
-只有满足条件才启动。
-
-Coordinator 的主要职责：
-
-1. 收集和发布 Engine 队列负载统计。
-2. 支持 Internal / Hybrid Load Balancing。
-3. 对 MoE 模型进行 Wave Coordination。
-
-需要注意：Coordinator 不是每个 DP Rank 都创建一个，而是在这里由在线模式的 Rank 0 启动。
-
-### **第三步：选择 Engine 管理器**
-
-- Ray Backend：创建 `CoreEngineActorManager`。
-- 非 Ray Backend：创建 `CoreEngineProcManager`。
-
-非 Ray 路径会先创建一个 ZMQ ROUTER Socket，用于等待 EngineCore 的 HELLO 和 READY 消息，然后启动本地进程。
-
-### **第四步：启动 EngineCore**
-
-```
-context.Process(    target=EngineCoreProc.run_engine_core,    name=f"EngineCore_DP{global_index}",    kwargs={        "dp_rank": global_index,        "local_dp_rank": local_index,        ...    },)
-```
-
-注意，这里并没有直接执行 EngineCore 的推理逻辑，而是创建后台进程，并让它执行：
-
-```
-EngineCoreProc.run_engine_core()
-```
-
-真正的 EngineCore 初始化和 Worker 创建需要继续阅读 `vllm/v1/engine/core.py`。
-
-## **5. 关键流程二：HELLO / READY 握手**
-
-这是整份代码最值得断点阅读的流程。
-
-核心方法：
-
-```
-wait_for_engine_startup(    handshake_socket,    core_engines,    parallel_config,    coordinated_dp,    cache_config,    launch,)
-```
-
-### **5.1 状态机**
-
-**NEW**
-
-EngineCore 已被管理端登记，尚未连接
-
-HELLO
-
-EngineCore → ROUTER
-
-**CONNECTED**
-
-管理端已识别 Engine，并下发初始化元数据
-
-READY
-
-EngineCore → ROUTER
-
-**READY**
-
-初始化完成，通过启动屏障
-
-对应代码：
-
-```
-if status == "HELLO" and engine.state == CoreEngineState.NEW:    # 发送初始化信息    handshake_socket.send_multipart(        (eng_identity, init_message),        copy=False,    )    engine.state = CoreEngineState.CONNECTEDelif status == "READY" and engine.state == CoreEngineState.CONNECTED:    engine.state = CoreEngineState.READY
-```
-
-这里有一个重要设计：
-
-**HELLO 代表进程已经能够通信，不代表模型已经加载完成。READY 才代表 EngineCore 完成了它的启动初始化。**
-
-### **5.2 为什么需要两个阶段？**
-
-EngineCore 的启动通常涉及：
-
-1. 创建 Executor。
-2. 启动 GPU Worker。
-3. 初始化分布式通信。
-4. 加载模型。
-5. 初始化 KV Cache。
-6. 完成运行前准备。
-
-这些操作可能耗时较长。
-
-因此，进程创建成功和模型初始化成功是两个不同的状态。
-
-管理端不能只通过 `Process.start()` 就认为 EngineCore 可以接受请求。
-
-### **5.3 为什么使用 ROUTER？**
-
-代码：
-
-```
-with zmq_socket_ctx(    local_handshake_address,    zmq.ROUTER,    bind=True,) as handshake_socket:
-```
-
-因为多个 EngineCore 需要连接同一个管理端。
-
-ROUTER 可以根据每个连接的 Identity 识别消息发送方。
-
-消息逻辑：
-
-```
-                ROUTER
-                  |
-       +----------+----------+
-       |          |          |
-    Engine0    Engine1    Engine2
-       |          |          |
-     HELLO      HELLO      HELLO
-       |          |          |
-    READY      READY      READY
-```
-
-这里 `recv_multipart()` 接收到：
-
-```
-eng_identity, ready_msg_bytes = (    handshake_socket.recv_multipart())
-```
-
-通过 `eng_identity` 找到对应的 `CoreEngine`：
-
-```
-engine = next(    (e for e in core_engines if e.identity == eng_identity),    None,)
-```
-
-因此，消息顺序不需要和 DP Rank 顺序一致。
-
-### **5.4 启动屏障**
-
-代码维护两个计数器：
-
-```
-conn_pending = [local_count, remote_count]start_pending = [0, 0]
-```
-
-分别表示：
-
-| 变量              | 含义                            |
-| --------------- | ----------------------------- |
-| `conn_pending`  | 尚未完成 HELLO 的 Engine 数量        |
-| `start_pending` | 已经 HELLO、尚未 READY 的 Engine 数量 |
-
-只有当：
-
-```
-while any(conn_pending) or any(start_pending):
-```
-
-条件不再成立时，才算完成启动屏障。
-
-例如 DP=4，其中本地 2 个、远程 2 个：
-
-| 阶段         | Local Pending | Remote Pending |
-| ---------- | ------------- | -------------- |
-| 初始连接       | 2             | 2              |
-| 全部 HELLO   | 0             | 2              |
-| 远程全部 HELLO | 0             | 0              |
-| 部分 READY   | 0             | 0              |
-| 全部 READY   | 0             | 0              |
-
-注意：`start_pending` 会在 HELLO 时增加，收到 READY 时减少。因此两个阶段可以交错进行。
-
-## **6. 关键流程三：GPU ID 映射**
-
-重点方法：
-
-```
-set_assigned_physical_gpu_ids_for_dp_rank()get_physical_gpu_ids_for_local_dp_rank()
-```
-
-目的：将 DP Rank 对应的逻辑 GPU 范围映射到实际物理 GPU ID。
+| 变量                | 含义                              |
+| ----------------- | ------------------------------- |
+| `lb_engines`      | 每个 Engine 的等待数、运行数、KV Cache 使用率 |
+| `reqs_in_flight`  | request_id → EngineIdentity     |
+| `engine_inflight` | 每个 Engine 当前未完成请求数量             |
 
 例如：
 
 ```
-GPU 物理编号：
-
-[0, 1, 2, 3, 4, 5, 6, 7]
-
-DP Size = 2
-World Size = 4
-Local World Size = 4
-
-DP0 -> [0, 1, 2, 3]
-DP1 -> [4, 5, 6, 7]
+lb_engines = [    [10, 5, 0.9],    [2, 3, 0.3],    [4, 2, 0.5],]
 ```
 
-核心计算：
+代表：
+
+| Engine | Waiting | Running | KV 使用率 |
+| ------ | ------- | ------- | ------ |
+| 0      | 10      | 5       | 90%    |
+| 1      | 2       | 3       | 30%    |
+| 2      | 4       | 2       | 50%    |
+
+Engine 0 有较高的等待量和 KV Cache 压力，因此新请求应该优先考虑其他 Engine。
+
+### **7.3 负载评分公式**
+
+源码中：
 
 ```
-start = local_dp_rank * world_sizestop = start + local_world_sizereturn user_assigned_gpu_ids[start:stop]
+score = max(    self.client_count * inflight,    waiting + running)if waiting:    score += waiting * 6.0 * max(        0.0,        kv_cache_usage - 0.5    )
 ```
 
-如果用户没有通过 `--device-ids` 指定 GPU，则通过平台设备映射接口获取物理 GPU ID。
+可以写成：
 
-注意两个概念：
-
-- `local_dp_rank`：当前机器内的 DP 编号。
-- `world_size`：一个 DP Engine 所需要的 GPU Worker 总数。
-
-代码还特别处理了同一个 `VllmConfig` 被多个进程依次启动时，GPU ID 映射可能被覆盖的问题，所以在启动每个进程前单独更新配置。
-
-## **7. 关键流程四：Ray Placement Group 创建**
-
-Ray 路径最重要的方法：
-
-```
-create_dp_placement_groups()
-```
-
-它支持三种放置策略：
-
-| 策略       | 行为                    | 适用情况                   |
-| -------- | --------------------- | ---------------------- |
-| `strict` | 一个 DP Engine 的资源放在单节点 | 节点内资源充足                |
-| `fill`   | 尽量填满当前节点，再使用其他节点      | 提高资源利用率                |
-| `span`   | 一个 DP Engine 可以跨多个节点  | 单节点 GPU 不足以容纳一个 Engine |
+\\[ S_i = \max(C \times I_i,\ W_i+R_i) + 6W_i\max(0,K_i-0.5) \\]
 
 其中：
 
-- `STRICT_PACK`：整个 Placement Group 放在同一节点。
-- `PACK`：尽可能将 Bundle 放在较少节点上，但允许跨节点。
+| 符号        | 含义                       |
+| --------- | ------------------------ |
+| \\(C\\)   | 客户端数量                    |
+| \\(I_i\\) | 当前客户端在 Engine i 上的未完成请求数 |
+| \\(W_i\\) | Engine i 的等待请求数          |
+| \\(R_i\\) | Engine i 的运行请求数          |
+| \\(K_i\\) | Engine i 的 KV Cache 使用率  |
 
-代码还对 DeepEP 有特殊限制：`fill` 不保证 EP Rank 的节点分布满足 DeepEP 要求，因此不能用于对应的 DeepEP All2All 后端。
+最终选择：
 
-### **Ray Actor 创建过程**
+\\[ Engine\_{selected}=\arg\min_i S_i \\]
 
-```
-actor = (    ray.remote(actor_class)    .options(        scheduling_strategy=PlacementGroupSchedulingStrategy(            placement_group=pg,            placement_group_bundle_index=world_size,        ),        runtime_env=runtime_env,    )    .remote(        vllm_config=dp_vllm_config,        executor_class=executor_class,        log_stats=log_stats,        local_client=local_client,        addresses=addresses,        dp_rank=index,        local_dp_rank=local_index,    ))
-```
+### **7.4 为什么要乘 KV Cache 惩罚项？**
 
-可以理解为：
+假设两个 Engine：
 
-```
-Ray Cluster
-    |
-    +-- PlacementGroup DP0
-    |      +-- GPU Bundle 0
-    |      +-- GPU Bundle 1
-    |      +-- GPU Bundle 2
-    |      +-- GPU Bundle 3
-    |      +-- CPU Bundle
-    |              |
-    |          EngineCoreActor DP0
-    |
-    +-- PlacementGroup DP1
-           +-- GPU Bundle 0
-           +-- GPU Bundle 1
-           +-- GPU Bundle 2
-           +-- GPU Bundle 3
-           +-- CPU Bundle
-                   |
-               EngineCoreActor DP1
-```
+| 指标      | Engine A | Engine B |
+| ------- | -------- | -------- |
+| Waiting | 5        | 5        |
+| Running | 3        | 3        |
+| KV 使用率  | 90%      | 40%      |
 
-Actor 创建后：
+Engine A 的等待队列虽然和 B 一样，但它的 KV Cache 已经接近满载。
 
-```
-ray.get(refs)for actor in self.local_engine_actors + self.remote_engine_actors:    ref = actor.run.remote()    self.run_refs.append(ref)
-```
+继续向 A 分配请求可能导致：
 
-这里分为两个阶段：
+- KV Cache 资源不足。
+- 请求等待时间增加。
+- Scheduler 调度空间受限。
+- 请求吞吐下降。
 
-1. `wait_for_init.remote()`：等待 Actor 初始化完成。
-2. `run.remote()`：启动 Actor 的持续运行任务。
+因此增加惩罚项：
 
-这和本地 multiprocessing 路径的 HELLO/READY 握手不能简单地视为同一套实现。
+\\[ Penalty=6W\max(0,K-0.5) \\]
 
-## **8. 关键流程五：故障监控与关闭**
+A：
 
-### **8.1 本地进程监控**
+\\[ 5\times6\times(0.9-0.5)=12 \\]
+
+B：
+
+\\[ 5\times6\times\max(0,0.4-0.5)=0 \\]
+
+这意味着相同等待队列长度下，A 会获得更高负载评分。
+
+### **7.5 一个重要细节：本地请求计数**
 
 ```
-def monitor_engine_liveness(self):    sentinel_to_proc = {        proc.sentinel: proc for proc in self.processes    }    while sentinels and not self.manager_stopped.is_set():        died_sentinels = connection.wait(            sentinels,            timeout=1,        )
+current_counts[eng_index][0] += self.client_count
 ```
 
-**Sentinel 是什么？**
+为什么要本地增加 Waiting？
 
-它是 multiprocessing 提供的进程退出监控句柄。
+因为 Coordinator 的统计数据并不是实时更新的，源码注释指出统计更新周期约为 100ms。
 
-当子进程退出时，对应 Sentinel 会变为可读状态。
+如果短时间内连续到达多个请求，而本地不更新计数，客户端可能连续把请求发到同一个 Engine。
 
-管理器就可以：
+因此：
 
-```
-exitcode = proc.exitcodeif exitcode != 0:    self.failed_proc_name = proc.name
-```
+- Coordinator 提供全局统计快照。
+- Client 使用本地计数弥补统计延迟。
+- `engine_inflight` 提供当前客户端的精确请求计数。
+- `eng_start_index` 轮转起始位置，避免相同评分时总是优先选择同一个 Engine。
 
-检测到异常后，退出监控循环并触发统一关闭。
+这是一个典型的**全局近似统计 + 本地精确状态**的负载均衡设计。
 
-### **8.2 Ray Actor 监控**
+粘贴的文本 (1)(20261115-152447).txt
 
-```
-actor_done_refs, _ = ray.wait(    actor_run_refs,    timeout=5,)
-```
+### **7.6 为什么需要 reqs_in_flight？**
 
-通过 ObjectRef 监控 Actor 的运行任务。
-
-如果出现：
+请求分配后：
 
 ```
-ray.get(actor_ref)
+self.reqs_in_flight[request.request_id] = chosen_engineself.engine_inflight[chosen_engine] += 1
 ```
 
-抛出 `RayActorError`，就认为发生异常。
-
-### **8.3 关闭流程**
-
-| 管理对象            | 关闭方式                                  |
-| --------------- | ------------------------------------- |
-| multiprocessing | `shutdown(self.processes)`            |
-| Ray Actor       | `ray.kill(actor)`                     |
-| Placement Group | `ray.util.remove_placement_group(pg)` |
-| 监控线程/循环         | `manager_stopped.set()`               |
-
-特别值得研究：
+当请求完成：
 
 ```
-get_engine_process_shutdown_timeout()
+async def process_engine_outputs(self, outputs):    for req_id in outputs.finished_requests:        engine = self.reqs_in_flight.pop(req_id, None)        if engine is not None:            self.engine_inflight[engine] -= 1
 ```
 
-它区分了两个超时：
+这两个操作构成完整的生命周期：
 
-- `request_timeout`：允许在途请求继续排空的时间。
-- `process_timeout`：进程释放设备资源的等待时间。
+\#chatgpt-mermaid-\_r_294\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_294\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_294\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_294\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_294\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_294\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_294\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_294\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_294\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_294\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_294\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_294\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_294\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_294\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_294\_ p{margin:0;}#chatgpt-mermaid-\_r_294\_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_294\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_294\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_294\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_294\_ .label text,#chatgpt-mermaid-\_r_294\_ span{fill:rgb(13, 13, 13);color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_294\_ .node rect,#chatgpt-mermaid-\_r_294\_ .node circle,#chatgpt-mermaid-\_r_294\_ .node ellipse,#chatgpt-mermaid-\_r_294\_ .node polygon,#chatgpt-mermaid-\_r_294\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1px;}#chatgpt-mermaid-\_r_294\_ .rough-node .label text,#chatgpt-mermaid-\_r_294\_ .node .label text,#chatgpt-mermaid-\_r_294\_ .image-shape .label,#chatgpt-mermaid-\_r_294\_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-\_r_294\_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-\_r_294\_ .rough-node .label,#chatgpt-mermaid-\_r_294\_ .node .label,#chatgpt-mermaid-\_r_294\_ .image-shape .label,#chatgpt-mermaid-\_r_294\_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-\_r_294\_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_294\_ .root .anchor path{fill:rgb(143, 143, 143)!important;stroke-width:0;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_294\_ .arrowheadPath{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_294\_ .edgePath .path{stroke:rgb(143, 143, 143);stroke-width:1px;}#chatgpt-mermaid-\_r_294\_ .flowchart-link{stroke:rgb(143, 143, 143);fill:none;}#chatgpt-mermaid-\_r_294\_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_294\_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_294\_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_294\_ .labelBkg{background-color:rgba(252, 252, 252, 0.5);}#chatgpt-mermaid-\_r_294\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_294\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_294\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_294\_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(243, 243, 243);border:1px solid rgba(0, 0, 0, 0.1);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-\_r_294\_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_294\_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-\_r_294\_ .icon-shape,#chatgpt-mermaid-\_r_294\_ .image-shape{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_294\_ .icon-shape p,#chatgpt-mermaid-\_r_294\_ .image-shape p{background-color:rgb(252, 252, 252);padding:2px;}#chatgpt-mermaid-\_r_294\_ .icon-shape .label rect,#chatgpt-mermaid-\_r_294\_ .image-shape .label rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_294\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_294\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_294\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_294\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_294\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_294\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_294\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_294\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_294\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_294\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_294\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_294\_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_294\_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_294\_ .node tspan[font-weight="normal"],#chatgpt-mermaid-\_r_294\_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-\_r_294\_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-width:1px;}#chatgpt-mermaid-\_r_294\_ .node rect,#chatgpt-mermaid-\_r_294\_ .node circle,#chatgpt-mermaid-\_r_294\_ .node ellipse,#chatgpt-mermaid-\_r_294\_ .node polygon,#chatgpt-mermaid-\_r_294\_ .node path{fill:rgb(229, 243, 255);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_294\_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-\_r_294\_ .mermaid-decision .label-container{fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-dasharray:2,2;}#chatgpt-mermaid-\_r_294\_ .edgePaths .flowchart-link{stroke:rgb(143, 143, 143);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-\_r_294\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_294\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}收到新请求选择 Engine记录 request_id → Engineinflight + 1Engine 执行请求收到 finished_requests删除 request_id 映射inflight - 1
 
-ROCm 在两个超时都为 0 的特定情况下，会额外获得 15 秒清理时间，避免强制杀进程导致 VRAM 残留。
+为什么不能只看 Coordinator 统计？
 
-## **9. 其他重要方法索引**
+因为请求可能已经发送出去，但 Coordinator 尚未更新统计数据。
 
-| 方法                                            | 功能                        | 阅读优先级 |
-| --------------------------------------------- | ------------------------- | ----- |
-| `get_engine_zmq_addresses()`                  | 分配 Engine 与 Frontend 通信地址 | 高     |
-| `launch_core_engines()`                       | 总体启动流程                    | 最高    |
-| `wait_for_engine_startup()`                   | 握手与 READY 屏障              | 最高    |
-| `CoreEngineProcManager.__init__()`            | 创建子进程、分配 GPU              | 最高    |
-| `CoreEngineActorManager.__init__()`           | 创建 Ray Actor              | 高     |
-| `create_dp_placement_groups()`                | DP 资源分配                   | 高     |
-| `set_assigned_physical_gpu_ids_for_dp_rank()` | GPU 映射                    | 高     |
-| `monitor_engine_liveness()`                   | 进程/Actor 监控               | 中     |
-| `scale_up_elastic_ep()`                       | 弹性扩容                      | 中     |
-| `scale_down_elastic_ep()`                     | 弹性缩容                      | 中     |
-| `SignalCallback`                              | 信号处理与线程协作                 | 低     |
+如果本地没有记录请求分配情况：
 
-## **10. 建议的 VS Code 断点阅读顺序**
+1. 不能准确跟踪当前客户端的负载。
+2. 无法知道某个请求应该向哪个 Engine 发送 ABORT。
+3. 无法在请求完成后正确回收计数。
 
-不要从文件第一行开始逐行阅读。建议围绕一次 EngineCore 启动建立调用链。
+### **7.7 ABORT 如何路由？**
 
-1. `get_engine_zmq_addresses()`
+```
+engine = self.reqs_in_flight.get(request_id)await self._send_input(    EngineCoreRequestType.ABORT,    request_ids,    engine)
+```
 
-   观察 IPC/TCP 地址如何生成，为什么有些端口使用 `tcp://host:0`。
-2. `launch_core_engines()`
+如果一次取消多个请求：
 
-   观察 DP 配置、Coordinator、Backend 分支。
-3. `CoreEngineProcManager.__init__()`
+```
+by_engine = defaultdict(list)for req_id in request_ids:    if engine := self.reqs_in_flight.get(req_id):        by_engine[engine].append(req_id)
+```
 
-   观察进程创建、DP Rank、GPU 映射和 `proc.start()`。
-4. `EngineCoreProc.run_engine_core()`
+再按 Engine 分组发送。
 
-   跳转到 `vllm/v1/engine/core.py`，研究 EngineCore 内部初始化。
-5. **EngineCore HELLO 发送位置**
+例如：
 
-   追踪 EngineCore 如何连接 ROUTER、发送 HELLO、接收初始化元数据。
-6. `wait_for_engine_startup()`
+```
+请求 A → Engine 0
+请求 B → Engine 1
+请求 C → Engine 0
+请求 D → Engine 2
+```
 
-   观察 HELLO、READY 状态变化和启动屏障。
-7. `monitor_engine_liveness()`
+ABORT 会变成：
 
-   观察异常退出、进程清理和资源回收。
+```
+Engine 0: [A, C]
+Engine 1: [B]
+Engine 2: [D]
+```
 
-### **建议重点观察的变量**
+**这也是为什么请求路由信息必须保留到请求真正结束。**
 
-| 变量                   | 需要搞清楚的问题                         |
-| -------------------- | -------------------------------- |
-| `dp_size`            | 总共有多少个 EngineCore？               |
-| `local_engine_count` | 当前节点启动几个？                        |
-| `dp_rank`            | 全局 DP 编号如何分配？                    |
-| `local_dp_rank`      | 本地 DP 编号如何分配？                    |
-| `world_size`         | 每个 EngineCore 使用多少个 Worker Rank？ |
-| `addresses`          | Frontend 和 EngineCore 如何建立通信？    |
-| `identity`           | 如何识别不同 EngineCore？               |
-| `conn_pending`       | 还有多少 Engine 没有连接？                |
-| `start_pending`      | 还有多少 Engine 没有 READY？            |
+## **八、关键流程四：DP 状态同步与 First Request**
 
-## **11. 最终总结：这份代码应该掌握什么？**
+DPAsyncMPClient 还有一个容易忽略的机制：统计同步。
 
-我建议把这份源码归纳成四个核心知识点：
+### **8.1 统计同步**
 
-1. **进程模型**：EngineCore 为什么独立运行在后台进程或 Ray Actor 中？
-2. **资源调度**：DP Rank 如何对应 GPU 资源，Ray Placement Group 如何组织资源？
-3. **通信机制**：Frontend 如何通过 ZMQ ROUTER 与 EngineCore 完成启动握手？
-4. **生命周期管理**：如何保证所有 EngineCore READY，如何检测异常和释放资源？
+```
+async def _ensure_stats_update_task(self):
+```
 
-这份代码没有直接实现模型推理调度，真正的推理执行逻辑还在 EngineCore 和 Executor 内部。
+这个任务使用：
 
-**下一步最值得读的是&#x20;**`vllm/v1/engine/core.py`**&#x20;中的&#x20;**`EngineCoreProc.run_engine_core()`**。** 把它与本文件的 `launch_core_engines()`、`wait_for_engine_startup()` 串起来，就能理解 vLLM 从创建 EngineCore 到模型真正初始化完成的完整过程。
+```
+zmq.XSUBzmq.PAIR
+```
 
-参考源码：本次上传文件 `CoreEngineProcManager / CoreEngineActorManager`，主要对应第 144–274、401–1035、1039–1416 行。
+其中：
 
-如果继续推进源码学习，可以下一步把 `core.py` 的 EngineCore、Executor、Worker 调用关系整理成一张完整类图和启动时序图。
+- XSUB：订阅 Coordinator 发布的统计数据。
+- PAIR：客户端内部用于接收首次请求通知和弹性扩缩容通知。
 
-明天继续研究 EngineCore 内部初始化和 Executor 创建流程，可以使用下面的学习计划：
+统计消息结构：
 
-📚明天继续学习 EngineCore 源码轻点设置
+```
+counts, wave, running = msgspec.msgpack.decode(buf)
+```
+
+它更新：
+
+```
+self.current_wave = waveself.engines_running = runningself.lb_engines = sliced_counts
+```
+
+所以这里存在两类消息：
+
+| 消息        | 用途                    |
+| --------- | --------------------- |
+| Stats     | 更新负载均衡状态              |
+| FIRST_REQ | 通知 Coordinator 有新请求进入 |
+
+### **8.2 为什么需要 FIRST_REQ？**
+
+代码：
+
+```
+if not self.engines_running:    req_msg = msgspec.msgpack.encode(        ("FIRST_REQ", chosen_engine)    )    await self.first_req_send_socket.send(req_msg)
+```
+
+当 EngineCore 处于暂停状态时，新的请求需要通知 Coordinator。
+
+Coordinator 再向 EngineCore 发送相应通知，使其恢复执行必要的调度循环，例如 EP 场景下的 dummy loop。
+
+流程：
+
+EngineCoreDPCoordinatorDPAsyncMPClientEngineCoreDPCoordinatorDPAsyncMPClient#chatgpt-mermaid-\_r_2at\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_2at\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_2at\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_2at\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_2at\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2at\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_2at\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_2at\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_2at\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_2at\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_2at\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_2at\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2at\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2at\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_2at\_ p{margin:0;}#chatgpt-mermaid-\_r_2at\_ .actor{stroke:rgb(83, 154, 248);fill:rgb(222, 234, 251);stroke-width:1;}#chatgpt-mermaid-\_r_2at\_ rect.actor.outer-path[data-look="neo"]{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2at\_ rect.note[data-look="neo"]{stroke:rgb(107, 198, 127);fill:rgb(243, 243, 243);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2at\_ text.actor>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_2at\_ .actor-line{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2at\_ .innerArc{stroke-width:1.5;stroke-dasharray:none;}#chatgpt-mermaid-\_r_2at\_ .messageLine0{stroke-width:1.5;stroke-dasharray:none;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2at\_ .messageLine1{stroke-width:1.5;stroke-dasharray:2,2;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2at\_ [id$="-arrowhead"] path{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2at\_ .sequenceNumber{fill:#707070;}#chatgpt-mermaid-\_r_2at\_ [id$="-sequencenumber"]{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2at\_ [id$="-crosshead"] path{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2at\_ .messageText{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_2at\_ .labelBox{stroke:rgba(0, 0, 0, 0.1);fill:rgb(252, 252, 252);filter:none;}#chatgpt-mermaid-\_r_2at\_ .labelText,#chatgpt-mermaid-\_r_2at\_ .labelText>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_2at\_ .loopText,#chatgpt-mermaid-\_r_2at\_ .loopText>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_2at\_ .sectionTitle,#chatgpt-mermaid-\_r_2at\_ .sectionTitle>tspan{fill:rgb(13, 13, 13);stroke:none;}#chatgpt-mermaid-\_r_2at\_ .loopLine{stroke-width:2px;stroke-dasharray:2,2;stroke:rgba(0, 0, 0, 0.1);fill:rgba(0, 0, 0, 0.1);}#chatgpt-mermaid-\_r_2at\_ .note{stroke:rgb(107, 198, 127);fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_2at\_ .noteText,#chatgpt-mermaid-\_r_2at\_ .noteText>tspan{fill:rgb(13, 13, 13);stroke:none;font-weight:normal;}#chatgpt-mermaid-\_r_2at\_ .activation0{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_2at\_ .activation1{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_2at\_ .activation2{fill:rgb(243, 243, 243);stroke:hsl(0, 0%, 85.2941176471%);}#chatgpt-mermaid-\_r_2at\_ .actorPopupMenu{position:absolute;}#chatgpt-mermaid-\_r_2at\_ .actorPopupMenuPanel{position:absolute;fill:rgb(222, 234, 251);box-shadow:0px 8px 16px 0px rgba(0,0,0,0.2);filter:drop-shadow(3px 5px 2px rgb(0 0 0 / 0.4));}#chatgpt-mermaid-\_r_2at\_ .actor-man circle,#chatgpt-mermaid-\_r_2at\_ line{fill:rgb(222, 234, 251);stroke-width:2px;}#chatgpt-mermaid-\_r_2at\_ g rect.rect{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_2at\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_2at\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_2at\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_2at\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_2at\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2at\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_2at\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2at\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}ADD RequestFIRST_REQ(target_engine)唤醒/通知Stats Update更新 engines_running
+
+这里需要特别注意：`FIRST_REQ` 不是普通推理请求，也不是 ADD 请求的替代品，它是协调器层面的运行状态通知。
+
+粘贴的文本 (1)(20261115-152447).txt
+
+## **九、关键流程五：Elastic EP 动态扩缩容**
+
+这是文件中复杂度最高的一块。
+
+它解决的问题是：
+
+**运行期间动态增加或减少 Data Parallel EngineCore 数量，并重新配置分布式 Expert Parallel 环境。**
+
+对应接口：
+
+```
+prepare_elastic_ep(new_data_parallel_size)commit_elastic_ep()
+```
+
+### **9.1 为什么拆成 Prepare 和 Commit？**
+
+因为动态扩缩容不是简单创建或销毁进程。
+
+还需要处理：
+
+- 新旧 Rank 的通信配置。
+- Expert 分布式布局。
+- EngineCore 的重新初始化。
+- 新 Engine Ready。
+- Scheduler 暂停与恢复。
+- Coordinator 统计信息更新。
+
+因此拆成两个阶段：
+
+| 阶段      | 作用                          |
+| ------- | --------------------------- |
+| Prepare | 准备新的 DP 拓扑，暂不将请求路由到新 Engine |
+| Commit  | 正式切换拓扑，更新 Engine 列表并恢复调度    |
+
+### **9.2 Scale Up 流程**
+
+\#chatgpt-mermaid-\_r_2bc\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_2bc\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_2bc\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_2bc\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_2bc\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bc\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_2bc\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_2bc\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_2bc\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_2bc\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_2bc\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_2bc\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bc\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bc\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_2bc\_ p{margin:0;}#chatgpt-mermaid-\_r_2bc\_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bc\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bc\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bc\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_2bc\_ .label text,#chatgpt-mermaid-\_r_2bc\_ span{fill:rgb(13, 13, 13);color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bc\_ .node rect,#chatgpt-mermaid-\_r_2bc\_ .node circle,#chatgpt-mermaid-\_r_2bc\_ .node ellipse,#chatgpt-mermaid-\_r_2bc\_ .node polygon,#chatgpt-mermaid-\_r_2bc\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1px;}#chatgpt-mermaid-\_r_2bc\_ .rough-node .label text,#chatgpt-mermaid-\_r_2bc\_ .node .label text,#chatgpt-mermaid-\_r_2bc\_ .image-shape .label,#chatgpt-mermaid-\_r_2bc\_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-\_r_2bc\_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-\_r_2bc\_ .rough-node .label,#chatgpt-mermaid-\_r_2bc\_ .node .label,#chatgpt-mermaid-\_r_2bc\_ .image-shape .label,#chatgpt-mermaid-\_r_2bc\_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-\_r_2bc\_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_2bc\_ .root .anchor path{fill:rgb(143, 143, 143)!important;stroke-width:0;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bc\_ .arrowheadPath{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bc\_ .edgePath .path{stroke:rgb(143, 143, 143);stroke-width:1px;}#chatgpt-mermaid-\_r_2bc\_ .flowchart-link{stroke:rgb(143, 143, 143);fill:none;}#chatgpt-mermaid-\_r_2bc\_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_2bc\_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_2bc\_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_2bc\_ .labelBkg{background-color:rgba(252, 252, 252, 0.5);}#chatgpt-mermaid-\_r_2bc\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_2bc\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bc\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bc\_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(243, 243, 243);border:1px solid rgba(0, 0, 0, 0.1);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-\_r_2bc\_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bc\_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-\_r_2bc\_ .icon-shape,#chatgpt-mermaid-\_r_2bc\_ .image-shape{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_2bc\_ .icon-shape p,#chatgpt-mermaid-\_r_2bc\_ .image-shape p{background-color:rgb(252, 252, 252);padding:2px;}#chatgpt-mermaid-\_r_2bc\_ .icon-shape .label rect,#chatgpt-mermaid-\_r_2bc\_ .image-shape .label rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_2bc\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_2bc\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_2bc\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_2bc\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_2bc\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_2bc\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_2bc\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bc\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_2bc\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bc\_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_2bc\_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_2bc\_ .node tspan[font-weight="normal"],#chatgpt-mermaid-\_r_2bc\_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-\_r_2bc\_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-width:1px;}#chatgpt-mermaid-\_r_2bc\_ .node rect,#chatgpt-mermaid-\_r_2bc\_ .node circle,#chatgpt-mermaid-\_r_2bc\_ .node ellipse,#chatgpt-mermaid-\_r_2bc\_ .node polygon,#chatgpt-mermaid-\_r_2bc\_ .node path{fill:rgb(229, 243, 255);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_2bc\_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-\_r_2bc\_ .mermaid-decision .label-container{fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-dasharray:2,2;}#chatgpt-mermaid-\_r_2bc\_ .edgePaths .flowchart-link{stroke:rgb(143, 143, 143);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-\_r_2bc\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bc\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}prepare_elastic_ep(N)计算新的 Expert 配置创建分布式重配置 Bootstrap通知现有 Engine 重新配置创建新的 EngineCore等待所有新 Engine Readycommit_elastic_ep()pause_scheduler(mode=keep)现有 Engine 提交新配置等待RECONFIGURE_FINISHED等待新增 Engine Ready更新 core_engines 和 DP size通知 Coordinatorresume_scheduler()
+
+关键方法：
+
+```
+_prepare_scale_up_elastic_ep()_commit_scale_up_elastic_ep()
+```
+
+### **9.3 Scale Down 流程**
+
+\#chatgpt-mermaid-\_r_2bp\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(13, 13, 13);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_2bp\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_2bp\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_2bp\_ .error-icon{fill:rgb(243, 243, 243);}#chatgpt-mermaid-\_r_2bp\_ .error-text{fill:rgb(13, 13, 13);stroke:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bp\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_2bp\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_2bp\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_2bp\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_2bp\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_2bp\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_2bp\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bp\_ .marker.cross{stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bp\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_2bp\_ p{margin:0;}#chatgpt-mermaid-\_r_2bp\_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bp\_ .cluster-label text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bp\_ .cluster-label span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bp\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_2bp\_ .label text,#chatgpt-mermaid-\_r_2bp\_ span{fill:rgb(13, 13, 13);color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bp\_ .node rect,#chatgpt-mermaid-\_r_2bp\_ .node circle,#chatgpt-mermaid-\_r_2bp\_ .node ellipse,#chatgpt-mermaid-\_r_2bp\_ .node polygon,#chatgpt-mermaid-\_r_2bp\_ .node path{fill:rgb(222, 234, 251);stroke:rgb(83, 154, 248);stroke-width:1px;}#chatgpt-mermaid-\_r_2bp\_ .rough-node .label text,#chatgpt-mermaid-\_r_2bp\_ .node .label text,#chatgpt-mermaid-\_r_2bp\_ .image-shape .label,#chatgpt-mermaid-\_r_2bp\_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-\_r_2bp\_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-\_r_2bp\_ .rough-node .label,#chatgpt-mermaid-\_r_2bp\_ .node .label,#chatgpt-mermaid-\_r_2bp\_ .image-shape .label,#chatgpt-mermaid-\_r_2bp\_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-\_r_2bp\_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_2bp\_ .root .anchor path{fill:rgb(143, 143, 143)!important;stroke-width:0;stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bp\_ .arrowheadPath{fill:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bp\_ .edgePath .path{stroke:rgb(143, 143, 143);stroke-width:1px;}#chatgpt-mermaid-\_r_2bp\_ .flowchart-link{stroke:rgb(143, 143, 143);fill:none;}#chatgpt-mermaid-\_r_2bp\_ .edgeLabel{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_2bp\_ .edgeLabel p{background-color:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_2bp\_ .edgeLabel rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_2bp\_ .labelBkg{background-color:rgba(252, 252, 252, 0.5);}#chatgpt-mermaid-\_r_2bp\_ .cluster rect{fill:rgb(243, 243, 243);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_2bp\_ .cluster text{fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bp\_ .cluster span{color:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bp\_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(243, 243, 243);border:1px solid rgba(0, 0, 0, 0.1);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-\_r_2bp\_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(13, 13, 13);}#chatgpt-mermaid-\_r_2bp\_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-\_r_2bp\_ .icon-shape,#chatgpt-mermaid-\_r_2bp\_ .image-shape{background-color:rgb(252, 252, 252);text-align:center;}#chatgpt-mermaid-\_r_2bp\_ .icon-shape p,#chatgpt-mermaid-\_r_2bp\_ .image-shape p{background-color:rgb(252, 252, 252);padding:2px;}#chatgpt-mermaid-\_r_2bp\_ .icon-shape .label rect,#chatgpt-mermaid-\_r_2bp\_ .image-shape .label rect{opacity:0.5;background-color:rgb(252, 252, 252);fill:rgb(252, 252, 252);}#chatgpt-mermaid-\_r_2bp\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_2bp\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_2bp\_ .node .neo-node{stroke:rgb(83, 154, 248);}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_2bp\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_2bp\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].node .neo-line path{stroke:rgb(83, 154, 248);filter:none;}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_2bp\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_2bp\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bp\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_2bp\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_2bp\_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_2bp\_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(0, 79, 153);}#chatgpt-mermaid-\_r_2bp\_ .node tspan[font-weight="normal"],#chatgpt-mermaid-\_r_2bp\_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-\_r_2bp\_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-width:1px;}#chatgpt-mermaid-\_r_2bp\_ .node rect,#chatgpt-mermaid-\_r_2bp\_ .node circle,#chatgpt-mermaid-\_r_2bp\_ .node ellipse,#chatgpt-mermaid-\_r_2bp\_ .node polygon,#chatgpt-mermaid-\_r_2bp\_ .node path{fill:rgb(229, 243, 255);stroke:rgba(0, 0, 0, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_2bp\_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-\_r_2bp\_ .mermaid-decision .label-container{fill:rgb(245, 250, 255);stroke:rgb(206, 219, 229);stroke-dasharray:2,2;}#chatgpt-mermaid-\_r_2bp\_ .edgePaths .flowchart-link{stroke:rgb(143, 143, 143);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-\_r_2bp\_ .marker{fill:rgb(143, 143, 143);stroke:rgb(143, 143, 143);}#chatgpt-mermaid-\_r_2bp\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}prepare_elastic_ep(N)重新配置保留的 Engine等待分布式 Bootstrap 完成commit_elastic_ep()先缩减可路由的 core_engines保留的 Engine: pause keep删除的 Engine: pause abort提交重新配置等待重配置通知Coordinator 更新统计resume_scheduler()
+
+### **9.4 为什么 Scale Down 要先缩减 core_engines？**
+
+代码：
+
+```
+old_core_engines = self.core_enginesself.core_engines = old_core_engines[:new_data_parallel_size]self.lb_engines = self.lb_engines[:new_data_parallel_size]
+```
+
+注意注释：
+
+```
+# Immediately stop sending requests to the removing engines.
+```
+
+这是一种重要的安全策略：
+
+**先停止向待删除的 Engine 分配新请求，再进行实际资源回收。**
+
+否则可能发生：
+
+- 新请求被分配到正在销毁的 Rank。
+- 请求发送成功但 Engine 已经退出。
+- 负载统计仍然包含已经移除的 Engine。
+
+粘贴的文本 (1)(20261115-152447).txt
+
+## **十、进程生命周期、故障监控与资源回收**
+
+这部分属于生产级系统设计。
+
+### **10.1 EngineCore 进程监控**
+
+```
+def start_engine_core_monitor(self):    ...    Thread(        target=monitor_engine_cores,        daemon=True,    ).start()
+```
+
+监控线程：
+
+```
+engine_manager.monitor_engine_liveness()
+```
+
+发现 EngineCore 异常退出：
+
+```
+_self.resources.engine_dead = True_self.shutdown()
+```
+
+之后调用：
+
+```
+ensure_alive()
+```
+
+就会抛出：
+
+```
+EngineDeadError
+```
+
+这意味着客户端不会继续把请求发往已经失效的 Engine。
+
+### **10.2 BackgroundResources 为什么存在？**
+
+```
+@dataclassclass BackgroundResources:    ctx: zmq.Context    engine_manager: ...    coordinator: ...    output_socket: ...    input_socket: ...    output_queue_task: ...    stats_update_task: ...    engine_dead: bool = False
+```
+
+它集中管理后台资源：
+
+- Engine 进程管理器。
+- Coordinator。
+- ZMQ Socket。
+- asyncio Task。
+- 关闭通知地址。
+- Engine 死亡状态。
+
+配合：
+
+```
+self._finalizer = weakref.finalize(    self,    self.resources)
+```
+
+即使客户端在构造中途发生异常，也可以清理已经创建的资源。
+
+### **10.3 为什么不用简单的析构函数？**
+
+因为这里存在多种生命周期：
+
+- Python 对象生命周期。
+- 线程生命周期。
+- asyncio Task 生命周期。
+- ZMQ Socket 生命周期。
+- EngineCore 子进程生命周期。
+
+它们不一定同时结束。
+
+例如 AsyncMPClient 的 Socket 需要在所属 Event Loop 中关闭，不能随意从其他线程直接操作。
+
+所以代码会判断：
+
+```
+if in_loop(loop):    close_sockets_and_tasks()elif not loop.is_closed():    loop.call_soon_threadsafe(        close_sockets_and_tasks    )
+```
+
+这体现了一个重要原则：
+
+**资源释放必须遵循资源所属执行环境的生命周期约束。**
+
+粘贴的文本 (1)(20261115-152447).txt
+
+## **十一、关键概念速查表**
+
+把整份文件浓缩成下面这张表，方便复习。
+
+| 概念                  | 是什么                | 为什么需要            |
+| ------------------- | ------------------ | ---------------- |
+| EngineCoreClient    | 抽象客户端接口            | 统一同步/异步调用        |
+| InprocClient        | 同进程客户端             | 避免 IPC 开销        |
+| MPClient            | 多进程通信基础类           | 统一通信和生命周期管理      |
+| Engine Identity     | Engine 的通信身份       | 确定请求发送给哪个 Engine |
+| ROUTER              | ZMQ 路由 Socket      | 向指定 Engine 发送消息  |
+| PULL                | ZMQ 接收 Socket      | 接收多个 Engine 的输出  |
+| MsgpackEncoder      | 消息编码器              | Python 对象序列化     |
+| MsgpackDecoder      | 消息解码器              | 将消息还原为输出对象       |
+| EngineCoreOutputs   | Engine 输出结构        | 承载生成结果和控制结果      |
+| Utility RPC         | Engine 控制调用        | 执行非推理类操作         |
+| call_id             | RPC 调用标识           | 匹配异步返回结果         |
+| Future              | 异步结果占位对象           | 等待特定 RPC 完成      |
+| asyncio.Queue       | 异步结果队列             | 接收推理输出           |
+| BackgroundResources | 后台资源管理对象           | 统一清理线程、Socket、进程 |
+| Ready Handshake     | Engine 就绪握手        | 同步初始化配置          |
+| DP Rank             | 数据并行编号             | 区分不同 DP Engine   |
+| Coordinator         | DP 协调器             | 统计、协调 Engine 状态  |
+| Load Balancing      | 负载均衡               | 将请求分配给合适的 Engine |
+| First Request       | 首个请求通知             | 唤醒必要的协调执行流程      |
+| Elastic EP          | 弹性 Expert Parallel | 动态调整分布式拓扑        |
+
+## **十二、源码阅读路线：真正值得断点的地方**
+
+不建议从第一行一直读到最后一行。建议按下面的顺序阅读。
+
+## **推荐断点清单**
+
+1. **make_client()**
+
+   第一优先级
+
+   搞清楚不同配置下创建哪个 Client，建立整体架构认知。
+
+   约 L90–165
+2. **MPClient.init()**
+
+   第一优先级
+
+   搞清楚 ZMQ Socket、进程启动、Ready 握手。
+
+   约 L558–739
+3. **AsyncMPClient.add_request_async()**
+
+   第一优先级
+
+   跟踪 ADD 请求如何序列化和发送。
+
+   约 L1219–1222
+4. **\_ensure_output_queue_task()**
+
+   第一优先级
+
+   理解结果接收、消息分类和 Future 匹配。
+
+   约 L1090–1164
+5. **\_call_utility_async()**
+
+   第二优先级
+
+   理解异步 RPC 请求关联机制。
+
+   约 L1199–1214
+6. **get_core_engine_for_request()**
+
+   第二优先级
+
+   理解 DP 请求分配算法。
+
+   约 L1550 附近
+7. **prepare_elastic_ep() / commit_elastic_ep()**
+
+   进阶
+
+   理解分布式动态扩缩容。
+
+   约 L1720–1969
+8. **BackgroundResources / monitor**
+
+   进阶
+
+   理解生产环境的资源回收和故障处理。
+
+   约 L447–535、L774–801
+
+## **十三、还需要继续追踪哪些源码？**
+
+这份文件只是客户端层。要真正理解 vLLM 的请求生命周期，还需要向下追踪：
+
+| 下一步源码                                   | 要回答的问题                        |
+| --------------------------------------- | ----------------------------- |
+| `vllm/v1/engine/core.py`                | EngineCoreProc 如何接收请求？        |
+| `EngineCore`                            | ADD、ABORT、UTILITY 如何分发？       |
+| `EngineCore.step_fn()`                  | Scheduler 如何驱动推理？             |
+| `EngineCoreProc.run_engine_core()` 相关逻辑 | 后台进程如何持续运行？                   |
+| `vllm/v1/engine/coordinator.py`         | DP Coordinator 如何统计和协调？       |
+| `vllm/v1/engine/utils.py`               | CoreEngineProcManager 如何启动进程？ |
+| `vllm/v1/engine/output_processor.py`    | Engine 输出如何进入上层请求生命周期？        |
+
+### **最后：这份源码需要建立的五个认知**
+
+1. **客户端与执行引擎分离**：Client 负责通信，EngineCore 负责执行。
+2. **请求与控制命令分离**：ADD/ABORT 是请求类消息，UTILITY 是控制类 RPC。
+3. **发送与接收分离**：后台接收任务持续消费 ZMQ，前端通过 Queue/Future 获取结果。
+4. **通信与调度分离**：DPLBAsyncMPClient 负责选择 Engine，真正的请求调度发生在 EngineCore。
+5. **状态与资源分离**：BackgroundResources 管理生命周期，避免客户端销毁后遗留后台资源。
+
+**我的建议：下一步不要继续钻 Elastic EP。先进入&#x20;**`core.py`**，把&#x20;**`EngineCoreProc → EngineCore → Scheduler → Executor`**&#x20;这条执行链路打通。** 这条链路才是理解 vLLM 推理引擎的核心。
+
+可以继续安排下一次源码学习，重点完成 EngineCoreProc 和 EngineCore 的类图、启动流程及请求分发断点分析。
+
+🔬明天继续解析 EngineCore 执行链路轻点设置
