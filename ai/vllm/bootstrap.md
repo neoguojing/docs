@@ -169,6 +169,7 @@ EngineClient协议类，作为http后端，和底层engine通信，核心函数�
 class AsyncLLM(EngineClient): AsyncLLM继承了该类
 在 forkserver 启动时，先把 vllm 的核心推理引擎模块加载到内存里
 好处：以后真正开子进程时，这些大模块已经加载好了，子进程可以直接拿来用，不用重新导入
+启动一个服务进程，将vllm.v1.engine.async_llm模块的依赖提前加载好
     multiprocessing.set_forkserver_preload(["vllm.v1.engine.async_llm"])
 AsyncLLM.from_vllm_config 创建async_llm
 init_app_state 将各种变量挂载在fastapi服务器中，方便使用
