@@ -164,10 +164,11 @@ API Server 不需要再承担内部的 DP 负载均衡职责。
 - API Server 数量按照完整 DP 规模设置。
 ```
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/api_server/entry.py
-run_server 函数入口
-EngineClient协议类，作为http后端，和底层engine通信，核心函数入generate，encode等
+- run_server 函数入口
+- EngineClient协议类，作为http后端，和底层engine通信，核心函数入generate，encode等
+- AsyncLLM：
 class AsyncLLM(EngineClient): AsyncLLM继承了该类
-在 forkserver 启动时，先把 vllm 的核心推理引擎模块加载到内存里
+- 在 forkserver 启动时，先把 vllm 的核心推理引擎模块加载到内存里
 好处：以后真正开子进程时，这些大模块已经加载好了，子进程可以直接拿来用，不用重新导入
 启动一个服务进程，将vllm.v1.engine.async_llm模块的依赖提前加载好
     multiprocessing.set_forkserver_preload(["vllm.v1.engine.async_llm"])
@@ -220,8 +221,8 @@ async_llm = AsyncLLM.from_vllm_config(
 
 #### /home/neo/workspace/vllm/vllm/v1/engine/async_llm.py
 - 在init的函数中初始化类
-- 如下创建engine_core client用于和其他通信
-- 
+- 如下创建engine_core client用于和其他通信：通过zmq
+- 启动_run_output_handler 循环，接收底层消息
 ```
 self.engine_core = EngineCoreClient.make_async_mp_client(
             vllm_config=vllm_config,
@@ -233,7 +234,11 @@ self.engine_core = EngineCoreClient.make_async_mp_client(
             renderer=renderer,
         )
 ```
-
+#### /home/neo/workspace/vllm/vllm/v1/engine/core_client.py
+- make_async_mp_client：创建AsyncMPClient 对象
+- AsyncMPClient：
+- - 创建output——queue
+  - 
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
 启动http服务
 ```
