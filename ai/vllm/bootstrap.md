@@ -346,6 +346,8 @@ local_engine_manager = CoreEngineProcManager(
 #### /home/neo/workspace/vllm/vllm/v1/engine/core.py
 - run_engine_core
 - EngineCoreProc的初始化函数和EngineCore的初始化函数
+- - self.model_executor = executor_class(vllm_config) ：完成模型权重的加载
+  - kv_cache_config = self._initialize_kv_caches(vllm_config) 完成kv cache创建
 - engine_core.run_busy_loop()：进程进入循环
 ```
 run_engine_core() [ 入口函数：后台进程启动 ]
