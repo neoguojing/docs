@@ -347,6 +347,104 @@ local_engine_manager = CoreEngineProcManager(
 - run_engine_core
 - EngineCoreProc的初始化函数和EngineCore的初始化函数
 - engine_core.run_busy_loop()：进程进入循环
+```
+[ 开始: run_engine_core ]
+         │
+         ▼
+[ 1. 注册配置按值序列化 ]
+  └─ maybe_register_config_serialize_by_value()
+         │
+         ▼
+[ 2. 初始化局部变量 ]
+  └─ engine_core, signal_callback, clean_shutdown
+         │
+         ▼
+[ 3. 提取配置参数 ]
+  └─ vllm_config & parallel_config
+         │
+         ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ 检查是否为数据并行 (Data Parallel)                      │
+ │ (parallel_config.data_parallel_size > 1 or dp_rank > 0)│
+ └───────────────────────┬────────────────────────────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+       [ 是 ]                        [ 否 ]
+          │                             │
+          ▼                             ▼
+  [ 设置本地 DP ランク & ]       [ 进程标题设为 ]
+  [ 进程标题: EngineCore_DP ]    [ "EngineCore" ]
+          │                             │
+          └──────────────┬──────────────┘
+                         │
+                         ▼
+[ 4. 设置进程环境与日志 ]
+  ├─ set_process_title()
+  ├─ maybe_init_worker_tracer()
+  └─ decorate_logs()
+                         │
+                         ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ 检查 NUMA 绑定配置 (parallel_config.numa_bind)         │
+ └───────────────────────┬────────────────────────────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+       [ 是 ]                        [ 否 ]
+          │                             │
+          ▼                             ▼
+  [ 记录当前 NUMA 亲和性状态 ]         [ 跳过 ]
+          │                             │
+          └──────────────┬──────────────┘
+                         │
+                         ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ 检查 KV 传输配置 (data_parallel 且 kv_transfer_config)   │
+ └───────────────────────┬────────────────────────────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+       [ 是 ]                        [ 否 ]
+          │                             │
+          ▼                             ▼
+  [ 修改 engine_id，追加 ]             [ 跳过 ]
+  [ "_dp{dp_rank}" 后缀 ]
+          │                             │
+          └──────────────┬──────────────┘
+                         │
+                         ▼
+[ 5. 设置数据并行索引 ]
+  └─ parallel_config.data_parallel_index = dp_rank
+                         │
+                         ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ 检查模型类型与并行模式                                    │
+ │ (data_parallel 且 model_config.is_moe)                 │
+ └───────────────────────┬────────────────────────────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+       [ 是 ]                        [ 否 ]
+          │                             │
+          ▼                             ▼
+  [ 设置 data_parallel_rank ]    [ 调用重配置方法： ]
+  [ = dp_rank ]                 [ reconfigure_for_ ]
+          │                     [ independent_dp_rank() ]
+          ▼                             │
+  [ 实例化 DPEngineCoreProc ]   [ 实例化 EngineCoreProc ]
+          │                     [ (带 engine_index=dp_rank) ]
+          │                             │
+          └──────────────┬──────────────┘
+                         │
+                         ▼
+[ 6. 断言检查 ]
+  └─ assert engine_core is not None
+                         │
+                         ▼
+[ 结束 / 进入 EngineCore 后台忙碌循环 ]
+
+```
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
 启动http服务
 ```
