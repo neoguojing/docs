@@ -348,101 +348,43 @@ local_engine_manager = CoreEngineProcManager(
 - EngineCoreProc的初始化函数和EngineCore的初始化函数
 - engine_core.run_busy_loop()：进程进入循环
 ```
-[ 开始: run_engine_core ]
-         │
-         ▼
-[ 1. 注册配置按值序列化 ]
-  └─ maybe_register_config_serialize_by_value()
-         │
-         ▼
-[ 2. 初始化局部变量 ]
-  └─ engine_core, signal_callback, clean_shutdown
-         │
-         ▼
-[ 3. 提取配置参数 ]
-  └─ vllm_config & parallel_config
-         │
-         ▼
- ┌────────────────────────────────────────────────────────┐
- │ 检查是否为数据并行 (Data Parallel)                      │
- │ (parallel_config.data_parallel_size > 1 or dp_rank > 0)│
- └───────────────────────┬────────────────────────────────┘
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-       [ 是 ]                        [ 否 ]
-          │                             │
-          ▼                             ▼
-  [ 设置本地 DP ランク & ]       [ 进程标题设为 ]
-  [ 进程标题: EngineCore_DP ]    [ "EngineCore" ]
-          │                             │
-          └──────────────┬──────────────┘
-                         │
-                         ▼
-[ 4. 设置进程环境与日志 ]
-  ├─ set_process_title()
-  ├─ maybe_init_worker_tracer()
-  └─ decorate_logs()
-                         │
-                         ▼
- ┌────────────────────────────────────────────────────────┐
- │ 检查 NUMA 绑定配置 (parallel_config.numa_bind)         │
- └───────────────────────┬────────────────────────────────┘
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-       [ 是 ]                        [ 否 ]
-          │                             │
-          ▼                             ▼
-  [ 记录当前 NUMA 亲和性状态 ]         [ 跳过 ]
-          │                             │
-          └──────────────┬──────────────┘
-                         │
-                         ▼
- ┌────────────────────────────────────────────────────────┐
- │ 检查 KV 传输配置 (data_parallel 且 kv_transfer_config)   │
- └───────────────────────┬────────────────────────────────┘
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-       [ 是 ]                        [ 否 ]
-          │                             │
-          ▼                             ▼
-  [ 修改 engine_id，追加 ]             [ 跳过 ]
-  [ "_dp{dp_rank}" 后缀 ]
-          │                             │
-          └──────────────┬──────────────┘
-                         │
-                         ▼
-[ 5. 设置数据并行索引 ]
-  └─ parallel_config.data_parallel_index = dp_rank
-                         │
-                         ▼
- ┌────────────────────────────────────────────────────────┐
- │ 检查模型类型与并行模式                                    │
- │ (data_parallel 且 model_config.is_moe)                 │
- └───────────────────────┬────────────────────────────────┘
-                         │
-          ┌──────────────┴──────────────┐
-          │                             │
-       [ 是 ]                        [ 否 ]
-          │                             │
-          ▼                             ▼
-  [ 设置 data_parallel_rank ]    [ 调用重配置方法： ]
-  [ = dp_rank ]                 [ reconfigure_for_ ]
-          │                     [ independent_dp_rank() ]
-          ▼                             │
-  [ 实例化 DPEngineCoreProc ]   [ 实例化 EngineCoreProc ]
-          │                     [ (带 engine_index=dp_rank) ]
-          │                             │
-          └──────────────┬──────────────┘
-                         │
-                         ▼
-[ 6. 断言检查 ]
-  └─ assert engine_core is not None
-                         │
-                         ▼
-[ 结束 / 进入 EngineCore 后台忙碌循环 ]
+run_engine_core() [ 入口函数：后台进程启动 ]
+│
+├── [1. 进程环境与配置准备]
+│    ├─ maybe_register_config_serialize_by_value() ──> 注册配置序列化
+│    ├─ 检测数据并行 (DP) ──> 设置进程标题 (EngineCore / EngineCore_DP{rank})
+│    ├─ 检查 numa_bind ──> 记录 NUMA 亲和性状态
+│    └─ KV 传输隔离 ──> 动态修改 kv_transfer_config.engine_id (追加 _dp 标识)
+│
+├── [2. 引擎核心实例化分支]
+│    ├─ MoE 模型 ──> 设置 data_parallel_rank ──> 实例化 DPEngineCoreProc
+│    └─ 非 MoE ──> reconfigure_for_independent_dp_rank() ──> 实例化 EngineCoreProc
+│
+└── [3. EngineCoreProc.__init__ 初始化]
+     ├─ 创建 ZMQ 队列、Identity 与多模态 Tensor 接收器
+     ├─ 执行 ZMQ 握手与 DP 负载均衡/协调器配置
+     ├─ 启动后台 I/O 线程:
+     │    ├─ input_thread (process_input_sockets) ──> 异步接收 ZMQ 输入并写入队列
+     │    └─ output_thread (process_output_sockets) ──> 异步发送输出结果
+     └─ 等待 DP Coordinator 的 READY 信号 (ready_event.wait)
+          │
+          ▼
+     [4. 父类 EngineCore.__init__ 初始化]
+          ├─ 加载通用插件 (load_general_plugins)
+          ├─ 初始化模型执行器 (model_executor) 与失败回调
+          ├─ KV 缓存 Profiling 与显存分配 (_initialize_kv_caches)
+          ├─ 实例化调度器 (Scheduler) 与前缀缓存哈希器
+          ├─ 初始化多模态接收器与流水线并行批处理队列 (batch_queue)
+          └─ 系统优化: 冻结 Python GC 堆 (freeze_gc_heap) 减少 GC 暂停
+               │
+               ▼
+          [5. run_busy_loop() ──> 核心业务忙碌循环 ]
+               │
+               while self._handle_shutdown(): ──> 持续监听关闭信号
+               ├─ 1) self._process_input_queue() ──> 处理输入队列中的新请求/指令
+               ├─ 2) self._maybe_publish_request_counts() (前置) ──> 发布队列统计给负载均衡器
+               ├─ 3) self._process_engine_step() ──> 执行调度与 GPU 模型前向计算
+               └─ 4) self._maybe_publish_request_counts() (后置) ──> 更新发布最新统计状态
 
 ```
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
