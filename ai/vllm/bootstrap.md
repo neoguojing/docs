@@ -752,6 +752,55 @@ run_engine_core() [ 入口函数：后台进程启动 ]
                          ▼
 [ 结束: load_model 执行完成 ]
 ```
+#### /home/neo/workspace/vllm/vllm/model_executor/model_loader/base_loader.py
+- /home/neo/workspace/vllm/vllm/model_executor/model_loader/utils.py
+- /home/neo/workspace/vllm/vllm/model_executor/model_loader/default_loader.py
+- load_model
+- get_model_architecture
+- load_weights
+- create_model
+- process_weights_after_loading
+
+```
+[开始: load_model]
+ ├── 1. 解析配置与目标设备
+ │    ├── 获取 device_config、load_config
+ │    └── 设置 target_device (CPU/GPU)
+ ├── 2. 设置全局默认 Torch 数据类型 (set_default_torch_dtype)
+ ├── 3. 在目标设备上下文中创建模型 (initialize_model)
+ │    ├── 获取模型架构与配置 (get_model_architecture)
+ │    ├── 配置量化参数 (configure_quant_config)
+ │    ├── 检查模型类签名 (__init__)
+ │    │    ├── [新版] 接受 vllm_config & prefix -> 直接实例化模型
+ │    │    └── [旧版/兼容] 发出 DeprecationWarning -> 映射旧参数 kwargs 实例化
+ │    └── 记录重载元数据 (record_metadata_for_reloading)
+ ├── 4. 加载权重 (load_weights)
+ │    ├── [TorchAO 判定] 若为 torchao 且版本 >= 0.15.0，设置 safetensors_load_strategy = "torchao"
+ │    ├── 初始化专家并行(EP)权重过滤器 (_init_ep_weight_filter)
+ │    ├── 调用 model.load_weights() 载入所有权重
+ │    ├── 计算并记录权重加载耗时
+ │    └── [可选] 根据条件判断是否执行权重加载跟踪检查 (track_weights_loading)
+ ├── 5. 显存监控 (CUDA/XPU 环境)
+ │    └── 记录并打印加载权重后的峰值显存 (max_memory_allocated)
+ ├── 6. 在线量化处理 (若存在)
+ │    └── 执行层级在线量化处理 (finalize_layerwise_processing)
+ ├── 7. 权重后处理 (process_weights_after_loading)
+ │    ├── 词嵌入权重重绑定检查 (maybe_retie_word_embeddings)
+ │    ├── 遍历所有子模块 (named_modules)
+ │    │    └── 若存在 quant_method：
+ │    │         ├── 检查是否支持预处理权重 (supports_pre_processed_weights)
+ │    │         ├── 按需应用 device_loading_context 移动到设备
+ │    │         ├── 调用 quant_method.process_weights_after_loading()
+ │    │         ├── 更新张量并行状态 (update_param_tp_status)
+ │    │         └── 释放内存 (release_device_memory_under_pressure)
+ │    ├── 初始化延迟注意力层权重 (is_deferred_attention_layer)
+ │    ├── 执行模型级别的 process_weights_after_loading() 钩子
+ │    └── [TorchAO] 若量化类型为 torchao，设置重载属性 (set_torchao_reload_attrs)
+ └── [结束] 返回评估模式模型 (model.eval())
+```
+#### /home/neo/workspace/vllm/vllm/model_executor/models/gemma4_mm.py
+- /home/neo/workspace/vllm/vllm/multimodal/registry.py
+- 
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
 启动http服务
 ```
