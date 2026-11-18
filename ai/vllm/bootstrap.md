@@ -800,7 +800,7 @@ run_engine_core() [ 入口函数：后台进程启动 ]
 ```
 #### /home/neo/workspace/vllm/vllm/model_executor/models/gemma4_mm.py
 - /home/neo/workspace/vllm/vllm/multimodal/registry.py
-- 
+- /home/neo/workspace/vllm/vllm/model_executor/models/gemma4.py
 #### /home/neo/workspace/vllm/vllm/entrypoints/launchers/launcher.py
 启动http服务
 ```
