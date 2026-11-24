@@ -49,6 +49,25 @@ def collective_rpc(  # type: ignore[override]
             future = Future[Any]()
             future.set_exception(e)
         return future
+
+```
+Request ID
+    |
+    v
+req_to_blocks
+    |
+    +-- Request A -> [B0, B1, B2]
+    |
+    +-- Request B -> [B0, B3, B4]
+    |
+    +-- Request C -> [B5, B6, B7]
+                       |
+                       v
+                   BlockPool
+                       |
+                       v
+               实际 Block 资源管理
+```
 下面整理成一份可直接放入 GitHub 的 Markdown 文档。重点突出 **注册机制 → Spec 类型与容量计算 → Manager 核心接口**，保留关键参数和公式。
 下面是完整修订版：**所有数学公式全部改为纯文本表达**，不使用 LaTeX、`$`、`$$`，确保可以直接复制到 GitHub Markdown 中正常显示。
 
