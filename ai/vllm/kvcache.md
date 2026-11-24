@@ -6,21 +6,28 @@
 kv_cache_specs = self.model_executor.get_kv_cache_specs()
 def get_kv_cache_specs(self) -> list[dict[str, KVCacheSpec]]:
         return self.collective_rpc("get_kv_cache_spec")
+GPUModelRunner.get_kv_cache_spec
 
 self.model_executor.get_supported_kv_cache_layouts(),
 def get_supported_kv_cache_layouts(self) -> list[list[str]]:
         """Layouts each worker's backends support, most preferred first."""
         return self.collective_rpc("get_supported_kv_cache_layouts")
+WorkerBase.get_supported_kv_cache_layouts
+
 self.model_executor.set_kv_cache_layout(layout.name)
+WorkerBase.set_kv_cache_layout
 
 available_gpu_memory = self.model_executor.determine_available_memory()
 def determine_available_memory(self) -> list[int]:  # in bytes
         return self.collective_rpc("determine_available_memory")
+Worker.determine_available_memory
+
 self.model_executor.initialize_from_config(kv_cache_configs)
 def initialize_from_config(self, kv_cache_configs: list[KVCacheConfig]) -> None:
         """Initialize the KV caches on the underlying workers."""
         self.collective_rpc("initialize_from_config", args=(kv_cache_configs,))
-        
+Worker.initialize_from_config
+
 def collective_rpc(  # type: ignore[override]
         self,
         method: str | Callable,
