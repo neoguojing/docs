@@ -67,6 +67,90 @@ req_to_blocks
                        |
                        v
                实际 Block 资源管理
+
+Request
+   |
+   v
+计算 Request Block Hash
+   |
+   v
+get_cached_block()
+   |
+   v
+查询 cached_block_hash_to_block
+   |
+   +----------+
+   |          |
+   v          v
+ Cache Hit  Cache Miss
+   |          |
+   v          v
+ touch()   get_new_blocks()
+   |          |
+   v          v
+ref_cnt++   分配新 Block
+   |          |
+   +-----+----+
+         |
+         v
+     执行模型推理
+         |
+         v
+    生成 KV Cache
+         |
+         v
+ cache_full_blocks()
+         |
+         v
+ 注册 Prefix Cache Hash
+
+           BlockPool
+               |
+       +-------+-------+
+       |               |
+       v               v
+  get_new_blocks   free_blocks
+       |               |
+       v               v
+   popleft_n()      ref_cnt--
+       |               |
+       v               v
+  检查旧 Hash       ref_cnt == 0
+       |               |
+       v          +----+----+
+  驱逐旧缓存       |         |
+       |          v         v
+       v        无 Hash    有 Hash
+   ref_cnt++      |         |
+       |          v         v
+       v       prepend    append
+    使用         队首      队尾
+                  |         |
+                  +----+----+
+                       |
+                       v
+                   等待分配
+
+
+                 BlockPool
+                     |
+          +----------+----------+
+          |                     |
+          v                     v
+ cached_block_hash_to_block  cached_block_hashes_by_block
+          |                     |
+          v                     v
+      Hash -> Block          Block -> Hash Set
+          |                     |
+          +----------+----------+
+                     |
+                     v
+                KVCacheBlock
+                     |
+          +----------+----------+
+          |          |          |
+          v          v          v
+       block_id   ref_cnt   block_hash
 ```
 下面整理成一份可直接放入 GitHub 的 Markdown 文档。重点突出 **注册机制 → Spec 类型与容量计算 → Manager 核心接口**，保留关键参数和公式。
 下面是完整修订版：**所有数学公式全部改为纯文本表达**，不使用 LaTeX、`$`、`$$`，确保可以直接复制到 GitHub Markdown 中正常显示。
