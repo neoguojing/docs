@@ -32,6 +32,15 @@ torch.compile + Capturing CUDA graphs
 available_gpu_memory = [6435619021]
 determine_available_memory() 本质上是一个 GPU 显存预算计算器：先测量模型运行时的非 KV Cache 显存开销，再扣除 CUDA Graph 等额外开销，最终得到可用于 KV Cache Block 分配的显存容量。
 ```
+# Run multimodal encoder.
+                        dummy_encoder_outputs = self.model.embed_multimodal(
+                            **batched_dummy_mm_inputs
+                        )
+ hidden_states, last_hidden_states = self._dummy_run(
+            self.max_num_tokens, is_profile=True
+        )
+else:
+                output = self._dummy_sampler_run(last_hidden_states)
 [开始] determine_available_memory() (@torch.inference_mode())
   │
   ▼
