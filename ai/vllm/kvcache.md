@@ -1,7 +1,7 @@
-/home/neo/workspace/vllm/vllm/v1/core/single_type_kv_cache_manager.py
-/home/neo/workspace/vllm/vllm/v1/kv_cache_spec_registry.py
-/home/neo/workspace/vllm/vllm/v1/kv_cache_interface.py
-/home/neo/workspace/vllm/vllm/v1/core/single_type_kv_cache_manager.py
+- /home/neo/workspace/vllm/vllm/v1/core/single_type_kv_cache_manager.py
+- /home/neo/workspace/vllm/vllm/v1/kv_cache_spec_registry.py
+- /home/neo/workspace/vllm/vllm/v1/kv_cache_interface.py
+- /home/neo/workspace/vllm/vllm/v1/core/single_type_kv_cache_manager.py
 
 self.model_executor.get_supported_kv_cache_layouts(),
 def get_supported_kv_cache_layouts(self) -> list[list[str]]:
