@@ -2,10 +2,16 @@
 - /home/neo/workspace/vllm/vllm/v1/kv_cache_spec_registry.py
 - /home/neo/workspace/vllm/vllm/v1/kv_cache_interface.py
 - /home/neo/workspace/vllm/vllm/v1/core/single_type_kv_cache_manager.py
-
+- /home/neo/workspace/vllm/vllm/model_executor/layers/attention/attention.py
+- 
 - kv_cache_specs = self.model_executor.get_kv_cache_specs()
 self.collective_rpc("get_kv_cache_spec")
 GPUModelRunner.get_kv_cache_spec
+基于以下配置，获取所有的attenion layer和对象：
+vllm_config.compilation_config.static_forward_context
+'language_model.model.layers.0.self_attn.attn':Attention(head_size=256, num_heads=32, num_kv_heads=16)
+Attention.get_kv_cache_spec 返回SlidingWindowSpec 或者 FullAttentionSpec
+最终返回：格式'language_model.model.layers.0.self_attn.attn'： SlidingWindowSpec(block_size=16, num_kv_heads=16, head_size=256, dtype=torch.float16, head_size_v=256, kv_quant_mode=<KVQuantMode.NONE: 0>, page_size_padded=None, num_head_slots=None, state_content_bytes=None, tokens_per_state=1, sliding_window=1024, extra_retained_tokens=0)
 
 - self.model_executor.get_supported_kv_cache_layouts(),
 def get_supported_kv_cache_layouts(self) -> list[list[str]]:
@@ -16,6 +22,7 @@ layout = <KVCacheLayout.LBNHC: (0, 1, 3, 2, 4)>
 
 - self.model_executor.set_kv_cache_layout(layout.name)
 WorkerBase.set_kv_cache_layout
+设置config的layout
 
 - available_gpu_memory = self.model_executor.determine_available_memory()
 def determine_available_memory(self) -> list[int]:  # in bytes
@@ -23,7 +30,79 @@ def determine_available_memory(self) -> list[int]:  # in bytes
 Worker.determine_available_memory
 torch.compile + Capturing CUDA graphs
 available_gpu_memory = [6435619021]
-
+determine_available_memory() 本质上是一个 GPU 显存预算计算器：先测量模型运行时的非 KV Cache 显存开销，再扣除 CUDA Graph 等额外开销，最终得到可用于 KV Cache Block 分配的显存容量。
+```
+[开始] determine_available_memory() (@torch.inference_mode())
+  │
+  ▼
+maybe_apply_startup_plan(self)
+  │
+  ▼
+是否配置了 kv_cache_memory_bytes ?
+  ├── 是 (手动指定模式)
+  │     │
+  │     ▼
+  │   self.model_runner.profile_run()  ──(触发编译/预热，跳过自动显存估算)
+  │     │
+  │     ▼
+  │   logger.info(...)  ──(提示跳过 profiling、不遵循 gpu_memory_utilization)
+  │     │
+  │     ▼
+  │   返回 reserve_mm_ipc_gpu_memory(kv_cache_memory_bytes, multimodal_config, _api_process_count)
+  │
+  └── 否 (自动 Profiling 模式)
+        │
+        ▼
+      with memory_profiling(self.init_snapshot, weights_memory=...)
+        │
+        ▼
+      self.model_runner.profile_run()  ──(dummy 输入前向传播，统计显存占用)
+        │
+        ▼
+      退出上下文 -> 生成 profile_result
+        │
+        ▼
+      (current_platform.is_cuda_alike() 且 cudagraph_mode != NONE) ?
+        ├── 是 ─▶ cudagraph_memory_estimate = self.model_runner.profile_cudagraph_memory()
+        └── 否 ─▶ cudagraph_memory_estimate = 0
+        │
+        ▼
+      envs.VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS 是否开启 ?
+        ├── 是 ─▶ cudagraph_memory_estimate_applied = cudagraph_memory_estimate
+        └── 否 ─▶ cudagraph_memory_estimate_applied = 0
+        │
+        ▼
+      读取 init_free_memory 与 profile_result.after_profile.free_memory
+        │
+        ▼
+      rocm_fallback = maybe_rocm_profiling_fallback(profile_result)
+        │
+        ▼
+      rocm_fallback is None ?
+        ├── 是 (标准路径) ─▶ assert init_free_memory >= free_gpu_memory
+        └── 否 (ROCm 回退) ─▶ profile_result.total_consumed = rocm_fallback
+                                non_kv_cache_memory = total_consumed + transient_peak_headroom
+        │
+        ▼
+      更新状态与计算 KV Cache 显存:
+        • total_consumed = profile_result.total_consumed
+        • cudagraph_memory_estimate = cudagraph_memory_estimate
+        • peak_activation_memory = transient_peak_headroom + cudagraph_memory_estimate_applied
+        • available_kv_cache_memory_bytes = requested_memory - non_kv_cache_memory - cudagraph_memory_estimate_applied
+        │
+        ▼
+      输出 debug / info 日志 (初始空闲、请求显存、profiling 后空闲、可用 KV 显存)
+        │
+        ▼
+      cudagraph_memory_estimate > 0 ?
+        ├── 是 ─▶ VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS 已启用 ?
+        │             ├── 是 ─▶ logger.info(...) (说明等效 util 与建议上调 util)
+        │             └── 否 ─▶ logger.warning(...) (警告未计入 CUDA Graph 显存及建议值)
+        └── 否 ─▶ (跳过 CUDA Graph 提示)
+        │
+        ▼
+      返回 reserve_mm_ipc_gpu_memory(int(available_kv_cache_memory_bytes), multimodal_config, _api_process_count)
+```
 - self.model_executor.initialize_from_config(kv_cache_configs)
 def initialize_from_config(self, kv_cache_configs: list[KVCacheConfig]) -> None:
         """Initialize the KV caches on the underlying workers."""
