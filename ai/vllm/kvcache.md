@@ -3,183 +3,36 @@
 - /home/neo/workspace/vllm/vllm/v1/kv_cache_interface.py
 - /home/neo/workspace/vllm/vllm/v1/core/single_type_kv_cache_manager.py
 
-self.model_executor.get_supported_kv_cache_layouts(),
+- kv_cache_specs = self.model_executor.get_kv_cache_specs()
+self.collective_rpc("get_kv_cache_spec")
+GPUModelRunner.get_kv_cache_spec
+
+- self.model_executor.get_supported_kv_cache_layouts(),
 def get_supported_kv_cache_layouts(self) -> list[list[str]]:
         """Layouts each worker's backends support, most preferred first."""
         return self.collective_rpc("get_supported_kv_cache_layouts")
 WorkerBase.get_supported_kv_cache_layouts
 layout = <KVCacheLayout.LBNHC: (0, 1, 3, 2, 4)>
 
-self.model_executor.set_kv_cache_layout(layout.name)
+- self.model_executor.set_kv_cache_layout(layout.name)
 WorkerBase.set_kv_cache_layout
 
-available_gpu_memory = self.model_executor.determine_available_memory()
+- available_gpu_memory = self.model_executor.determine_available_memory()
 def determine_available_memory(self) -> list[int]:  # in bytes
         return self.collective_rpc("determine_available_memory")
 Worker.determine_available_memory
 torch.compile + Capturing CUDA graphs
 available_gpu_memory = [6435619021]
 
-self.model_executor.initialize_from_config(kv_cache_configs)
+- self.model_executor.initialize_from_config(kv_cache_configs)
 def initialize_from_config(self, kv_cache_configs: list[KVCacheConfig]) -> None:
         """Initialize the KV caches on the underlying workers."""
         self.collective_rpc("initialize_from_config", args=(kv_cache_configs,))
 Worker.initialize_from_config
 GPUModelRunner.initialize_kv_cache
 
-self.model_executor.compile_or_warm_up_model()
+- self.model_executor.compile_or_warm_up_model()
 Worker.compile_or_warm_up_model
-
-scheduler_kv_cache_config = KVCacheConfig(num_blocks=2454,
-kv_cache_tensors=[KVCacheTensor(size=6433013760,
-layers=['language_model.model.layers.0.self_attn.attn', 'language_model.model.layers.6.self_attn.attn', 'language_model.model.layers.12.self_attn.attn', 'language_model.model.layers.18.self_attn.attn', 'language_model.model.layers.24.self_attn.attn', 'language_model.model.layers.30.self_attn.attn', 'language_model.model.layers.36.self_attn.attn', 'language_model.model.layers.42.self_attn.attn', 'language_model.model.layers.48.self_attn.attn', 'language_model.model.layers.54.self_attn.attn'],
-layer_stride=643301376,
-block_stride=262144,
-offset=0,
-host_resident=False),
-KVCacheTensor(size=6433013760,
-layers=['language_model.model.layers.1.self_attn.attn', 'language_model.model.layers.7.self_attn.attn', 'language_model.model.layers.13.self_attn.attn', 'language_model.model.layers.19.self_attn.attn', 'language_model.model.layers.25.self_attn.attn', 'language_model.model.layers.31.self_attn.attn', 'language_model.model.layers.37.self_attn.attn', 'language_model.model.layers.43.self_attn.attn', 'language_model.model.layers.49.self_attn.attn', 'language_model.model.layers.55.self_attn.attn'],
-layer_stride=643301376,
-block_stride=262144,
-offset=0,
-host_resident=False),
-KVCacheTensor(size=6433013760,
-layers=['language_model.model.layers.2.self_attn.attn', 'language_model.model.layers.8.self_attn.attn', 'language_model.model.layers.14.self_attn.attn', 'language_model.model.layers.20.self_attn.attn', 'language_model.model.layers.26.self_attn.attn', 'language_model.model.layers.32.self_attn.attn', 'language_model.model.layers.38.self_attn.attn', 'language_model.model.layers.44.self_attn.attn', 'language_model.model.layers.50.self_attn.attn', 'language_model.model.layers.56.self_attn.attn'],
-layer_stride=643301376,
-block_stride=262144,
-offset=0,
-host_resident=False),
-KVCacheTensor(size=6433013760,
-layers=['language_model.model.layers.3.self_attn.attn', 'language_model.model.layers.9.self_attn.attn', 'language_model.model.layers.15.self_attn.attn', 'language_model.model.layers.21.self_attn.attn', 'language_model.model.layers.27.self_attn.attn', 'language_model.model.layers.33.self_attn.attn', 'language_model.model.layers.39.self_attn.attn', 'language_model.model.layers.45.self_attn.attn', 'language_model.model.layers.51.self_attn.attn', 'language_model.model.layers.57.self_attn.attn'],
-layer_stride=643301376,
-block_stride=262144,
-offset=0,
-host_resident=False),
-KVCacheTensor(size=6433013760,
-layers=['language_model.model.layers.4.self_attn.attn', 'language_model.model.layers.10.self_attn.attn', 'language_model.model.layers.16.self_attn.attn', 'language_model.model.layers.22.self_attn.attn', 'language_model.model.layers.28.self_attn.attn', 'language_model.model.layers.34.self_attn.attn', 'language_model.model.layers.40.self_attn.attn', 'language_model.model.layers.46.self_attn.attn', 'language_model.model.layers.52.self_attn.attn', 'language_model.model.layers.58.self_attn.attn'],
-layer_stride=643301376,
-block_stride=262144,
-offset=0,
-host_resident=False),
-KVCacheTensor(size=6433013760,
-layers=['language_model.model.layers.5.self_attn.attn', 'language_model.model.layers.11.self_attn.attn', 'language_model.model.layers.17.self_attn.attn', 'language_model.model.layers.23.self_attn.attn', 'language_model.model.layers.29.self_attn.attn', 'language_model.model.layers.35.self_attn.attn', 'language_model.model.layers.41.self_attn.attn', 'language_model.model.layers.47.self_attn.attn', 'language_model.model.layers.53.self_attn.attn', 'language_model.model.layers.59.self_attn.attn'],
-layer_stride=643301376,
-block_stride=262144,
-offset=0,
-host_resident=False)],
-kv_cache_groups=[KVCacheGroupSpec(layer_names=['language_model.model.layers.0.self_attn.attn', 'language_model.model.layers.6.self_attn.attn', 'language_model.model.layers.12.self_attn.attn', 'language_model.model.layers.18.self_attn.attn', 'language_model.model.layers.24.self_attn.attn', 'language_model.model.layers.30.self_attn.attn', 'language_model.model.layers.36.self_attn.attn', 'language_model.model.layers.42.self_attn.attn', 'language_model.model.layers.48.self_attn.attn', 'language_model.model.layers.54.self_attn.attn'],
-kv_cache_spec=SlidingWindowSpec(block_size=16,
-num_kv_heads=16,
-head_size=256,
-dtype=torch.float16,
-head_size_v=256,
-kv_quant_mode=<KVQuantMode.NONE: 0>,
-page_size_padded=None,
-num_head_slots=None,
-state_content_bytes=None,
-tokens_per_state=1,
-sliding_window=1024,
-extra_retained_tokens=0),
-is_eagle_group=False,
-host_resident=False,
-enable_kv_transfer=True,
-role=<KVCacheGroupRole.DEFAULT: 'default'>),
-KVCacheGroupSpec(layer_names=['language_model.model.layers.1.self_attn.attn', 'language_model.model.layers.7.self_attn.attn', 'language_model.model.layers.13.self_attn.attn', 'language_model.model.layers.19.self_attn.attn', 'language_model.model.layers.25.self_attn.attn', 'language_model.model.layers.31.self_attn.attn', 'language_model.model.layers.37.self_attn.attn', 'language_model.model.layers.43.self_attn.attn', 'language_model.model.layers.49.self_attn.attn', 'language_model.model.layers.55.self_attn.attn'],
-kv_cache_spec=SlidingWindowSpec(block_size=16,
-num_kv_heads=16,
-head_size=256,
-dtype=torch.float16,
-head_size_v=256,
-kv_quant_mode=<KVQuantMode.NONE: 0>,
-page_size_padded=None,
-num_head_slots=None,
-state_content_bytes=None,
-tokens_per_state=1,
-sliding_window=1024,
-extra_retained_tokens=0),
-is_eagle_group=False,
-host_resident=False,
-enable_kv_transfer=True,
-role=<KVCacheGroupRole.DEFAULT: 'default'>),
-KVCacheGroupSpec(layer_names=['language_model.model.layers.2.self_attn.attn', 'language_model.model.layers.8.self_attn.attn', 'language_model.model.layers.14.self_attn.attn', 'language_model.model.layers.20.self_attn.attn', 'language_model.model.layers.26.self_attn.attn', 'language_model.model.layers.32.self_attn.attn', 'language_model.model.layers.38.self_attn.attn', 'language_model.model.layers.44.self_attn.attn', 'language_model.model.layers.50.self_attn.attn', 'language_model.model.layers.56.self_attn.attn'],
-kv_cache_spec=SlidingWindowSpec(block_size=16,
-num_kv_heads=16,
-head_size=256,
-dtype=torch.float16,
-head_size_v=256,
-kv_quant_mode=<KVQuantMode.NONE: 0>,
-page_size_padded=None,
-num_head_slots=None,
-state_content_bytes=None,
-tokens_per_state=1,
-sliding_window=1024,
-extra_retained_tokens=0),
-is_eagle_group=False,
-host_resident=False,
-enable_kv_transfer=True,
-role=<KVCacheGroupRole.DEFAULT: 'default'>),
-KVCacheGroupSpec(layer_names=['language_model.model.layers.3.self_attn.attn', 'language_model.model.layers.9.self_attn.attn', 'language_model.model.layers.15.self_attn.attn', 'language_model.model.layers.21.self_attn.attn', 'language_model.model.layers.27.self_attn.attn', 'language_model.model.layers.33.self_attn.attn', 'language_model.model.layers.39.self_attn.attn', 'language_model.model.layers.45.self_attn.attn', 'language_model.model.layers.51.self_attn.attn', 'language_model.model.layers.57.self_attn.attn'],
-kv_cache_spec=SlidingWindowSpec(block_size=16,
-num_kv_heads=16,
-head_size=256,
-dtype=torch.float16,
-head_size_v=256,
-kv_quant_mode=<KVQuantMode.NONE: 0>,
-page_size_padded=None,
-num_head_slots=None,
-state_content_bytes=None,
-tokens_per_state=1,
-sliding_window=1024,
-extra_retained_tokens=0),
-is_eagle_group=False,
-host_resident=False,
-enable_kv_transfer=True,
-role=<KVCacheGroupRole.DEFAULT: 'default'>),
-KVCacheGroupSpec(layer_names=['language_model.model.layers.4.self_attn.attn', 'language_model.model.layers.10.self_attn.attn', 'language_model.model.layers.16.self_attn.attn', 'language_model.model.layers.22.self_attn.attn', 'language_model.model.layers.28.self_attn.attn', 'language_model.model.layers.34.self_attn.attn', 'language_model.model.layers.40.self_attn.attn', 'language_model.model.layers.46.self_attn.attn', 'language_model.model.layers.52.self_attn.attn', 'language_model.model.layers.58.self_attn.attn'],
-kv_cache_spec=SlidingWindowSpec(block_size=16,
-num_kv_heads=16,
-head_size=256,
-dtype=torch.float16,
-head_size_v=256,
-kv_quant_mode=<KVQuantMode.NONE: 0>,
-page_size_padded=None,
-num_head_slots=None,
-state_content_bytes=None,
-tokens_per_state=1,
-sliding_window=1024,
-extra_retained_tokens=0),
-is_eagle_group=False,
-host_resident=False,
-enable_kv_transfer=True,
-role=<KVCacheGroupRole.DEFAULT: 'default'>),
-KVCacheGroupSpec(layer_names=['language_model.model.layers.5.self_attn.attn', 'language_model.model.layers.11.self_attn.attn', 'language_model.model.layers.17.self_attn.attn', 'language_model.model.layers.23.self_attn.attn', 'language_model.model.layers.29.self_attn.attn', 'language_model.model.layers.35.self_attn.attn', 'language_model.model.layers.41.self_attn.attn', 'language_model.model.layers.47.self_attn.attn', 'language_model.model.layers.53.self_attn.attn', 'language_model.model.layers.59.self_attn.attn'],
-kv_cache_spec=FullAttentionSpec(block_size=32,
-num_kv_heads=4,
-head_size=512,
-dtype=torch.float16,
-head_size_v=512,
-kv_quant_mode=<KVQuantMode.NONE: 0>,
-page_size_padded=None,
-num_head_slots=None,
-state_content_bytes=None,
-tokens_per_state=1,
-sliding_window=None,
-attention_chunk_size=None,
-non_causal=False),
-is_eagle_group=False,
-host_resident=False,
-enable_kv_transfer=True,
-role=<KVCacheGroupRole.DEFAULT: 'default'>)],
-prefix_cache_retention_interval=0,
-kv_cache_layout='LBNHC',
-hisparse_host_num_blocks=None,
-hisparse_host_block_stride=None,
-hisparse_shared_host_pool=False),
-kv_cache_configs = [KVCacheConfig(num_blocks=2454,
-kv_cache_tensors=[KVCacheTensor(size=6433013760,
-layer...ide=None,
-hisparse_shared_host_pool=False)]
-
 
 def collective_rpc(  # type: ignore[override]
         self,
