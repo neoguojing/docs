@@ -3,6 +3,7 @@
 - /home/neo/workspace/vllm/vllm/v1/kv_cache_interface.py
 - /home/neo/workspace/vllm/vllm/v1/core/single_type_kv_cache_manager.py
 - /home/neo/workspace/vllm/vllm/model_executor/layers/attention/attention.py
+- /home/neo/workspace/vllm/vllm/v1/kv_cache_interface.py
 - 
 - kv_cache_specs = self.model_executor.get_kv_cache_specs()
 self.collective_rpc("get_kv_cache_spec")
@@ -118,6 +119,67 @@ def initialize_from_config(self, kv_cache_configs: list[KVCacheConfig]) -> None:
         self.collective_rpc("initialize_from_config", args=(kv_cache_configs,))
 Worker.initialize_from_config
 GPUModelRunner.initialize_kv_cache
+/home/neo/workspace/vllm/vllm/v1/worker/gpu/attn_utils.py：init_kv_cache
+```
+init_kv_cache()
+│
+├── KVCacheConfig
+│   ├── KVCache Groups
+│   ├── KVCache Specs
+│   └── Cache Layout / Block 信息
+│
+├── VllmConfig
+│   ├── attention_config
+│   │   └── hisparse_config
+│   ├── cache_config
+│   │   └── get_resolved_kv_cache_layout()
+│   └── model_config
+│       └── hf_config.model_type
+│
+├── allocate_kv_cache() 
+│   └── 普通 KV Cache Tensor 分配
+       这套机制涉及三个层次：
+        1. 物理内存层：通过 torch.zeros() 分配一块大的 GPU Buffer。
+        2. 逻辑 Tensor 层：通过 torch.as_strided() 创建不同 Layer 的 KV Cache View。
+        3. 模型访问层：通过 kv_caches[layer_name] 将对应 View 绑定到 Attention 层。
+│
+├── init_hisparse_kv_cache()
+│   └── HiSparse 特殊缓存初始化
+│
+├── get_shared_kv_cache_layers()
+│   └── Cache 共享映射
+│
+├── forward_context
+│   └── Attention Runtime 对象注册表
+│
+└── bind_kv_cache_to_layers() 
+    └── Cache 与 Attention 对象绑定： 设置Attention对象的self.kv_cache = kv_cache
+
+torch.zeros()
+    │
+    ▼
+PyTorch Tensor 创建逻辑
+    │
+    ▼
+CUDA Device Allocator
+    │
+    ▼
+CUDA 显存分配
+    │
+    ▼
+返回 CUDA Tensor
+
+view = torch.as_strided(
+    buffer,
+    size=(3, 4),
+    stride=(4, 1),
+)
+shape：逻辑上有多少维，每一维有多大。
+stride：某一维索引增加 1，需要在底层存储中跨过多少个元素。
+访问 view[1, 2]：
+底层偏移 = 1 * 4 + 2 * 1
+         = 6
+```
 
 - self.model_executor.compile_or_warm_up_model()
 Worker.compile_or_warm_up_model
