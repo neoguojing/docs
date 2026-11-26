@@ -179,11 +179,65 @@ stride：某一维索引增加 1，需要在底层存储中跨过多少个元素
 访问 view[1, 2]：
 底层偏移 = 1 * 4 + 2 * 1
          = 6
+
+view_5d [10, 256, 16, 16, 1024]
+│
+├── Layer 0
+│   ├── Block 0
+│   │   ├── Head 0
+│   │   │   └── Token 0～15
+│   │   │       └── Channel 0～1023
+│   │   ├── Head 1
+│   │   └── ... Head 15
+│   │
+│   ├── Block 1
+│   └── ... Block 255
+│
+├── Layer 1
+├── ...
+└── Layer 9
+
+L	Layer	10	Transformer 层
+B	Block	256	每层的 KV Cache Block
+H	KV Head	16	KV 注意力头
+N	Token	16	每个 Block 的 Token 槽位
+C	Channel	1024	每个 Head、Token 对应的字节数据
+
+kvcache的格式： dict[layername:tensor()]
 ```
 
 - self.model_executor.compile_or_warm_up_model()
 Worker.compile_or_warm_up_model
-
+```
+compile_or_warm_up_model()
+1. 编译尺寸准备
+   
+   确定需要执行模型编译和预热的 Batch Token Size。
+2. 模型 Dummy Run
+   
+   _dummy_run() 使用虚拟输入执行模型，触发编译和相关初始化。
+3. Kernel Warmup
+   
+   kernel_warmup() 预热模型执行所需的 CUDA Kernel。
+4. V2 Model Runner 额外预热
+   
+   warmup_kernels() 提前调整 Workspace，避免 CUDA Graph 捕获后的内存失效。
+5. CUDA Graph Capture
+   
+   capture_model() 捕获模型执行图，供后续推理重放。
+6. KV Cache 显存预算评估
+   
+   根据实际显存使用情况，计算 KV Cache 可使用的显存并给出配置建议。
+7. Sampler / Pooler 预热
+   
+   V1 Model Runner 提前分配采样及相关 Tensor 缓冲区。
+8. 运行时环境初始化
+   
+   固定随机种子、触发 Inductor Lazy Init、启动 JIT 监控。
+9. 运行时优化
+   
+   Freeze GC Heap、开启 GPU Sync Check、调整 Torch 线程数。
+```
 def collective_rpc(  # type: ignore[override]
         self,
         method: str | Callable,
