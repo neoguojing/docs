@@ -1,4 +1,4 @@
-# **vLLM&#x20;**`scheduler_kv_cache_config`**&#x20;解读**
+# **vLLM&#x20
 
 先看结论：这份配置最重要的三个数字是：
 
