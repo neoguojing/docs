@@ -423,3 +423,69 @@ P11
 3. `block_size=16/32` 决定 Request 的 Token 序列如何划分逻辑 Block，不直接决定物理 Block 总数。
 
 下一步最值得追踪的是 `num_blocks` 的计算函数：把显存预算与这里的 `15 MiB / global block` 对上，就能完整解释 2454 是如何产生的。
+
+是的。**在你这份配置中，一个 Layer 的一个物理 Block（**`block_stride = 256 KiB`**），恰好可以存储 16 或 32 个 Token 的 K/V 数据。**
+
+但要注意：16 和 32 对应不同的 Attention Spec，不是同一个 Block 同时存储两种数量的 Token。
+
+### **1. 两种 Attention 的计算**
+
+一个 Token 的 K/V 存储大小：
+
+\\[ 2 \times NumKVHeads \times HeadSize \times 2Bytes \\]
+
+| 类型             | KV Heads | Head Size | 单 Token K+V |
+| -------------- | -------- | --------- | ----------- |
+| Sliding Window | 16       | 256       | 16 KiB      |
+| Full Attention | 4        | 512       | 16 KiB      |
+
+所以：
+
+**Sliding Window**
+
+```
+16 Tokens × 16 KiB = 256 KiB
+```
+
+**Full Attention**
+
+```
+32 Tokens × 8 KiB = 256 KiB
+```
+
+修正一下上表：Full Attention 的单 Token K+V 是：
+
+```
+2 × 4 × 512 × 2 Bytes = 8192 Bytes = 8 KiB
+```
+
+### **2. 直观对比**
+
+```
+一个物理 Block：256 KiB
+
+Sliding Window:
++------+------+ ... +------+
+| T0   | T1   |     | T15  |
++------+------+ ... +------+
+      16 Tokens
+
+Full Attention:
++------+------+ ... +------+
+| T0   | T1   |     | T31  |
++------+------+ ... +------+
+      32 Tokens
+```
+
+### **3. 为什么 Block Size 不同？**
+
+因为两种 Attention 的 KV Head 配置不同：
+
+- Sliding Window：16 个 KV Heads，每个 Head 256 维。
+- Full Attention：4 个 KV Heads，每个 Head 512 维。
+
+Full Attention 每个 Token 的 K/V 数据量只有 Sliding Window 的一半，因此一个相同大小的物理 Block 可以存放两倍 Token。
+
+**记住：**
+
+`block_stride = 256 KiB` 描述的是物理存储容量；`block_size = 16/32` 描述的是这个物理 Block 对应多少个 Token。两者通过 KV Head 数量、Head Size 和数据类型联系起来。
